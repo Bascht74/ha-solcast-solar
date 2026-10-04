@@ -24,6 +24,7 @@ from homeassistant.components.solcast_solar.const import (
 )
 from homeassistant.components.solcast_solar.enums import SitesStatus
 from homeassistant.components.solcast_solar.sites_cache import SitesCache
+from homeassistant.util import dt as dt_util
 
 
 class _ExecutorHass:
@@ -172,7 +173,7 @@ async def test_backup_caches_only_own_entry(tmp_path: Path) -> None:
         "solcastx.json",
     ):
         (tmp_path / name).write_text("{}", encoding="utf-8")
-    today = dt.now(UTC).strftime("%y%m%d")
+    today = dt_util.utcnow().strftime("%y%m%d")
 
     await _make_sites_cache(tmp_path)._backup_json_caches()
     backups = sorted(path.name for path in tmp_path.glob("*.bak"))

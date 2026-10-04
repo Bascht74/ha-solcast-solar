@@ -7,8 +7,6 @@ prefixed unique ID for the shared sensors, and its own device name.
 Rooftop sensors stay on the resource ID, which is already unique.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -16,9 +14,15 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.util import slugify
 
-from .const import CONFIG_DISCRETE_NAME, CONFIG_FOLDER_DISCRETE, INSTANCE_NAME, INTEGRATION, TITLE
+from .const import (
+    CONFIG_DISCRETE_NAME,
+    CONFIG_FOLDER_DISCRETE,
+    INSTANCE_NAME,
+    INTEGRATION,
+    TITLE,
+)
 
-_UMLAUT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+_UMLAUT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})  # codespell:ignore ue
 # A named stem must not be a file of the original entry (solcast-actuals.json, ...),
 # nor match its globs solcast-sites*.json and solcast-usage*.json.
 _RESERVED_SLUGS = ("actuals", "advanced", "dampening", "generation", "undampened")

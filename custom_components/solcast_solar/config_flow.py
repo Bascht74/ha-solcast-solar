@@ -33,15 +33,6 @@ from homeassistant.util import dt as dt_util
 
 from . import entry_state, get_session_headers, get_version, state
 from .advanced import async_is_allow_exceed_api_limit
-from .instance import (
-    advanced_file_path,
-    cache_file_path,
-    entry_title,
-    instance_name,
-    instance_slug,
-    is_named_instance,
-    is_reserved_slug,
-)
 from .const import (
     AFFIRMATION_REAUTH_SUCCESSFUL,
     AFFIRMATION_RECONFIGURED,
@@ -92,6 +83,15 @@ from .const import (
     USE_ACTUALS,
 )
 from .enums import HistoryType, SitesStatus
+from .instance import (
+    advanced_file_path,
+    cache_file_path,
+    entry_title,
+    instance_name,
+    instance_slug,
+    is_named_instance,
+    is_reserved_slug,
+)
 from .log import get_logger
 from .migration import sync_legacy_keys
 from .solcastapi import ConnectionOptions, SolcastApi
@@ -264,7 +264,7 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                     errors[BASE] = EXCEPTION_API_ERROR
                     description_placeholders["error_detail"] = message
                 elif clash := _rooftops_counted_elsewhere(
-                    self.hass, self.context.get(ENTRY_ID), rooftops, all_config_data.get(EXCLUDE_SITES, [])
+                    self.hass, self._entry.entry_id if self._entry is not None else None, rooftops, all_config_data.get(EXCLUDE_SITES, [])
                 ):
                     errors[BASE] = EXCEPTION_ROOFTOP_IN_USE
                     description_placeholders.update(_rooftop_placeholders(clash))
@@ -341,7 +341,10 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                         errors[BASE] = EXCEPTION_API_ERROR
                         description_placeholders["error_detail"] = message
                     elif clash := _rooftops_counted_elsewhere(
-                        self.hass, self.context.get(ENTRY_ID), rooftops, all_config_data.get(EXCLUDE_SITES, [])
+                        self.hass,
+                        self._entry.entry_id if self._entry is not None else None,
+                        rooftops,
+                        all_config_data.get(EXCLUDE_SITES, []),
                     ):
                         errors[BASE] = EXCEPTION_ROOFTOP_IN_USE
                         description_placeholders.update(_rooftop_placeholders(clash))

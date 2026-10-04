@@ -1,8 +1,7 @@
 """Test Solcast Solar logging helpers."""
 
-import logging
-
 import contextvars
+import logging
 
 from homeassistant.components.solcast_solar.log import (
     _LOG_FILTER,

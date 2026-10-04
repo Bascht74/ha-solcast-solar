@@ -1,7 +1,7 @@
 """Solcast service actions."""
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -10,7 +10,14 @@ from typing import Any, Final
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_FLOOR_ID, ATTR_LABEL_ID, CONF_API_KEY
+from homeassistant.const import (
+    ATTR_AREA_ID,
+    ATTR_DEVICE_ID,
+    ATTR_ENTITY_ID,
+    ATTR_FLOOR_ID,
+    ATTR_LABEL_ID,
+    CONF_API_KEY,
+)
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationError
 from homeassistant.helpers import (
@@ -67,9 +74,9 @@ from .const import (
     EXCEPTION_EXPORT_NO_ENTITY,
     EXCEPTION_EXPORT_NO_LIMIT,
     EXCEPTION_INIT_KEY_INVALID,
-    EXCEPTION_INTEGRATION_NOT_LOADED,
     EXCEPTION_INSTANCE_REQUIRED,
     EXCEPTION_INSTANCE_UNKNOWN,
+    EXCEPTION_INTEGRATION_NOT_LOADED,
     EXCEPTION_INVALID_QUERY_RANGE,
     EXCEPTION_NOT_A_SITE,
     EXCEPTION_SET_OPTIONS_EMPTY,
@@ -1116,10 +1123,11 @@ _OWNERS: HassKey[dict[str, ServiceActions]] = HassKey(f"{DOMAIN}_actions")
 async def _target_entry_ids(hass: HomeAssistant, call: ServiceCall) -> set[str]:
     """Return the config entries a call's target refers to, areas, floors and labels included."""
 
+    extract: Callable[..., Awaitable[set[str]]] = service.async_extract_config_entry_ids
     try:
-        return await service.async_extract_config_entry_ids(call)
+        return await extract(call)
     except TypeError:  # Home Assistant before 2026.1 takes hass first.
-        return await service.async_extract_config_entry_ids(hass, call)  # type: ignore[arg-type, call-arg]
+        return await extract(hass, call)
 
 
 async def _entry_id_for_call(hass: HomeAssistant, call: ServiceCall) -> str:

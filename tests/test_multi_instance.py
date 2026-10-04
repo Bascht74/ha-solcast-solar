@@ -2,7 +2,6 @@
 
 import asyncio
 import copy
-from datetime import UTC, datetime as dt
 import logging
 from pathlib import Path
 from typing import Any
@@ -14,8 +13,9 @@ import pytest
 from homeassistant import config_entries
 from homeassistant.components.recorder import Recorder
 from homeassistant.components.solcast_solar import state
-from homeassistant.components.solcast_solar.updater import Updater
-from homeassistant.components.solcast_solar.config_flow import SolcastSolarOptionFlowHandler
+from homeassistant.components.solcast_solar.config_flow import (
+    SolcastSolarOptionFlowHandler,
+)
 from homeassistant.components.solcast_solar.const import (
     AFFIRMATION_UNCHANGED,
     API_LIMIT,
@@ -42,12 +42,27 @@ from homeassistant.components.solcast_solar.const import (
     SITE_EXPORT_ENTITY,
     SITE_INFO,
 )
-from homeassistant.components.solcast_solar.diagnostics import async_get_config_entry_diagnostics
+from homeassistant.components.solcast_solar.diagnostics import (
+    async_get_config_entry_diagnostics,
+)
 from homeassistant.components.solcast_solar.energy import async_get_solar_forecast
-from homeassistant.components.solcast_solar.instance import repair_issue_id, repair_placeholders
-from homeassistant.components.solcast_solar.repairs import RecordsMissingRepairFlow, async_create_fix_flow
+from homeassistant.components.solcast_solar.instance import (
+    repair_issue_id,
+    repair_placeholders,
+)
+from homeassistant.components.solcast_solar.repairs import (
+    RecordsMissingRepairFlow,
+    async_create_fix_flow,
+)
+from homeassistant.components.solcast_solar.updater import Updater
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_LABEL_ID, CONF_API_KEY
+from homeassistant.const import (
+    ATTR_AREA_ID,
+    ATTR_DEVICE_ID,
+    ATTR_ENTITY_ID,
+    ATTR_LABEL_ID,
+    CONF_API_KEY,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import ConfigEntryError, ServiceValidationError
@@ -59,6 +74,7 @@ from homeassistant.helpers import (
     label_registry as lr,
     service,
 )
+from homeassistant.util import dt as dt_util
 
 from . import (
     DEFAULT_INPUT1,
@@ -87,6 +103,7 @@ def _device(hass: HomeAssistant, entry_id: str):
 async def test_two_instances_stay_separate(
     recorder_mock: Recorder,
     hass: HomeAssistant,
+    entity_registry: er.EntityRegistry,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A named entry does not share the original entry's files, sensors, sites or service calls."""
@@ -121,7 +138,7 @@ async def test_two_instances_stay_separate(
         assert {site[RESOURCE_ID] for site in legacy_api.sites} == {"1111-1111-1111-1111", "2222-2222-2222-2222"}
         assert {site[RESOURCE_ID] for site in west_api.sites} == {"3333-3333-3333-3333"}
 
-        registry = er.async_get(hass)
+        registry = entity_registry
         legacy_ids = {entity.unique_id for entity in er.async_entries_for_config_entry(registry, legacy.entry_id)}
         west_ids = {entity.unique_id for entity in er.async_entries_for_config_entry(registry, west.entry_id)}
         assert legacy_ids.isdisjoint(west_ids)
@@ -269,7 +286,7 @@ async def test_crash_state_and_logs_per_entry(
         # West crashed with a fatal error: it stays down, the original entry still starts.
         west_store = await state.async_get(hass, west.entry_id)
         west_store.state.presumed_dead = True
-        west_store.state.crash_time = dt.now(UTC)
+        west_store.state.crash_time = dt_util.utcnow()
         west_store.state.exception_class = ConfigEntryError
         await west_store.async_save()
         await hass.config_entries.async_reload(west.entry_id)
@@ -283,14 +300,16 @@ async def test_crash_state_and_logs_per_entry(
 
 
 @pytest.mark.parametrize("original_name", [pytest.param("", id="original_unnamed"), pytest.param("Süd-&Westdach", id="original_named")])
-async def test_accuracy_follows_each_entry_sensor(recorder_mock: Recorder, hass: HomeAssistant, original_name: str) -> None:
+async def test_accuracy_follows_each_entry_sensor(
+    recorder_mock: Recorder, hass: HomeAssistant, entity_registry: er.EntityRegistry, original_name: str
+) -> None:
     """Accuracy is calculated for an entry only when its own accuracy sensor is enabled."""
 
     original_options = copy.deepcopy(DEFAULT_INPUT1) | ({INSTANCE_NAME: original_name} if original_name else {})
     try:
         original = await async_init_integration(hass, original_options)
         west = await async_init_integration(hass, _west_options(), unique_id="solcast_west", title="Solcast West", orphan_hard_limit=False)
-        registry = er.async_get(hass)
+        registry = entity_registry
         prefix = "suedwestdach_" if original_name else ""
         original_accuracy = registry.async_get_entity_id("sensor", DOMAIN, f"{prefix}accuracy")
         west_accuracy = registry.async_get_entity_id("sensor", DOMAIN, "west_accuracy")
@@ -406,7 +425,14 @@ async def _api_key_for(hass: HomeAssistant, data: dict[str, Any]) -> str:
     return response["data"][CONF_API_KEY]
 
 
-async def test_action_routing(recorder_mock: Recorder, hass: HomeAssistant) -> None:
+async def test_action_routing(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    area_registry: ar.AreaRegistry,
+    device_registry: dr.DeviceRegistry,
+    entity_registry: er.EntityRegistry,
+    label_registry: lr.LabelRegistry,
+) -> None:
     """Actions reach the entry named by config_entry_id or by any target kind, and never guess between named entries."""
 
     ost_options = _west_options() | {CONF_API_KEY: KEY1, INSTANCE_NAME: "Ost"}
@@ -415,11 +441,11 @@ async def test_action_routing(recorder_mock: Recorder, hass: HomeAssistant) -> N
         west = await async_init_integration(hass, _west_options(), unique_id="solcast_west", title="Solcast West", orphan_hard_limit=False)
         west_device = _device(hass, west.entry_id)
         ost_device = _device(hass, ost.entry_id)
-        roof = ar.async_get(hass).async_create("Roof")
-        label = lr.async_get(hass).async_create("PV")
-        dr.async_get(hass).async_update_device(west_device.id, area_id=roof.id)
-        dr.async_get(hass).async_update_device(ost_device.id, labels={label.label_id})
-        west_sensor = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, "west_total_kwh_forecast_today")
+        roof = area_registry.async_create("Roof")
+        label = label_registry.async_create("PV")
+        device_registry.async_update_device(west_device.id, area_id=roof.id)
+        device_registry.async_update_device(ost_device.id, labels={label.label_id})
+        west_sensor = entity_registry.async_get_entity_id("sensor", DOMAIN, "west_total_kwh_forecast_today")
 
         assert await _api_key_for(hass, {CONFIG_ENTRY_ID: west.entry_id}) == KEY2
         assert await _api_key_for(hass, {CONFIG_ENTRY_ID: ost.entry_id}) == KEY1
@@ -431,7 +457,7 @@ async def test_action_routing(recorder_mock: Recorder, hass: HomeAssistant) -> N
         for data, error in (
             ({}, EXCEPTION_INSTANCE_REQUIRED),
             ({ATTR_DEVICE_ID: [west_device.id, ost_device.id]}, EXCEPTION_INSTANCE_REQUIRED),
-            ({ATTR_AREA_ID: ar.async_get(hass).async_create("Garage").id}, EXCEPTION_INSTANCE_UNKNOWN),
+            ({ATTR_AREA_ID: area_registry.async_create("Garage").id}, EXCEPTION_INSTANCE_UNKNOWN),
             ({CONFIG_ENTRY_ID: "not_an_entry"}, EXCEPTION_INSTANCE_UNKNOWN),
         ):
             with pytest.raises(ServiceValidationError) as raised:
@@ -456,7 +482,9 @@ async def test_action_routing(recorder_mock: Recorder, hass: HomeAssistant) -> N
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 
 
-async def test_rooftop_counted_once(recorder_mock: Recorder, hass: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+async def test_rooftop_counted_once(
+    recorder_mock: Recorder, hass: HomeAssistant, entity_registry: er.EntityRegistry, caplog: pytest.LogCaptureFixture
+) -> None:
     """One API key may serve two entries, but each rooftop is counted by one entry only."""
 
     user_input = {CONF_API_KEY: KEY1, API_LIMIT: "10", AUTO_UPDATE: "1", INSTANCE_NAME: "Zwei"}
@@ -484,9 +512,8 @@ async def test_rooftop_counted_once(recorder_mock: Recorder, hass: HomeAssistant
         await hass.config_entries.async_reload(zwei.entry_id)
         await hass.async_block_till_done()
         assert "does not generate unique IDs" not in caplog.text
-        registry = er.async_get(hass)
-        assert registry.async_get_entity_id("sensor", DOMAIN, "solcast_solcast_api_2222-2222-2222-2222") in {
-            entity.entity_id for entity in er.async_entries_for_config_entry(registry, zwei.entry_id)
+        assert entity_registry.async_get_entity_id("sensor", DOMAIN, "solcast_solcast_api_2222-2222-2222-2222") in {
+            entity.entity_id for entity in er.async_entries_for_config_entry(entity_registry, zwei.entry_id)
         }
 
         # Counting the first rooftop in both entries is refused; unchanged settings still save.

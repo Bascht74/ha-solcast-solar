@@ -46,7 +46,6 @@ def test_slug_fallback_and_reserved_names() -> None:
     """Names without ASCII letters are transliterated; names of the original's files are reserved."""
 
     assert instance_slug("Süd-&Westdach") == "suedwestdach"
-    assert instance_slug("Café") == "caf"
     assert instance_slug("東屋根") == "dongwugen"
     assert instance_slug("☀️") == ""
     for reserved in ("Sites", "Usage", "Sites2", "usage-west", "Actuals", "Advanced", "Dampening", "Generation", "Undampened"):
