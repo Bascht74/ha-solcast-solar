@@ -33,7 +33,15 @@ from homeassistant.util import dt as dt_util
 
 from . import entry_state, get_session_headers, get_version, state
 from .advanced import async_is_allow_exceed_api_limit
-from .instance import advanced_file_path, cache_file_path, entry_title, instance_name, instance_slug, is_named_instance
+from .instance import (
+    advanced_file_path,
+    cache_file_path,
+    entry_title,
+    instance_name,
+    instance_slug,
+    is_named_instance,
+    is_reserved_slug,
+)
 from .const import (
     AFFIRMATION_REAUTH_SUCCESSFUL,
     AFFIRMATION_RECONFIGURED,
@@ -239,7 +247,9 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                     if key_changed:
                         self._mark_reset_old_key()
                         sync_legacy_keys(all_config_data)
-                        self.hass.config_entries.async_update_entry(self._entry, title=entry_title(all_config_data), options=all_config_data)
+                        self.hass.config_entries.async_update_entry(
+                            self._entry, title=entry_title(all_config_data), options=all_config_data
+                        )
                     if self._entry.state is not ConfigEntryState.LOADED:
                         _LOGGER.debug("Loading presumed dead integration")
                         await (await state.async_get(self.hass, self._entry.entry_id)).async_clear()
@@ -310,7 +320,9 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                         sync_legacy_keys(all_config_data)
                         if key_changed:
                             self._mark_reset_old_key()
-                        self.hass.config_entries.async_update_entry(self._entry, title=entry_title(all_config_data), options=all_config_data)
+                        self.hass.config_entries.async_update_entry(
+                            self._entry, title=entry_title(all_config_data), options=all_config_data
+                        )
                         if self._entry.state is not ConfigEntryState.LOADED:
                             _LOGGER.debug("Loading presumed dead integration")
                             await (await state.async_get(self.hass, self._entry.entry_id)).async_clear()
@@ -353,17 +365,17 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             submitted_input = {**user_input}
             raw_name = instance_name(user_input)
-            name_required = bool(self.hass.config_entries.async_entries(DOMAIN))
-            if name_required and not raw_name:
-                errors[INSTANCE_NAME] = "instance_name_required"
-            elif raw_name and not instance_slug(raw_name):
+            slug = instance_slug(raw_name)
+            existing_entries = self.hass.config_entries.async_entries(DOMAIN)
+            if not raw_name:
+                if existing_entries:
+                    errors[INSTANCE_NAME] = "instance_name_required"
+            elif not slug:
                 errors[INSTANCE_NAME] = "instance_name_invalid"
-            elif raw_name:
-                slug = instance_slug(raw_name)
-                for existing in self.hass.config_entries.async_entries(DOMAIN):
-                    if instance_slug(instance_name(existing.options)) == slug:
-                        errors[INSTANCE_NAME] = "instance_name_duplicate"
-                        break
+            elif is_reserved_slug(slug):
+                errors[INSTANCE_NAME] = "instance_name_reserved"
+            elif any(instance_slug(instance_name(existing.options)) == slug for existing in existing_entries):
+                errors[INSTANCE_NAME] = "instance_name_duplicate"
 
             api_key, api_count, abort = validate_api_key(user_input)
             api_limit = "10"
@@ -674,7 +686,9 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
                     if all_config_data != self._entry.options:
                         if self._api_key_changed:
                             await set_sensitive(self.hass, self._entry)
-                        self.hass.config_entries.async_update_entry(self._entry, title=entry_title(all_config_data), options=all_config_data)
+                        self.hass.config_entries.async_update_entry(
+                            self._entry, title=entry_title(all_config_data), options=all_config_data
+                        )
                         await self.check_dead()
                         return self.async_abort(reason=AFFIRMATION_RECONFIGURED)
                     return self.async_abort(reason=AFFIRMATION_UNCHANGED)

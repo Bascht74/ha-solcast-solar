@@ -2,13 +2,17 @@
 
 import copy
 import logging
+from pathlib import Path
 
 import pytest
 
+from homeassistant import config_entries
 from homeassistant.components.recorder import Recorder
-from homeassistant.components.solcast_solar.const import DAMP_FACTOR, DOMAIN, INSTANCE_NAME, RESOURCE_ID
+from homeassistant.components.solcast_solar.const import API_LIMIT, AUTO_UPDATE, DAMP_FACTOR, DOMAIN, INSTANCE_NAME, RESOURCE_ID
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_DEVICE_ID, CONF_API_KEY
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from . import (
@@ -140,5 +144,47 @@ async def test_shared_rooftop_is_logged(
             )
         assert "1111-1111-1111-1111" in caplog.text
         assert "already used by Solcast entry Solcast PV Forecast" in caplog.text
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_named_entry_through_the_flow(recorder_mock: Recorder, hass: HomeAssistant) -> None:
+    """A further entry needs a usable, free name that cannot reach the original entry's files."""
+
+    user_input = {CONF_API_KEY: KEY2, API_LIMIT: "10", AUTO_UPDATE: "1"}
+    try:
+        legacy = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        for name, error in (
+            ("", "instance_name_required"),
+            ("☀️", "instance_name_invalid"),
+            ("Sites", "instance_name_reserved"),
+            ("Usage 2", "instance_name_reserved"),
+            ("Undampened", "instance_name_reserved"),
+        ):
+            result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input | {INSTANCE_NAME: name})
+            assert result.get("errors") == {INSTANCE_NAME: error}, name
+
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input | {INSTANCE_NAME: "東屋根"})
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["title"] == "Solcast 東屋根"
+        await hass.async_block_till_done()
+        named = result["result"]
+        assert named.state is ConfigEntryState.LOADED
+        assert named.runtime_data.coordinator.solcast.filename.endswith("solcast-dongwugen.json")
+
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input | {INSTANCE_NAME: "東屋根 "})
+        assert result.get("errors") == {INSTANCE_NAME: "instance_name_duplicate"}
+
+        # Reloading the original runs its orphan clean-up; the named entry's files must survive it.
+        config_dir = Path(legacy.runtime_data.coordinator.solcast.config_dir)
+        named_files = sorted(path.name for path in config_dir.glob("solcast-dongwugen*.json"))
+        assert "solcast-dongwugen-sites.json" in named_files
+        assert "solcast-dongwugen-usage.json" in named_files
+        await hass.config_entries.async_reload(legacy.entry_id)
+        await hass.async_block_till_done()
+        assert sorted(path.name for path in config_dir.glob("solcast-dongwugen*.json")) == named_files
+        assert (config_dir / "solcast-sites.json").is_file()
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

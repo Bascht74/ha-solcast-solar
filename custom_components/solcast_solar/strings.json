@@ -18,7 +18,8 @@
       "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
       "instance_name_required": "Another entry needs a name.",
       "instance_name_invalid": "The name must contain a letter or a digit.",
-      "instance_name_duplicate": "That name is already used."
+      "instance_name_duplicate": "That name is already used.",
+      "instance_name_reserved": "That name is reserved for the files of the first entry. Choose another name."
     },
     "step": {
       "reauth_confirm": {

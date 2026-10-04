@@ -14,10 +14,15 @@ from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.util import slugify
 
 from .const import CONFIG_DISCRETE_NAME, CONFIG_FOLDER_DISCRETE, INSTANCE_NAME, INTEGRATION, TITLE
 
 _UMLAUT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+# A named stem must not be a file of the original entry (solcast-actuals.json, ...),
+# nor match its globs solcast-sites*.json and solcast-usage*.json.
+_RESERVED_SLUGS = ("actuals", "advanced", "dampening", "generation", "undampened")
+_RESERVED_PREFIXES = ("sites", "usage")
 
 
 def instance_name(options: Mapping[str, Any] | None) -> str:
@@ -29,10 +34,20 @@ def instance_name(options: Mapping[str, Any] | None) -> str:
 
 
 def instance_slug(name: str) -> str:
-    """Return a lowercase slug of letters and digits, or an empty string."""
+    """Return a lowercase slug of ASCII letters and digits, or an empty string."""
 
     lowered = name.strip().lower().translate(_UMLAUT)
-    return "".join(character for character in lowered if character.isascii() and character.isalnum())
+    slug = "".join(character for character in lowered if character.isascii() and character.isalnum())
+    if slug or not any(character.isalnum() for character in lowered):
+        return slug
+    # Only names without any ASCII letter or digit (東屋根) are transliterated, so existing slugs stay.
+    return slugify(lowered).replace("_", "")
+
+
+def is_reserved_slug(slug: str) -> bool:
+    """Return whether a slug would reuse or match the original entry's cache files."""
+
+    return slug in _RESERVED_SLUGS or slug.startswith(_RESERVED_PREFIXES)
 
 
 def is_named_instance(options: Mapping[str, Any] | None) -> bool:

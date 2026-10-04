@@ -18,7 +18,8 @@
       "limit_too_many": "There are more API limit counts entered than keys",
       "instance_name_required": "Another entry needs a name.",
       "instance_name_invalid": "The name must contain a letter or a digit.",
-      "instance_name_duplicate": "That name is already used."
+      "instance_name_duplicate": "That name is already used.",
+      "instance_name_reserved": "That name is reserved for the files of the first entry. Choose another name."
     },
     "step": {
       "reauth_confirm": {

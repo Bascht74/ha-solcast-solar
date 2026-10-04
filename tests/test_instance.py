@@ -6,6 +6,7 @@ from homeassistant.components.solcast_solar.instance import (
     device_name_for,
     entry_title,
     instance_slug,
+    is_reserved_slug,
     scoped_issue_id,
     shared_unique_id,
 )
@@ -39,3 +40,16 @@ def test_named_entry_is_separate() -> None:
     assert device_name_for(options) == "Solcast West"
     assert entry_title(options) == "Solcast West"
     assert scoped_issue_id("actuals_api_limit", options, "abc") == "actuals_api_limit_abc"
+
+
+def test_slug_fallback_and_reserved_names() -> None:
+    """Names without ASCII letters are transliterated; names of the original's files are reserved."""
+
+    assert instance_slug("Süd-&Westdach") == "suedwestdach"
+    assert instance_slug("Café") == "caf"
+    assert instance_slug("東屋根") == "dongwugen"
+    assert instance_slug("☀️") == ""
+    for reserved in ("Sites", "Usage", "Sites2", "usage-west", "Actuals", "Advanced", "Dampening", "Generation", "Undampened"):
+        assert is_reserved_slug(instance_slug(reserved)), reserved
+    for allowed in ("West", "Generationsdach", "Ostdach", "2026"):
+        assert not is_reserved_slug(instance_slug(allowed)), allowed
