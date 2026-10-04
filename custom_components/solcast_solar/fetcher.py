@@ -570,10 +570,6 @@ class Fetcher:
                 and issue_registry.async_get_issue(DOMAIN, missing_initial) is None
             ):
                 _LOGGER.warning("Raise issue `%s` for missing forecast data", missing_initial)
-                if missing_initial != ISSUE_RECORDS_MISSING_INITIAL and issue_registry.async_get_issue(
-                    DOMAIN, ISSUE_RECORDS_MISSING_INITIAL
-                ) is not None:
-                    ir.async_delete_issue(self.api.hass, DOMAIN, ISSUE_RECORDS_MISSING_INITIAL)
                 ir.async_create_issue(
                     self.api.hass,
                     DOMAIN,

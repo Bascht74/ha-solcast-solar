@@ -192,15 +192,15 @@ class SitesCache:
         """Check and clean up any existing issues if the conditions are now resolved."""
         issue_registry = ir.async_get(self.api.hass)
         for issue in [ISSUE_UNUSUAL_AZIMUTH_NORTHERN, ISSUE_UNUSUAL_AZIMUTH_SOUTHERN]:
-            for candidate in dict.fromkeys((repair_issue_id(issue, self.api.entry), issue)):
-                if (i := issue_registry.async_get_issue(DOMAIN, candidate)) is not None:
-                    if (
-                        i.dismissed_version is not None
-                        and i.translation_placeholders is not None
-                        and self._dismissal.get(i.translation_placeholders.get(SITE, ""), False)
-                    ) or not any_unusual:
-                        _LOGGER.debug("Remove %sissue for %s", "ignored " if i.dismissed_version is not None else "", candidate)
-                        ir.async_delete_issue(self.api.hass, DOMAIN, candidate)
+            issue_id = repair_issue_id(issue, self.api.entry)
+            if (i := issue_registry.async_get_issue(DOMAIN, issue_id)) is not None:
+                if (
+                    i.dismissed_version is not None
+                    and i.translation_placeholders is not None
+                    and self._dismissal.get(i.translation_placeholders.get(SITE, ""), False)
+                ) or not any_unusual:
+                    _LOGGER.debug("Remove %sissue for %s", "ignored " if i.dismissed_version is not None else "", issue_id)
+                    ir.async_delete_issue(self.api.hass, DOMAIN, issue_id)
 
     async def delete_solcast_file(self, *args: tuple[Any]) -> None:
         """Delete the solcast json files.
@@ -270,8 +270,10 @@ class SitesCache:
                     if unusual:
                         log = (
                             _LOGGER.warning
-                            if issue_registry.async_get_issue(DOMAIN, repair_issue_id(ISSUE_UNUSUAL_AZIMUTH_NORTHERN, self.api.entry)) is None
-                            and issue_registry.async_get_issue(DOMAIN, repair_issue_id(ISSUE_UNUSUAL_AZIMUTH_SOUTHERN, self.api.entry)) is None
+                            if issue_registry.async_get_issue(DOMAIN, repair_issue_id(ISSUE_UNUSUAL_AZIMUTH_NORTHERN, self.api.entry))
+                            is None
+                            and issue_registry.async_get_issue(DOMAIN, repair_issue_id(ISSUE_UNUSUAL_AZIMUTH_SOUTHERN, self.api.entry))
+                            is None
                             and not self._dismissal.get(site, False)
                             else _LOGGER.debug
                         )

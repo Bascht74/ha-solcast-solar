@@ -1045,17 +1045,17 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         issue_registry = ir.async_get(self.hass)
 
         def _remove_issues():
-            # Remove any relevant issues that may exist, including repairs raised before instance IDs.
+            # Remove any relevant issues that may exist.
             for check_issue in (
                 ISSUE_RECORDS_MISSING,
                 ISSUE_RECORDS_MISSING_FIXABLE,
                 ISSUE_RECORDS_MISSING_INITIAL,  # Raised elsewhere but cleaned up here
                 ISSUE_RECORDS_MISSING_UNFIXABLE,
             ):
-                for candidate in dict.fromkeys((repair_issue_id(check_issue, self.entry), check_issue)):
-                    if issue_registry.async_get_issue(DOMAIN, candidate) is not None:
-                        _LOGGER.debug("Remove issue for %s", candidate)
-                        ir.async_delete_issue(self.hass, DOMAIN, candidate)
+                issue_id = repair_issue_id(check_issue, self.entry)
+                if issue_registry.async_get_issue(DOMAIN, issue_id) is not None:
+                    _LOGGER.debug("Remove issue for %s", issue_id)
+                    ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
         if 0 < contiguous < self.advanced_options[ADVANCED_FORECAST_FUTURE_DAYS] - 1:
             if self.entry is not None:

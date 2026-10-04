@@ -20,17 +20,23 @@ from homeassistant.components.solcast_solar.const import (
     AUTO_UPDATE,
     DAMP_FACTOR,
     DOMAIN,
+    ENTRY_ID,
     GENERATION_ENTITIES,
     INSTANCE_NAME,
+    ISSUE_RECORDS_MISSING,
+    ISSUE_RECORDS_MISSING_FIXABLE,
+    ISSUE_UNUSUAL_AZIMUTH_NORTHERN,
     RESOURCE_ID,
     SITE_DAMP,
 )
+from homeassistant.components.solcast_solar.instance import repair_issue_id, repair_placeholders
+from homeassistant.components.solcast_solar.repairs import RecordsMissingRepairFlow, async_create_fix_flow
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_DEVICE_ID, CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import ConfigEntryError
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er, issue_registry as ir
 
 from . import (
     DEFAULT_INPUT1,
@@ -314,5 +320,56 @@ async def test_named_original_runs_automated_dampening(
         assert not (config_dir / "solcast-dampening.json").exists()
         assert entry.options[SITE_DAMP] is True
         assert len(entry.runtime_data.coordinator.solcast.dampening.factors["all"]) == 48
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_repairs_stay_with_their_entry(recorder_mock: Recorder, hass: HomeAssistant, issue_registry: ir.IssueRegistry) -> None:
+    """A named entry clears only its own repairs, and its fixable repair keeps the fix flow."""
+
+    try:
+        legacy = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        west = await async_init_integration(hass, _west_options(), unique_id="solcast_west", title="Solcast West", orphan_hard_limit=False)
+        azimuth = {"site": "x", "proposal": "1", "extant": "2", "latitude": "3", "learn_more": ""}
+        for entry in (legacy, west):
+            for issue, extra in ((ISSUE_RECORDS_MISSING, {}), (ISSUE_UNUSUAL_AZIMUTH_NORTHERN, azimuth)):
+                ir.async_create_issue(
+                    hass,
+                    DOMAIN,
+                    repair_issue_id(issue, entry),
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key=issue,
+                    translation_placeholders=repair_placeholders(entry, extra),
+                )
+
+        west_api = west.runtime_data.coordinator.solcast
+        await west_api.check_data_records()
+        await west_api.sites_cache.cleanup_issues(any_unusual=False)
+        for issue in (ISSUE_RECORDS_MISSING, ISSUE_UNUSUAL_AZIMUTH_NORTHERN):
+            assert issue_registry.async_get_issue(DOMAIN, issue) is not None, issue
+            assert issue_registry.async_get_issue(DOMAIN, f"{issue}_{west.entry_id}") is None, issue
+
+        fixable = repair_issue_id(ISSUE_RECORDS_MISSING_FIXABLE, west)
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            fixable,
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_RECORDS_MISSING_FIXABLE,
+            translation_placeholders=repair_placeholders(west),
+            data={ENTRY_ID: west.entry_id},
+        )
+        flow = await async_create_fix_flow(hass, fixable, {ENTRY_ID: west.entry_id})
+        assert isinstance(flow, RecordsMissingRepairFlow)
+        flow.hass = hass
+        flow.issue_id = fixable
+        result = await flow.async_step_init()
+        assert result["step_id"] == "offer_auto"
+        result = await flow.async_step_offer_auto({AUTO_UPDATE: "2"})
+        assert result["type"] is FlowResultType.ABORT
+        assert west.options[AUTO_UPDATE] == 2
+        assert legacy.options[AUTO_UPDATE] != 2
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
