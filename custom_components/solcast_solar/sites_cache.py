@@ -112,6 +112,9 @@ FRESH_DATA: Final[dict[str, Any]] = {
 }
 
 _LOGGER = get_logger(__name__)
+_ORIGINAL_KINDS = frozenset(
+    ("undampened", "actuals", "actuals-dampened", "advanced", "dampening", "dampening-history", "generation", "sites", "usage")
+)
 
 
 class SitesCache:
@@ -942,31 +945,16 @@ class SitesCache:
         return f"{self.api.config_dir}/{name}"
 
     def _is_this_entry_cache(self, path: Path) -> bool:
-        """Whether a cache file belongs to this entry and not to another instance."""
+        """Whether a solcast*.json file belongs to this entry and not to another one."""
 
-        name = path.name
-        if not name.endswith(".json"):
-            return False
-        stem = self._cache_stem()
-        if stem != "solcast":
-            return name == f"{stem}.json" or name.startswith(f"{stem}-")
-        if name == "solcast.json":
+        name, stem = path.name, self._cache_stem()
+        if name == f"{stem}.json":
             return True
-        if not name.startswith("solcast-"):
+        if not name.startswith(f"{stem}-"):
             return False
-        rest = name[len("solcast-") : -len(".json")]
-        legacy = {
-            "undampened",
-            "actuals",
-            "actuals-dampened",
-            "advanced",
-            "dampening",
-            "dampening-history",
-            "generation",
-            "sites",
-            "usage",
-        }
-        return rest in legacy or rest.startswith("sites-") or rest.startswith("usage-")
+        # Every named entry's file also starts with "solcast-", so the original entry names its own kinds.
+        kind = name[len(stem) + 1 : -len(".json")]
+        return stem != "solcast" or kind in _ORIGINAL_KINDS or kind.startswith(("sites-", "usage-"))
 
     def _get_sites_cache_filename(self, api_key: str) -> str:
         """Build a site details cache filename.

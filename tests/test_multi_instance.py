@@ -437,6 +437,10 @@ async def test_action_routing(recorder_mock: Recorder, hass: HomeAssistant) -> N
             await hass.services.async_call(DOMAIN, SERVICE_SET_OPTIONS, {CONFIG_ENTRY_ID: west.entry_id}, blocking=True)
         assert raised.value.translation_key == EXCEPTION_SET_OPTIONS_EMPTY
 
+        # With one entry left, an action without field or target goes to it.
+        assert await hass.config_entries.async_unload(ost.entry_id)
+        assert await _api_key_for(hass, {}) == KEY2
+
         # Home Assistant before 2026.1 takes hass as the first argument of the target helper.
         async def _old_helper(hass: HomeAssistant, call: Any, expand_group: bool = True) -> set[str]:
             return {west.entry_id}

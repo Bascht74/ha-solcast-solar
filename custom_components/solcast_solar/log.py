@@ -25,15 +25,12 @@ class _LogFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         """Rewrite a configured log record and name the entry it belongs to."""
-        if not isinstance(record.msg, str):
-            return True
-
-        if (rewrite := _LOG_MESSAGE_REWRITES.get(record.msg)) is not None:
+        if isinstance(record.msg, str) and (rewrite := _LOG_MESSAGE_REWRITES.get(record.msg)) is not None:
             replacement_message, argument_indexes = rewrite
             if isinstance(record.args, tuple) and all(0 <= index < len(record.args) for index in argument_indexes):
                 record.msg = replacement_message
                 record.args = tuple(record.args[index] for index in argument_indexes)
-        if (instance := _INSTANCE.get()) is not None:
+        if isinstance(record.msg, str) and (instance := _INSTANCE.get()) is not None:
             record.msg = f"[{instance.replace('%', '%%') if record.args else instance}] {record.msg}"
         return True
 

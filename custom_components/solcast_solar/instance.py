@@ -96,11 +96,11 @@ def cache_file_path(hass: HomeAssistant, options: Mapping[str, Any] | None) -> s
     """Return the cache path in the same shape the original entry uses today."""
 
     stem = cache_stem(options)
-    if CONFIG_FOLDER_DISCRETE:
-        raw = f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}/{stem}.json"
-    else:
-        raw = f"{hass.config.config_dir}/{stem}.json"
-    return hass.config.path(raw)
+    return hass.config.path(
+        f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}/{stem}.json"
+        if CONFIG_FOLDER_DISCRETE
+        else f"{hass.config.config_dir}/{stem}.json"
+    )
 
 
 def advanced_file_path(hass: HomeAssistant, options: Mapping[str, Any] | None) -> Path:
