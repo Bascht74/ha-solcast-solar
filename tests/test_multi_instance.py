@@ -1,5 +1,6 @@
 """Two Solcast entries must stay on their own files, sensors and devices."""
 
+import asyncio
 import copy
 from datetime import UTC, datetime as dt
 import logging
@@ -39,7 +40,10 @@ from homeassistant.components.solcast_solar.const import (
     SERVICE_SET_OPTIONS,
     SITE_DAMP,
     SITE_EXPORT_ENTITY,
+    SITE_INFO,
 )
+from homeassistant.components.solcast_solar.diagnostics import async_get_config_entry_diagnostics
+from homeassistant.components.solcast_solar.energy import async_get_solar_forecast
 from homeassistant.components.solcast_solar.instance import repair_issue_id, repair_placeholders
 from homeassistant.components.solcast_solar.repairs import RecordsMissingRepairFlow, async_create_fix_flow
 from homeassistant.config_entries import ConfigEntryState
@@ -68,6 +72,8 @@ from . import (
     reload_integration,
     wait_for_it,
 )
+
+from tests.common import MockConfigEntry
 
 
 def _device(hass: HomeAssistant, entry_id: str):
@@ -187,8 +193,7 @@ async def test_shared_rooftop_is_logged(
                 title="Solcast Ost",
                 orphan_hard_limit=False,
             )
-        assert "1111-1111-1111-1111" in caplog.text
-        assert "already used by Solcast entry Solcast PV Forecast" in caplog.text
+        assert "Rooftop 1111-1111-1111-1111 is also counted by Solcast entry Solcast PV Forecast" in caplog.text
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 
@@ -471,8 +476,18 @@ async def test_rooftop_counted_once(recorder_mock: Recorder, hass: HomeAssistant
         zwei = result["result"]
         assert zwei.state is ConfigEntryState.LOADED
         assert zwei.options[EXCLUDE_SITES] == ["1111-1111-1111-1111"]
-        assert "Rooftop 1111-1111-1111-1111 is already used by Solcast entry Solcast PV Forecast" in caplog.text
-        assert "both entries count it" not in caplog.text
+        assert "is also counted by" not in caplog.text
+
+        # After a restart each shared rooftop's sensor belongs to the entry that counts it.
+        caplog.clear()
+        await hass.config_entries.async_reload(original.entry_id)
+        await hass.config_entries.async_reload(zwei.entry_id)
+        await hass.async_block_till_done()
+        assert "does not generate unique IDs" not in caplog.text
+        registry = er.async_get(hass)
+        assert registry.async_get_entity_id("sensor", DOMAIN, "solcast_solcast_api_2222-2222-2222-2222") in {
+            entity.entity_id for entity in er.async_entries_for_config_entry(registry, zwei.entry_id)
+        }
 
         # Counting the first rooftop in both entries is refused; unchanged settings still save.
         flow = SolcastSolarOptionFlowHandler(zwei)
@@ -494,5 +509,51 @@ async def test_rooftop_counted_once(recorder_mock: Recorder, hass: HomeAssistant
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_API_KEY: "1a"})
         assert result.get("errors") == {"base": EXCEPTION_ROOFTOP_IN_USE}
         assert west.options[CONF_API_KEY] == KEY2
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_entries_together_and_apart(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+) -> None:
+    """Entries set up at the same time stay apart; unloading or reloading one leaves the others intact."""
+
+    original_options = copy.deepcopy(DEFAULT_INPUT1) | {EXCLUDE_SITES: ["2222-2222-2222-2222"]}
+    zwei_options = copy.deepcopy(DEFAULT_INPUT1) | {INSTANCE_NAME: "Zwei", EXCLUDE_SITES: ["1111-1111-1111-1111"]}
+    try:
+        original = await async_init_integration(hass, original_options)
+        zwei = MockConfigEntry(domain=DOMAIN, title="Solcast Zwei", data=zwei_options, options=zwei_options)
+        west = MockConfigEntry(domain=DOMAIN, title="Solcast West", data=_west_options(), options=_west_options())
+        zwei.add_to_hass(hass)
+        west.add_to_hass(hass)
+        await asyncio.gather(hass.config_entries.async_setup(zwei.entry_id), hass.config_entries.async_setup(west.entry_id))
+        await hass.async_block_till_done()
+        assert [entry.state for entry in (original, zwei, west)] == [ConfigEntryState.LOADED] * 3
+
+        # The original and Zwei share one key but count different rooftops, so their Energy forecasts differ.
+        assert await async_get_solar_forecast(hass, original.entry_id) != await async_get_solar_forecast(hass, zwei.entry_id)
+        diagnostics = await async_get_config_entry_diagnostics(hass, west)
+        assert set(diagnostics["data"][SITE_INFO]) == {"3333-3333-3333-3333"}
+        assert CONF_API_KEY not in diagnostics["health_check"]
+
+        config_dir = Path(original.runtime_data.coordinator.solcast.config_dir)
+
+        def _others() -> dict[str, int]:
+            return {
+                path.name: path.stat().st_mtime_ns for path in config_dir.glob("solcast*.json") if not path.name.startswith("solcast-west")
+            }
+
+        before, original_store = _others(), copy.deepcopy(hass_storage["solcast_solar.state"])
+        await hass.config_entries.async_reload(west.entry_id)
+        assert await hass.config_entries.async_unload(zwei.entry_id)
+        await hass.async_block_till_done()
+        assert west.state is ConfigEntryState.LOADED
+        assert original.state is ConfigEntryState.LOADED
+        assert _others() == before
+        assert hass_storage["solcast_solar.state"] == original_store
+        assert await _api_key_for(hass, {}) == KEY1
+        assert await _api_key_for(hass, {CONFIG_ENTRY_ID: west.entry_id}) == KEY2
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

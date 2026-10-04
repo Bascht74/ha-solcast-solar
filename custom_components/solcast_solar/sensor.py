@@ -70,6 +70,7 @@ from .entity import build_service_device_info
 from .instance import shared_unique_id
 from .log import get_logger
 from .redact import format_site_key, redact_api_key
+from .util import split_and_strip
 
 _LOGGER = get_logger(__name__)
 
@@ -528,14 +529,24 @@ def get_sensor_update_policy(key: str) -> SensorUpdatePolicy:
     return SensorUpdatePolicy.DEFAULT
 
 
+def _counted_elsewhere(hass: HomeAssistant, entry: ConfigEntry, resource_id: str) -> bool:
+    """Whether a rooftop this entry excludes is counted by another entry on one of its API keys, which then owns its sensor."""
+
+    if resource_id not in entry.options.get(EXCLUDE_SITES, []):
+        return False
+    keys = set(split_and_strip(entry.options[CONF_API_KEY]))
+    return any(
+        other.entry_id != entry.entry_id
+        and keys & set(split_and_strip(other.options[CONF_API_KEY]))
+        and resource_id not in other.options.get(EXCLUDE_SITES, [])
+        for other in hass.config_entries.async_entries(DOMAIN)
+    )
+
+
 def _warn_duplicate_rooftops(hass: HomeAssistant, entry: ConfigEntry, sites: list[dict[str, Any]]) -> None:
-    """Log when a rooftop is already loaded by another Solcast entry.
+    """Log a rooftop that another loaded Solcast entry counts too, which doubles it in the totals."""
 
-    The rooftop sensor ID is the Solcast resource ID. A second entry cannot
-    create that sensor again, so the overlap has to be visible in the log.
-    """
-
-    own_ids = {site[RESOURCE_ID] for site in sites}
+    own_ids = {site[RESOURCE_ID] for site in sites} - set(entry.options.get(EXCLUDE_SITES, []))
     if not own_ids:
         return
     for other in hass.config_entries.async_entries(DOMAIN):
@@ -548,15 +559,10 @@ def _warn_duplicate_rooftops(hass: HomeAssistant, entry: ConfigEntry, sites: lis
             other_sites = runtime.coordinator.solcast.sites
         except AttributeError:
             continue
-        shared = own_ids & {site[RESOURCE_ID] for site in other_sites}
-        excluded = set(entry.options.get(EXCLUDE_SITES, [])) | set(other.options.get(EXCLUDE_SITES, []))
+        shared = own_ids & {site[RESOURCE_ID] for site in other_sites} - set(other.options.get(EXCLUDE_SITES, []))
         for resource_id in sorted(shared):
             _LOGGER.warning(
-                "Rooftop %s is already used by Solcast entry %s. "
-                "The same rooftop in two entries shares one sensor ID, so only one of them is created%s",
-                resource_id,
-                other.title,
-                "" if resource_id in excluded else ", and both entries count it; exclude it in one of them",
+                "Rooftop %s is also counted by Solcast entry %s; exclude it in one of the two entries", resource_id, other.title
             )
 
 
@@ -638,6 +644,8 @@ async def async_setup_entry(
     # Site sensors
     _warn_duplicate_rooftops(hass, entry, coordinator.solcast.sites)
     for site in coordinator.solcast.sites:
+        if _counted_elsewhere(hass, entry, site[RESOURCE_ID]):
+            continue
         k = {
             DESCRIPTION: SensorEntityDescription(
                 key=site[RESOURCE_ID],
