@@ -2,10 +2,13 @@
 
 import logging
 
+import contextvars
+
 from homeassistant.components.solcast_solar.log import (
     _LOG_FILTER,
     _LOG_MESSAGE_REWRITES,
     get_logger,
+    set_log_instance,
 )
 
 
@@ -68,3 +71,17 @@ def test_get_logger() -> None:
     logger = get_logger("homeassistant.components.solcast_solar.test")
 
     assert _LOG_FILTER in logger.filters
+
+
+def test_log_filter_names_the_entry() -> None:
+    """Lines logged while a named entry runs carry its name; a literal percent sign survives."""
+
+    def _messages() -> list[str]:
+        set_log_instance("50% Süd")
+        with_args = logging.LogRecord("test", logging.DEBUG, "", 0, "Sites loaded for %s", ("******1",), None)
+        without_args = logging.LogRecord("test", logging.DEBUG, "", 0, "Sites loaded", None, None)
+        _LOG_FILTER.filter(with_args)
+        _LOG_FILTER.filter(without_args)
+        return [with_args.getMessage(), without_args.getMessage()]
+
+    assert contextvars.copy_context().run(_messages) == ["[50% Süd] Sites loaded for ******1", "[50% Süd] Sites loaded"]

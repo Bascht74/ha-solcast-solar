@@ -1,18 +1,22 @@
 """Two Solcast entries must stay on their own files, sensors and devices."""
 
 import copy
+from datetime import UTC, datetime as dt
 import logging
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from homeassistant import config_entries
 from homeassistant.components.recorder import Recorder
+from homeassistant.components.solcast_solar import state
 from homeassistant.components.solcast_solar.const import API_LIMIT, AUTO_UPDATE, DAMP_FACTOR, DOMAIN, INSTANCE_NAME, RESOURCE_ID
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_DEVICE_ID, CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from . import (
@@ -186,5 +190,47 @@ async def test_named_entry_through_the_flow(recorder_mock: Recorder, hass: HomeA
         await hass.async_block_till_done()
         assert sorted(path.name for path in config_dir.glob("solcast-dongwugen*.json")) == named_files
         assert (config_dir / "solcast-sites.json").is_file()
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+def _west_options() -> dict[str, Any]:
+    """Options of a named entry with its own key."""
+
+    options = copy.deepcopy(DEFAULT_INPUT1)
+    options[CONF_API_KEY] = KEY2
+    options[INSTANCE_NAME] = "West"
+    return options
+
+
+async def test_crash_state_and_logs_per_entry(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A named entry keeps its crash record in its own store, and its log lines carry its name."""
+
+    try:
+        legacy = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        west = await async_init_integration(hass, _west_options(), unique_id="solcast_west", title="Solcast West", orphan_hard_limit=False)
+        assert "[West] Writing sites cache for ******2" in caplog.text
+        assert "[West] Writing sites cache for ******1" not in caplog.text
+        assert any(record.getMessage() == "Writing sites cache for ******1" for record in caplog.records)
+        assert f"solcast_solar.state.{west.entry_id}" in hass_storage
+        assert "solcast_solar.state" in hass_storage
+
+        # West crashed with a fatal error: it stays down, the original entry still starts.
+        west_store = await state.async_get(hass, west.entry_id)
+        west_store.state.presumed_dead = True
+        west_store.state.crash_time = dt.now(UTC)
+        west_store.state.exception_class = ConfigEntryError
+        await west_store.async_save()
+        await hass.config_entries.async_reload(west.entry_id)
+        await hass.config_entries.async_reload(legacy.entry_id)
+        await hass.async_block_till_done()
+        assert west.state is ConfigEntryState.SETUP_ERROR
+        assert legacy.state is ConfigEntryState.LOADED
+        assert (await state.async_get(hass, legacy.entry_id)).state.presumed_dead is False
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

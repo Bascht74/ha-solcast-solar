@@ -133,7 +133,7 @@ from .const import (
 )
 from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, UsageStatus
-from .log import get_logger
+from .log import get_logger, set_log_instance
 from .migration import sync_legacy_keys
 from .solcastapi import SolcastApi
 from .updater import Updater
@@ -1193,6 +1193,7 @@ def _dispatcher(hass: HomeAssistant, method_name: str) -> Callable[[ServiceCall]
 
     async def handler(call: ServiceCall) -> Any:
         owner = _owner_for_call(hass, call)
+        set_log_instance(instance_name(owner._entry.options))
         return await getattr(owner, method_name)(call)
 
     return handler

@@ -34,6 +34,7 @@ from homeassistant.exceptions import (
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
+from .instance import is_named_instance
 
 _STORAGE_VERSION = 1
 
@@ -67,11 +68,17 @@ class State:
 
 
 class GlobalStateStore(Store[_StoredState]):
-    """Forced global backing store."""
+    """Backing store; the original entry keeps the global key, a named entry has its own."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
-        """Initialise with a simple all-entries key string."""
-        super().__init__(hass, _STORAGE_VERSION, f"{DOMAIN}.state")
+    def __init__(self, hass: HomeAssistant, key: str = f"{DOMAIN}.state") -> None:
+        """Initialise with the store key."""
+        super().__init__(hass, _STORAGE_VERSION, key)
+
+
+def store_key(hass: HomeAssistant, entry_id: str) -> str:
+    """Return the store key for an entry, so one entry's crash never decides another's start."""
+    entry = hass.config_entries.async_get_entry(entry_id)
+    return f"{DOMAIN}.state.{entry_id}" if entry is not None and is_named_instance(entry.options) else f"{DOMAIN}.state"
 
 
 class StateStore:
@@ -79,7 +86,7 @@ class StateStore:
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
         """Initialise the backing store."""
-        self._store = GlobalStateStore(hass)
+        self._store = GlobalStateStore(hass, store_key(hass, entry_id))
         self.state: State = State()
 
     async def async_load(self) -> None:
