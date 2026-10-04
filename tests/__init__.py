@@ -861,6 +861,9 @@ async def async_init_integration(
     mock_api: bool = True,
     timezone: str = ZONE_RAW,
     extra_sensors: ExtraSensors = ExtraSensors.NONE,
+    unique_id: str | None = "solcast_pv_solar",
+    title: str = "Solcast PV Forecast",
+    orphan_hard_limit: bool = True,
 ) -> MockConfigEntry:
     """Set up the Solcast Solar integration in HomeAssistant."""
 
@@ -875,9 +878,7 @@ async def async_init_integration(
     if options.get(AUTO_UPDATE) is not None:
         options = copy.deepcopy(options)
         options[AUTO_UPDATE] = int(options[AUTO_UPDATE])
-    entry = MockConfigEntry(
-        domain=DOMAIN, unique_id="solcast_pv_solar", title="Solcast PV Forecast", data=options, options=options, version=version
-    )
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=unique_id, title=title, data=options, options=options, version=version)
 
     entry.add_to_hass(hass)
 
@@ -888,8 +889,9 @@ async def async_init_integration(
         await async_setup_aioresponses()
 
     # Ensure that a potentially orphaned simple hard limit diagnostic entity is always present.
-    entity_registry = er.async_get(hass)
-    entity_registry.async_get_or_create("sensor", DOMAIN, unique_id="solcast_pv_forecast_hard_limit_set", config_entry=entry)
+    if orphan_hard_limit:
+        entity_registry = er.async_get(hass)
+        entity_registry.async_get_or_create("sensor", DOMAIN, unique_id="solcast_pv_forecast_hard_limit_set", config_entry=entry)
 
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
