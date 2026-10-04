@@ -53,6 +53,7 @@ This integration is not created by, maintained, endorsed nor approved by Solcast
         1. [Using an HA automation to update forecasts](#using-an-ha-automation-to-update-forecasts)
     1. [Set up HA energy dashboard settings](#set-up-ha-energy-dashboard-settings)
     1. [Rooftop site migration](#rooftop-site-migration)
+    1. [More than one Solcast entry](#more-than-one-solcast-entry)
 1. [Interacting](#interacting)
     1. [Sensors](#sensors)
     1. [Attributes](#attributes)
@@ -448,6 +449,19 @@ For serious and unexplained issues occurring, the best course of action might be
 > [!NOTE]
 >
 > Refer to the Solcast terms and conditions to determine whether your account set up following migration violates those terms. It is your responsibility to adhere to them.
+
+### More than one Solcast entry
+
+This fork allows more than one Solcast entry, for example one per inverter or per Solcast account. Add one with `Settings`, `Devices & services`, `Add integration`, `Solcast PV Forecast`.
+
+* **The first entry has no name** and stays exactly as before: `solcast.json` and the other cache files, entity and unique IDs, device name, repairs. Do not give it a name by hand; its files and IDs depend on the name, so it would start without its history and usage count.
+* **Every further entry needs a name**, for example `West`. Names that would reuse the first entry's files (`Sites`, `Usage`, `Actuals`, `Advanced`, `Dampening`, `Generation`, `Undampened`, and names starting with `Sites` or `Usage`) are refused. A name without Latin letters or digits is transliterated for the file names (`東屋根` becomes `dongwugen`).
+* **Each named entry has its own** device `Solcast <name>`, sensors (unique IDs start with the name), cache files `solcast-<name>*.json` in `config/solcast_solar`, advanced options file `solcast-<name>-advanced.json`, dampening, repairs (the title ends with the entry's name) and crash state. Log lines of a named entry start with `[<name>]`.
+* **Energy dashboard:** every entry is its own forecast source. Add each one to the `Solar production` item it belongs to.
+* **Actions:** choose the entry with the `Solcast entry` field (`config_entry_id`), or with a target (device, entity, area, floor or label). Without either, an action goes to the entry without a name, or to the only entry; otherwise it asks for an entry.
+* **One API key in two entries** works only if every site is counted by one entry. A new entry excludes the sites another entry already counts, and the integration refuses a change that would count a site twice. Both entries still call the same Solcast account, so their API limits together must fit its daily limit.
+* **Deleting a named entry** deletes its cache files, crash state and repairs. Deleting the first entry leaves its files, as before.
+* **Going back to an upstream release:** remove the named entries first. Upstream treats every entry as the first one.
 
 ## Interacting
 
