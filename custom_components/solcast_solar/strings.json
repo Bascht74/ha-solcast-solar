@@ -20,7 +20,7 @@
       "instance_name_invalid": "The name must contain a letter or a digit.",
       "instance_name_duplicate": "That name is already used.",
       "instance_name_reserved": "That name is reserved for the files of the first entry. Choose another name.",
-      "rooftop_in_use": "Rooftop {rooftops} is already counted by {entries}. Exclude it there first, or use another API key."
+      "rooftop_in_use": "Site {rooftops} is already counted by {entries}. Exclude it there first, or use another API key."
     },
     "step": {
       "reauth_confirm": {
@@ -415,7 +415,7 @@
       "limit_one_or_greater": "API limit must be one or greater",
       "limit_too_many": "There are more API limit counts entered than keys",
       "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
-      "rooftop_in_use": "Rooftop {rooftops} is already counted by {entries}. Exclude it in one of the two entries."
+      "rooftop_in_use": "Site {rooftops} is already counted by {entries}. Exclude it in one of the two entries."
     },
     "step": {
       "dampen": {
@@ -555,7 +555,7 @@
       "fields": {
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       }
     },
@@ -565,7 +565,7 @@
       "fields": {
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       }
     },
@@ -575,7 +575,7 @@
       "fields": {
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       }
     },
@@ -585,7 +585,7 @@
       "fields": {
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       }
     },
@@ -598,7 +598,7 @@
         },
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       },
       "name": "Get forecasts dampening"
@@ -609,7 +609,7 @@
       "fields": {
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       }
     },
@@ -626,7 +626,7 @@
         },
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       },
       "name": "Query estimated actual data"
@@ -652,7 +652,7 @@
         },
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       },
       "name": "Query forecast data"
@@ -663,7 +663,7 @@
       "fields": {
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       }
     },
@@ -676,7 +676,7 @@
         },
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       },
       "name": "Set custom hours sensor"
@@ -694,7 +694,7 @@
         },
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       },
       "name": "Set forecasts dampening"
@@ -708,7 +708,7 @@
         },
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       },
       "name": "Set inverter forecast hard limit"
@@ -798,7 +798,7 @@
         },
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       },
       "name": "Set options"
@@ -809,7 +809,7 @@
       "fields": {
         "config_entry_id": {
           "name": "Solcast entry",
-          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used."
         }
       }
     }

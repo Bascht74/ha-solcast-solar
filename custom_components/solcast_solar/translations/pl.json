@@ -15,7 +15,12 @@
       "limit_not_number": "Limit API nie jest liczbą",
       "limit_one_or_greater": "Limit API musi wynosić jeden lub więcej",
       "limit_too_many": "Wprowadzono więcej limitów API niż kluczy",
-      "limit_exceeds_maximum": "Limit API nie może przekraczać 50 (i prawdopodobnie powinien wynosić 10 lub mniej)."
+      "limit_exceeds_maximum": "Limit API nie może przekraczać 50 (i prawdopodobnie powinien wynosić 10 lub mniej).",
+      "instance_name_required": "Kolejny wpis wymaga nazwy.",
+      "instance_name_invalid": "Nazwa musi zawierać literę lub cyfrę.",
+      "instance_name_duplicate": "Ta nazwa jest już używana.",
+      "instance_name_reserved": "Ta nazwa jest zarezerwowana dla plików pierwszego wpisu. Wybierz inną nazwę.",
+      "rooftop_in_use": "Witryna {rooftops} jest już liczona przez {entries}. Najpierw wyklucz ją tam lub użyj innego klucza API."
     },
     "step": {
       "reauth_confirm": {
@@ -44,13 +49,15 @@
         "data": {
           "api_key": "Klucz API",
           "api_limit": "Limit API",
-          "auto_update": "Automatyczna aktualizacja"
+          "auto_update": "Automatyczna aktualizacja",
+          "instance_name": "Nazwa"
         },
         "description": "Dane konta Solcast\n\n(Jeśli nie ma automatycznej aktualizacji, wymagana jest automatyzacja - zobacz dokumentację integracji)\n\nAPI Solcast musi być dostępne, aby wstępnie skonfigurować tę integrację. Jeśli otrzymasz komunikat o stanie '429 / Try again later', API jest niedostępne i konfiguracja nie może zostać ukończona. Musisz poczekać. Należy pamiętać, że strona stanu API pod adresem status.solcast.com prawie na pewno nie pokaże żadnych problemów z API. Przyczyną jest najprawdopodobniej pojedynczy nieodpowiedzialny użytkownik API, który wpływa na dostępność dla wszystkich hobbystów.",
         "data_description": {
           "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami",
           "api_limit": "Wprowadź dzienny limit aktualizacji prognozy, rozdzielony przecinkami przy użyciu wielu kluczy",
-          "auto_update": "Jeśli nie używasz automatycznej aktualizacji, utwórz automatyzację, która okresowo wywołuje akcję \"solcast_solar.update_forecasts\", przestrzegając zalecanego przez Solcast maksymalnego łącznego limitu (zwykle łącznie dziesięć razy dziennie dla jednego miejsca dachowego, a przy dwóch miejscach pięć razy dziennie)"
+          "auto_update": "Jeśli nie używasz automatycznej aktualizacji, utwórz automatyzację, która okresowo wywołuje akcję \"solcast_solar.update_forecasts\", przestrzegając zalecanego przez Solcast maksymalnego łącznego limitu (zwykle łącznie dziesięć razy dziennie dla jednego miejsca dachowego, a przy dwóch miejscach pięć razy dziennie)",
+          "instance_name": "Nazwa tej instalacji, na przykład Zachód. Pozostaw puste tylko dla pierwszego wpisu. Kolejne wpisy wymagają nazwy, aby ich pliki i czujniki pozostały oddzielne."
         }
       }
     }
@@ -301,6 +308,12 @@
     },
     "limit_exceeds_maximum": {
       "message": "Limit API nie może przekraczać 50 (i prawdopodobnie powinien wynosić 10 lub mniej)."
+    },
+    "instance_required": {
+      "message": "Załadowano lub wybrano więcej niż jeden wpis Solcast. Wybierz jeden wpis Solcast."
+    },
+    "instance_unknown": {
+      "message": "Wybrany wpis lub cel nie należy do żadnego załadowanego wpisu Solcast."
     }
   },
   "issues": {
@@ -398,7 +411,8 @@
       "limit_not_number": "Limit API nie jest liczbą",
       "limit_one_or_greater": "Limit API musi wynosić jeden lub więcej",
       "limit_too_many": "Wprowadzono więcej limitów API niż kluczy",
-      "limit_exceeds_maximum": "Limit API nie może przekraczać 50 (i prawdopodobnie powinien wynosić 10 lub mniej)."
+      "limit_exceeds_maximum": "Limit API nie może przekraczać 50 (i prawdopodobnie powinien wynosić 10 lub mniej).",
+      "rooftop_in_use": "Witryna {rooftops} jest już liczona przez {entries}. Wyklucz ją w jednym z dwóch wpisów."
     },
     "step": {
       "dampen": {
@@ -534,19 +548,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Usuwa plik solcast.json, aby usunąć wszystkie aktualne dane witryny Solcast.",
-      "name": "Wyczyść wszystkie zapisane dane Solcast"
+      "name": "Wyczyść wszystkie zapisane dane Solcast",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
+        }
+      }
     },
     "diagnostic": {
       "description": "Uruchamia diagnostyczny autotest w celu sprawdzenia łączności z API, integralności plików pamięci podręcznej, dostępności encji generacji oraz ogólnego stanu konfiguracji.",
-      "name": "Autotest diagnostyczny"
+      "name": "Autotest diagnostyczny",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
+        }
+      }
     },
     "force_update_estimates": {
       "description": "Force pobiera najnowsze szacunkowe dane rzeczywiste z Solcast.",
-      "name": "Wymuś aktualizację szacunkowych wartości rzeczywistych"
+      "name": "Wymuś aktualizację szacunkowych wartości rzeczywistych",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Force pobiera najnowsze dane prognoz Solcast.",
-      "name": "Wymuś aktualizuj"
+      "name": "Wymuś aktualizuj",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
+        }
+      }
     },
     "get_dampening": {
       "description": "Uzyskaj prognozowane współczynniki tłumienia.",
@@ -554,13 +592,23 @@
         "site": {
           "description": "Opcjonalne miejsce do tłumienia. (Uwaga: nie będzie działać, jeśli nie jest włączone tłumienie szczegółowe.)",
           "name": "Identyfikator witryny"
+        },
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
         }
       },
       "name": "Uzyskaj prognozy tłumienia"
     },
     "get_options": {
       "description": "Pobierz aktualne opcje konfiguracji integracji.",
-      "name": "Pobierz opcje"
+      "name": "Pobierz opcje",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
+        }
+      }
     },
     "query_estimate_data": {
       "description": "Zwraca zestaw danych lub wartość dla podanego zapytania.",
@@ -572,6 +620,10 @@
         "start_date_time": {
           "description": "Interroga zdarzenia danych rzeczywistych szacowanych od czasu rozpoczęcia.",
           "name": "Czas rozpoczęcia"
+        },
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
         }
       },
       "name": "Zapytanie o szacowane rzeczywiste dane"
@@ -594,13 +646,23 @@
         "undampened": {
           "description": "Opcjonalna wartość logiczna umożliwiająca pobranie niezakłóconej prognozy",
           "name": "Nietłumiony"
+        },
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
         }
       },
       "name": "Pobierz dane prognoz"
     },
     "remove_hard_limit": {
       "description": "Usuń ustawiony limit.",
-      "name": "Usuń twardy limit prognoz inwertera"
+      "name": "Usuń twardy limit prognoz inwertera",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
+        }
+      }
     },
     "set_custom_hours": {
       "description": "Ustaw niestandardową liczbę godzin czujnika X godzin.",
@@ -608,6 +670,10 @@
         "hours": {
           "description": "Liczba godzin do ustawienia (1-144).",
           "name": "Godziny"
+        },
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
         }
       },
       "name": "Ustaw niestandardowy czujnik godzin"
@@ -622,6 +688,10 @@
         "site": {
           "description": "Opcjonalne miejsce do ustawienia tłumienia dla każdego miejsca. (Uwaga: pominięcie miejsca czyści tłumienie w poszczególnych miejscach, chyba że jest to 48 wartości.)",
           "name": "Identyfikator witryny"
+        },
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
         }
       },
       "name": "Ustaw tłumienie prognoz"
@@ -632,6 +702,10 @@
         "hard_limit": {
           "description": "Ustaw maksymalną wartość w watach, jaką może wyprodukować inwerter. Użyj 0, aby wyłączyć limit.",
           "name": "Wartość limitu w watach"
+        },
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
         }
       },
       "name": "Ustaw twardy limit prognoz inwertera"
@@ -718,13 +792,23 @@
         "use_actuals": {
           "description": "Historia prognoz dla panelu energetycznego: 0=prognozy, 1=wartości rzeczywiste, 2=wytłumione wartości rzeczywiste.",
           "name": "Użyj wartości rzeczywistych"
+        },
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
         }
       },
       "name": "Ustaw opcje"
     },
     "update_forecasts": {
       "description": "Pobierz najnowsze dane prognoz Solcast.",
-      "name": "Aktualizuj"
+      "name": "Aktualizuj",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis Solcast",
+          "description": "Wpis Solcast, którego dotyczy ta akcja. Bez niego decyduje wybrany cel; bez celu używany jest wpis bez nazwy lub jedyny wpis."
+        }
+      }
     }
   },
   "system_health": {

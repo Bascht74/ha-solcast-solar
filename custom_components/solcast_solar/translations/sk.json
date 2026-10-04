@@ -15,7 +15,12 @@
       "limit_not_number": "Limit API nie je číslo",
       "limit_one_or_greater": "Limit API musí byť jeden alebo väčší",
       "limit_too_many": "Je zadaných viac limitov API ako kľúčov",
-      "limit_exceeds_maximum": "Limit API nemôže prekročiť 50 (a pravdepodobne by mal byť 10 alebo menej)."
+      "limit_exceeds_maximum": "Limit API nemôže prekročiť 50 (a pravdepodobne by mal byť 10 alebo menej).",
+      "instance_name_required": "Ďalší záznam potrebuje názov.",
+      "instance_name_invalid": "Názov musí obsahovať písmeno alebo číslicu.",
+      "instance_name_duplicate": "Tento názov sa už používa.",
+      "instance_name_reserved": "Tento názov je vyhradený pre súbory prvého záznamu. Vyberte iný názov.",
+      "rooftop_in_use": "Stránku {rooftops} už započítava {entries}. Najprv ju tam vylúčte alebo použite iný kľúč API."
     },
     "step": {
       "reauth_confirm": {
@@ -44,13 +49,15 @@
         "data": {
           "api_key": "Kľúč API",
           "api_limit": "Kvóta API",
-          "auto_update": "Automatická aktualizácia"
+          "auto_update": "Automatická aktualizácia",
+          "instance_name": "Názov"
         },
         "description": "Podrobnosti o účte Solcast\n\n(Ak nie je automatická aktualizácia, potom je potrebná automatizácia – pozrite si integračnú dokumentáciu)\n\nAPI Solcast musí byť dostupné na počiatočnú konfiguráciu tejto integrácie. Ak dostanete stavovú správu '429 / Try again later', API nie je dostupné a konfiguráciu nie je možné dokončiť. Musíte počkať. Všimnite si, že stránka stavu API na status.solcast.com takmer určite neukáže žiadne problémy s API. Príčina spočíva s najväčšou pravdepodobnosťou v jedinom problematickom používateľovi API, ktorý ovplyvňuje dostupnosť pre všetkých hobbistov.",
         "data_description": {
           "api_key": "Zadajte jeden alebo viac kľúčov API Solcast, oddelených čiarkami",
           "api_limit": "Zadajte denný limit aktualizácií predpovede, oddelený čiarkami pri použití viacerých kľúčov",
-          "auto_update": "Ak nepoužívate automatickú aktualizáciu, vytvorte automatizáciu, ktorá pravidelne volá akciu \"solcast_solar.update_forecasts\", pričom dodržujte Solcastom odporúčaný maximálny celkový limit (zvyčajne spolu desaťkrát denne pre jedno strešné miesto, alebo pri dvoch miestach päťkrát denne)"
+          "auto_update": "Ak nepoužívate automatickú aktualizáciu, vytvorte automatizáciu, ktorá pravidelne volá akciu \"solcast_solar.update_forecasts\", pričom dodržujte Solcastom odporúčaný maximálny celkový limit (zvyčajne spolu desaťkrát denne pre jedno strešné miesto, alebo pri dvoch miestach päťkrát denne)",
+          "instance_name": "Názov tohto zariadenia, napríklad Západ. Prázdny nechajte len pri prvom zázname. Ďalšie záznamy potrebujú názov, aby ich súbory a senzory zostali oddelené."
         }
       }
     }
@@ -301,6 +308,12 @@
     },
     "limit_exceeds_maximum": {
       "message": "Limit API nemôže prekročiť 50 (a pravdepodobne by mal byť 10 alebo menej)."
+    },
+    "instance_required": {
+      "message": "Je načítaných alebo vybraných viac záznamov Solcast. Vyberte jeden záznam Solcast."
+    },
+    "instance_unknown": {
+      "message": "Vybraný záznam alebo cieľ nepatrí k žiadnemu načítanému záznamu Solcast."
     }
   },
   "issues": {
@@ -398,7 +411,8 @@
       "limit_not_number": "Limit API nie je číslo",
       "limit_one_or_greater": "Limit API musí byť jeden alebo väčší",
       "limit_too_many": "Je zadaných viac limitov API ako kľúčov",
-      "limit_exceeds_maximum": "Limit API nemôže prekročiť 50 (a pravdepodobne by mal byť 10 alebo menej)."
+      "limit_exceeds_maximum": "Limit API nemôže prekročiť 50 (a pravdepodobne by mal byť 10 alebo menej).",
+      "rooftop_in_use": "Stránku {rooftops} už započítava {entries}. Vylúčte ju v jednom z dvoch záznamov."
     },
     "step": {
       "dampen": {
@@ -534,19 +548,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Odstráni súbor solcast.json a odstráni všetky aktuálne údaje lokality solcast.",
-      "name": "Vymažte všetky uložené údaje Solcast"
+      "name": "Vymažte všetky uložené údaje Solcast",
+      "fields": {
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
+        }
+      }
     },
     "diagnostic": {
       "description": "Spustí diagnostický autotest na overenie konektivity API, integrity súborov vyrovnávacej pamäte, dostupnosti entít výroby a celkového stavu konfigurácie.",
-      "name": "Diagnostický autotest"
+      "name": "Diagnostický autotest",
+      "fields": {
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
+        }
+      }
     },
     "force_update_estimates": {
       "description": "Vynúti načítanie najnovších odhadovaných skutočných údajov zo Solcastu.",
-      "name": "Vynútiť aktualizáciu odhadovaných skutočností"
+      "name": "Vynútiť aktualizáciu odhadovaných skutočností",
+      "fields": {
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Force načítava najnovšie predpovede zo Solcastu.",
-      "name": "Vynútiť Aktualizácia"
+      "name": "Vynútiť Aktualizácia",
+      "fields": {
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
+        }
+      }
     },
     "get_dampening": {
       "description": "Získajte predpovedané tlmiace faktory.",
@@ -554,13 +592,23 @@
         "site": {
           "description": "Voliteľné miesto na tlmenie. (Poznámka: Nebude fungovať, ak nie je povolené granulárne tlmenie.)",
           "name": "ID lokality"
+        },
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
         }
       },
       "name": "Získajte tlmenie predpovedí"
     },
     "get_options": {
       "description": "Získať aktuálne možnosti konfigurácie integrácie.",
-      "name": "Získať možnosti"
+      "name": "Získať možnosti",
+      "fields": {
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
+        }
+      }
     },
     "query_estimate_data": {
       "description": "Vráti množinu údajov alebo hodnotu pre daný dotaz.",
@@ -572,6 +620,10 @@
         "start_date_time": {
           "description": "Interroga udalosti s údajmi o skutočnosti od času začiatku.",
           "name": "Čas začiatku"
+        },
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
         }
       },
       "name": "Dotaz odhadovaných skutočných údajov"
@@ -594,13 +646,23 @@
         "undampened": {
           "description": "Voliteľná booleovská hodnota na získanie netlmenej predpovede",
           "name": "Netlmené"
+        },
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
         }
       },
       "name": "Dopytujte údaje predpovede"
     },
     "remove_hard_limit": {
       "description": "Odstráňte nastavený limit.",
-      "name": "Odstráňte pevný limit predpovede meniča"
+      "name": "Odstráňte pevný limit predpovede meniča",
+      "fields": {
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
+        }
+      }
     },
     "set_custom_hours": {
       "description": "Nastavte vlastný počet hodín senzora X hodín.",
@@ -608,6 +670,10 @@
         "hours": {
           "description": "Počet hodín, ktoré sa majú nastaviť (1 – 144).",
           "name": "Hodiny"
+        },
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
         }
       },
       "name": "Nastaviť vlastný senzor hodín"
@@ -622,6 +688,10 @@
         "site": {
           "description": "Voliteľné miesto na nastavenie tlmenia na mieste. (Poznámka: Vynechaním lokality sa vymaže tlmenie pre jednotlivé lokality, pokiaľ nie sú hodnoty 48.)",
           "name": "ID lokality"
+        },
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
         }
       },
       "name": "Nastavte tlmenie predpovedí"
@@ -632,6 +702,10 @@
         "hard_limit": {
           "description": "Nastavte maximálnu hodnotu vo wattoch, ktorú môže menič produkovať. Použite 0 na deaktiváciu limitu.",
           "name": "Limitná hodnota vo wattoch"
+        },
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
         }
       },
       "name": "Nastavte pevný limit predpovede meniča"
@@ -718,13 +792,23 @@
         "use_actuals": {
           "description": "História predpovedí pre panel Energie: 0=predpovede, 1=skutočné hodnoty, 2=tlmené skutočné hodnoty.",
           "name": "Použiť skutočné hodnoty"
+        },
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
         }
       },
       "name": "Nastaviť možnosti"
     },
     "update_forecasts": {
       "description": "Načítava najnovšie predpovede zo Solcastu.",
-      "name": "Aktualizácia"
+      "name": "Aktualizácia",
+      "fields": {
+        "config_entry_id": {
+          "name": "Záznam Solcast",
+          "description": "Záznam Solcast, na ktorý sa táto akcia vzťahuje. Bez neho rozhoduje vybraný cieľ; bez cieľa sa použije záznam bez názvu alebo jediný záznam."
+        }
+      }
     }
   },
   "system_health": {
