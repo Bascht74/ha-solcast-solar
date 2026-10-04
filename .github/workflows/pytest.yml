@@ -1,9 +1,7 @@
-name: test_multi_instance
-run-name: Each entry keeps its own cache files, sensors, device and service calls. A rooftop used twice is logged and not created twice.
+name: Tests
 
 on:
   push:
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -14,87 +12,60 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  multi-instance:
-    name: Latest stable Home Assistant. Own files, sensors, device and calls per entry. A shared rooftop is only logged.
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
+  pytest:
+    name: pytest, Home Assistant ${{ matrix.core }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # The latest release and the current beta; raise both when a new one is out.
+        core: ["2026.9.4", "2026.10.0b0"]
+    env:
+      # PyPI tzdata: Ubuntu's zone data inverts the Europe/Dublin DST tests.
+      PYTHONTZPATH: ""
     steps:
       - name: Checkout integration
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: integration
+          persist-credentials: false
 
-      - name: Resolve the latest stable Home Assistant release
-        id: core
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag=$(gh api repos/home-assistant/core/releases/latest --jq .tag_name)
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "Using Home Assistant $tag"
-
-      - name: Checkout Home Assistant core
-        uses: actions/checkout@v4
+      - name: Checkout Home Assistant Core
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: home-assistant/core
-          ref: ${{ steps.core.outputs.tag }}
+          ref: ${{ matrix.core }}
           path: core
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version-file: core/.python-version
 
-      - name: Install uv
-        run: python -m pip install uv
-
-      - name: Install Home Assistant test environment
+      - name: Install Core test requirements
         working-directory: core
         run: |
-          uv pip install --system \
-            -e . \
-            -r requirements_all.txt \
-            -r requirements_test.txt \
-            "aiofiles>=23.2.0" \
-            "watchfiles>=1.0.0" \
-            colorlog \
-            --config-settings editable_mode=compat
+          python -m pip install uv
+          extra=$(grep -E "^(SQLAlchemy|fnv-hash-fast|psutil-home-assistant|paho-mqtt|aiohasupervisor)==" requirements_all.txt)
+          reqs=$(python -c 'import json; print(" ".join(json.load(open("../integration/custom_components/solcast_solar/manifest.json"))["requirements"]))')
+          # shellcheck disable=SC2086
+          uv pip install --system -e . -r requirements_test.txt $extra $reqs colorlog flask isodate --config-settings editable_mode=compat
 
-      - name: Mount the integration into core
+      - name: Mount the integration into Core
         run: |
-          rm -rf core/homeassistant/components/solcast_solar
+          rm -rf core/homeassistant/components/solcast_solar core/tests/components/solcast_solar
           cp -a integration/custom_components/solcast_solar core/homeassistant/components/solcast_solar
-          mkdir -p core/tests/components
-          rm -rf core/tests/components/solcast_solar
           cp -a integration/tests core/tests/components/solcast_solar
-
-      - name: Keep autospec from evaluating type-checking imports
-        run: |
-          python - << 'PY'
-          import inspect
-          from pathlib import Path
-          target = Path(inspect.__file__).parent / "sitecustomize.py"
-          target.write_text(
-              "import annotationlib\n"
-              "import inspect as _inspect\n"
-              "\n"
-              "_orig = annotationlib.get_annotations\n"
-              "\n"
-              "def _safe_annotations(*args, **kwargs):\n"
-              "    try:\n"
-              "        return _orig(*args, **kwargs)\n"
-              "    except NameError:\n"
-              "        return {}\n"
-              "\n"
-              "annotationlib.get_annotations = _safe_annotations\n"
-              "_inspect.get_annotations = _safe_annotations\n"
-          )
-          PY
 
       - name: Compile translations
         working-directory: core
-        run: python3 -m script.translations develop --all
+        run: python -m script.translations develop --all
 
-      - name: Run the two-entry tests
+      - name: Run the whole suite with coverage
         working-directory: core
-        run: pytest tests/components/solcast_solar/test_multi_instance.py -vv --timeout=300
+        run: >-
+          python -m pytest tests/components/solcast_solar -n auto --dist=worksteal --timeout=300 -p no:sugar
+          --cov=homeassistant.components.solcast_solar --cov-config=tests/components/solcast_solar/.coveragerc
+          --cov-report=term-missing:skip-covered --cov-fail-under=100
