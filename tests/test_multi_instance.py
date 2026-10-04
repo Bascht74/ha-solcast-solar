@@ -17,11 +17,13 @@ from homeassistant.components.solcast_solar.config_flow import (
     SolcastSolarOptionFlowHandler,
 )
 from homeassistant.components.solcast_solar.const import (
+    AFFIRMATION_RECONFIGURED,
     AFFIRMATION_UNCHANGED,
     API_LIMIT,
     AUTO_DAMPEN,
     AUTO_UPDATE,
     CONFIG_ENTRY_ID,
+    CUSTOM_HOURS,
     DAMP_FACTOR,
     DOMAIN,
     ENTRY_ID,
@@ -582,5 +584,64 @@ async def test_entries_together_and_apart(
         assert hass_storage["solcast_solar.state"] == original_store
         assert await _api_key_for(hass, {}) == KEY1
         assert await _api_key_for(hass, {CONFIG_ENTRY_ID: west.entry_id}) == KEY2
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_removing_a_named_entry_cleans_only_its_own(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """Deleting a named entry removes its files, store and repairs; the original entry keeps everything."""
+
+    try:
+        original = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        west = await async_init_integration(hass, _west_options(), unique_id="solcast_west", title="Solcast West", orphan_hard_limit=False)
+        for entry in (original, west):
+            ir.async_create_issue(
+                hass,
+                DOMAIN,
+                repair_issue_id(ISSUE_RECORDS_MISSING, entry),
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_RECORDS_MISSING,
+                translation_placeholders=repair_placeholders(entry),
+            )
+
+        # A title the user set survives an options change.
+        hass.config_entries.async_update_entry(west, title="Mein Westdach")
+        flow = SolcastSolarOptionFlowHandler(west)
+        flow.hass = hass
+        result = await flow.async_step_init({**west.options, SITE_EXPORT_ENTITY: [], CUSTOM_HOURS: 3})
+        assert result.get("reason") == AFFIRMATION_RECONFIGURED
+        await hass.async_block_till_done()
+        assert west.title == "Mein Westdach"
+
+        config_dir = get_config_dir(hass.config.config_dir)
+
+        def _files(prefix: str) -> list[str]:
+            return sorted(path.name for path in config_dir.glob("solcast*") if path.name.startswith(prefix))
+
+        original_files = [name for name in _files("solcast") if not name.startswith("solcast-west")]
+        assert _files("solcast-west")
+        assert f"solcast_solar.state.{west.entry_id}" in hass_storage
+
+        await hass.config_entries.async_remove(west.entry_id)
+        await hass.async_block_till_done()
+        assert _files("solcast-west") == []
+        assert _files("solcast") == original_files
+        assert f"solcast_solar.state.{west.entry_id}" not in hass_storage
+        assert "solcast_solar.state" in hass_storage
+        assert issue_registry.async_get_issue(DOMAIN, f"{ISSUE_RECORDS_MISSING}_{west.entry_id}") is None
+        assert issue_registry.async_get_issue(DOMAIN, ISSUE_RECORDS_MISSING) is not None
+
+        # An entry named before reserved names were refused shares the original's file names: nothing is deleted.
+        sites = MockConfigEntry(domain=DOMAIN, title="Solcast Sites", options={**DEFAULT_INPUT1, INSTANCE_NAME: "Sites"})
+        sites.add_to_hass(hass)
+        await hass.config_entries.async_remove(sites.entry_id)
+        assert _files("solcast") == original_files
+        assert original.state is ConfigEntryState.LOADED
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

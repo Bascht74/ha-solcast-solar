@@ -25,6 +25,7 @@ from homeassistant.helpers import (
     aiohttp_client,
     config_validation as cv,
     entity_registry as er,
+    issue_registry as ir,
 )
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
@@ -79,7 +80,15 @@ from .const import (
 )
 from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, HistoryType, SitesStatus, UsageStatus
-from .instance import cache_file_path, cache_stem, instance_name
+from .instance import (
+    cache_file_path,
+    cache_stem,
+    instance_name,
+    instance_slug,
+    is_named_instance,
+    is_reserved_slug,
+    shared_unique_id,
+)
 from .issues import sync_actuals_api_limit_issue
 from .log import get_logger, set_log_instance
 from .solcastapi import ConnectionOptions, SolcastApi
@@ -450,6 +459,25 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove a named entry's cache files, crash store and repairs; the original entry's are never touched."""
+
+    # A reserved name from before the flow refused it would share the original entry's file names.
+    if not is_named_instance(entry.options) or is_reserved_slug(instance_slug(instance_name(entry.options))):
+        return
+    cache = Path(cache_file_path(hass, entry.options))
+
+    def _remove_files() -> None:
+        for path in [cache, *cache.parent.glob(f"{cache.stem}-*")]:
+            path.unlink(missing_ok=True)
+
+    await hass.async_add_executor_job(_remove_files)
+    await state.async_remove_named(hass, entry.entry_id)
+    for domain, issue_id in list(ir.async_get(hass).issues):
+        if domain == DOMAIN and issue_id.endswith(f"_{entry.entry_id}"):
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
+
+
 async def tasks_cancel(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Cancel all tasks, both coordinator and solcast.
 
@@ -507,10 +535,12 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
             entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
             if old_multi_key:
                 _LOGGER.debug("Hard limit changed from multi to single")
-                clean_up = [f"hard_limit_{api_key[-6:]}" for api_key in entry.options[CONF_API_KEY].split(",")]
+                clean_up = [
+                    shared_unique_id(entry.options, f"hard_limit_{api_key[-6:]}") for api_key in entry.options[CONF_API_KEY].split(",")
+                ]
             else:
                 _LOGGER.debug("Hard limit changed from single to multi")
-                clean_up = [HARD_LIMIT]
+                clean_up = [shared_unique_id(entry.options, HARD_LIMIT)]
             for entity in entities:
                 if entity.unique_id in clean_up:
                     _LOGGER.warning("Cleaning up orphaned %s", entity.entity_id)

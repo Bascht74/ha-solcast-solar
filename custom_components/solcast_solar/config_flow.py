@@ -91,6 +91,7 @@ from .instance import (
     instance_slug,
     is_named_instance,
     is_reserved_slug,
+    saved_title,
 )
 from .log import get_logger
 from .migration import sync_legacy_keys
@@ -277,7 +278,7 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                         self._mark_reset_old_key()
                         sync_legacy_keys(all_config_data)
                         self.hass.config_entries.async_update_entry(
-                            self._entry, title=entry_title(all_config_data), options=all_config_data
+                            self._entry, title=saved_title(self._entry, all_config_data), options=all_config_data
                         )
                     if self._entry.state is not ConfigEntryState.LOADED:
                         _LOGGER.debug("Loading presumed dead integration")
@@ -358,7 +359,7 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                         if key_changed:
                             self._mark_reset_old_key()
                         self.hass.config_entries.async_update_entry(
-                            self._entry, title=entry_title(all_config_data), options=all_config_data
+                            self._entry, title=saved_title(self._entry, all_config_data), options=all_config_data
                         )
                         if self._entry.state is not ConfigEntryState.LOADED:
                             _LOGGER.debug("Loading presumed dead integration")
@@ -740,7 +741,7 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
                         if self._api_key_changed:
                             await set_sensitive(self.hass, self._entry)
                         self.hass.config_entries.async_update_entry(
-                            self._entry, title=entry_title(all_config_data), options=all_config_data
+                            self._entry, title=saved_title(self._entry, all_config_data), options=all_config_data
                         )
                         await self.check_dead()
                         return self.async_abort(reason=AFFIRMATION_RECONFIGURED)
@@ -869,7 +870,9 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
             if all_config_data != self._entry.options:
                 if self._api_key_changed:
                     await set_sensitive(self.hass, self._entry)
-                self.hass.config_entries.async_update_entry(self._entry, title=entry_title(all_config_data), options=all_config_data)
+                self.hass.config_entries.async_update_entry(
+                    self._entry, title=saved_title(self._entry, all_config_data), options=all_config_data
+                )
                 await self.check_dead()
                 return self.async_abort(reason=AFFIRMATION_RECONFIGURED)
             return self.async_abort(reason=AFFIRMATION_UNCHANGED)

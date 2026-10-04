@@ -159,6 +159,12 @@ async def async_get(hass: HomeAssistant, entry_id: str) -> StateStore:
     return store
 
 
+async def async_remove_named(hass: HomeAssistant, entry_id: str) -> None:
+    """Remove the store of a named entry that is being deleted."""
+    _STORE.pop(entry_id, None)
+    await GlobalStateStore(hass, f"{DOMAIN}.state.{entry_id}").async_remove()
+
+
 async def raise_and_record(
     hass: HomeAssistant,
     entry: ConfigEntry | None,

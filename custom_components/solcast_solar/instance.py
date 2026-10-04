@@ -69,6 +69,12 @@ def entry_title(options: Mapping[str, Any] | None) -> str:
     return f"Solcast {name}"
 
 
+def saved_title(entry: Any, options: Mapping[str, Any] | None) -> str:
+    """Return the title to save with changed options; a named entry keeps the title the user may have set."""
+
+    return str(entry.title) if is_named_instance(options) else TITLE
+
+
 def device_name_for(options: Mapping[str, Any] | None) -> str:
     """Return the device name. The original entry stays ``Solcast PV Forecast``."""
 
@@ -131,16 +137,9 @@ def repair_issue_id(issue_id: str, entry: Any) -> str:
 
 
 def repair_placeholders(entry: Any, extra: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Placeholders for a repair. ``instance`` is the config entry title."""
+    """Placeholders for a repair; ``instance`` adds a named entry's title to the repair title, and is empty otherwise."""
 
-    title = ""
-    options = None
-    if entry is not None:
-        title = str(getattr(entry, "title", "") or "").strip()
-        options = getattr(entry, "options", None)
-    if not title:
-        title = device_name_for(options)
-    placeholders = {"instance": title}
-    if extra:
-        placeholders.update(extra)
-    return placeholders
+    instance = ""
+    if entry is not None and is_named_instance(entry.options):
+        instance = f" ({str(entry.title or '').strip() or device_name_for(entry.options)})"
+    return {"instance": instance, **(extra or {})}
