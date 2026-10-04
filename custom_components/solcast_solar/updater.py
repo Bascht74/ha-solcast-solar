@@ -41,6 +41,7 @@ from .const import (
     TASK_NEW_DAY_GENERATION,
 )
 from .enums import AutoUpdate
+from .instance import shared_unique_id
 from .issues import sync_actuals_quota_risk_issue
 from .util import ordinal
 
@@ -438,7 +439,9 @@ class Updater:
 
         if self._coordinator.solcast.options.get_actuals:
             entity_registry = er.async_get(self._coordinator.hass)
-            entity_id = entity_registry.async_get_entity_id(SENSOR, DOMAIN, ENTITY_ACCURACY)
+            entity_id = entity_registry.async_get_entity_id(
+                SENSOR, DOMAIN, shared_unique_id(self._coordinator.entry.options, ENTITY_ACCURACY)
+            )
             if entity_id is not None:
                 entity = entity_registry.async_get(entity_id)
                 if entity is not None and not entity.disabled_by:

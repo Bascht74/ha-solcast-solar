@@ -5,12 +5,14 @@ from datetime import UTC, datetime as dt
 import logging
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from homeassistant import config_entries
 from homeassistant.components.recorder import Recorder
 from homeassistant.components.solcast_solar import state
+from homeassistant.components.solcast_solar.updater import Updater
 from homeassistant.components.solcast_solar.const import API_LIMIT, AUTO_UPDATE, DAMP_FACTOR, DOMAIN, INSTANCE_NAME, RESOURCE_ID
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_DEVICE_ID, CONF_API_KEY
@@ -232,5 +234,39 @@ async def test_crash_state_and_logs_per_entry(
         assert west.state is ConfigEntryState.SETUP_ERROR
         assert legacy.state is ConfigEntryState.LOADED
         assert (await state.async_get(hass, legacy.entry_id)).state.presumed_dead is False
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+@pytest.mark.parametrize("original_name", [pytest.param("", id="original_unnamed"), pytest.param("Süd-&Westdach", id="original_named")])
+async def test_accuracy_follows_each_entry_sensor(recorder_mock: Recorder, hass: HomeAssistant, original_name: str) -> None:
+    """Accuracy is calculated for an entry only when its own accuracy sensor is enabled."""
+
+    original_options = copy.deepcopy(DEFAULT_INPUT1) | ({INSTANCE_NAME: original_name} if original_name else {})
+    try:
+        original = await async_init_integration(hass, original_options)
+        west = await async_init_integration(hass, _west_options(), unique_id="solcast_west", title="Solcast West", orphan_hard_limit=False)
+        registry = er.async_get(hass)
+        prefix = "suedwestdach_" if original_name else ""
+        original_accuracy = registry.async_get_entity_id("sensor", DOMAIN, f"{prefix}accuracy")
+        west_accuracy = registry.async_get_entity_id("sensor", DOMAIN, "west_accuracy")
+        assert original_accuracy is not None
+        assert west_accuracy is not None
+        registry.async_update_entity(west_accuracy, disabled_by=None)
+
+        calculated: list[str] = []
+
+        async def _record(updater: Updater) -> None:
+            calculated.append(updater._coordinator.entry.entry_id)  # pyright: ignore[reportPrivateUsage]
+
+        with patch.object(Updater, "calculate_accuracy_metrics", _record):
+            for entry in (original, west):
+                await entry.runtime_data.coordinator.updater.update_estimated_actuals_history()
+            assert calculated == [west.entry_id]
+
+            registry.async_update_entity(original_accuracy, disabled_by=None)
+            calculated.clear()
+            await original.runtime_data.coordinator.updater.update_estimated_actuals_history()
+            assert calculated == [original.entry_id]
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
