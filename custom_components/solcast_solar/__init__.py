@@ -468,7 +468,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     cache = Path(cache_file_path(hass, entry.options))
 
     def _remove_files() -> None:
-        for path in [cache, *cache.parent.glob(f"{cache.stem}-*")]:
+        for path in (cache, *cache.parent.glob(f"{cache.stem}-*")):
             path.unlink(missing_ok=True)
 
     await hass.async_add_executor_job(_remove_files)
