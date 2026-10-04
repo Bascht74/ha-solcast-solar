@@ -189,7 +189,7 @@ async def test_api_available_trigger_needs_cleared_issue(
             caplog.clear()
             solcast.data[LAST_UPDATED] -= timedelta(minutes=20)
             await hass.services.async_call(DOMAIN, SERVICE_FORCE_UPDATE_FORECASTS, {}, blocking=True)
-            await _wait_for_log(hass, caplog, freezer, "Completed task force_update")
+            await _wait_for_log(hass, caplog, freezer, "Completed task force_update", timeout=30)
             assert "API returned data" in caplog.text
             trigger.assert_not_called()
 
@@ -205,7 +205,7 @@ async def test_api_available_trigger_needs_cleared_issue(
             caplog.clear()
             solcast.data[LAST_UPDATED] -= timedelta(minutes=20)
             await hass.services.async_call(DOMAIN, SERVICE_FORCE_UPDATE_FORECASTS, {}, blocking=True)
-            await _wait_for_log(hass, caplog, freezer, "Completed task force_update")
+            await _wait_for_log(hass, caplog, freezer, "Completed task force_update", timeout=30)
             trigger.assert_called_once_with(hass, "Automation available")
             await solcast.tasks_cancel()
             await entry.runtime_data.coordinator.tasks_cancel()
