@@ -5,6 +5,12 @@ update_forecasts:
   target:
     entity:
       integration: solcast_solar
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
 
 force_update_forecasts:
   name: Force Update Forecasts
@@ -12,6 +18,12 @@ force_update_forecasts:
   target:
     entity:
       integration: solcast_solar
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
 
 force_update_estimates:
   name: Force Update Estimates
@@ -19,6 +31,12 @@ force_update_estimates:
   target:
     entity:
       integration: solcast_solar
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
 
 clear_all_solcast_data:
   name: Clear saved Solcast site data
@@ -26,6 +44,12 @@ clear_all_solcast_data:
   target:
     entity:
       integration: solcast_solar
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
 
 diagnostic:
   name: Diagnostic
@@ -33,6 +57,12 @@ diagnostic:
   target:
     entity:
       integration: solcast_solar
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
 
 query_forecast_data:
   name: Query forecasts
@@ -41,6 +71,11 @@ query_forecast_data:
     entity:
       integration: solcast_solar
   fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
     start_date_time:
       example: "2024-10-06T00:00:00Z"
       selector:
@@ -61,6 +96,11 @@ query_estimate_data:
     entity:
       integration: solcast_solar
   fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
     start_date_time:
       example: "2024-10-06T00:00:00Z"
       selector:
@@ -81,6 +121,11 @@ set_custom_hours:
     entity:
       integration: solcast_solar
   fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
     hours:
       example: "6"
 
@@ -91,6 +136,11 @@ set_dampening:
     entity:
       integration: solcast_solar
   fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
     damp_factor:
       example: "1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1"
     site:
@@ -103,6 +153,11 @@ get_dampening:
     entity:
       integration: solcast_solar
   fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
     site:
       example: "1234-5678-9012-3456"
 
@@ -112,6 +167,12 @@ get_options:
   target:
     entity:
       integration: solcast_solar
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
 
 set_hard_limit:
   name: Set inverter forecast hard limit in kW
@@ -120,6 +181,11 @@ set_hard_limit:
     entity:
       integration: solcast_solar
   fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
     hard_limit:
       description: Set the max value in kW that the inverter can produce. Use 0 to disable the hard limit.
       example: "6.0"
@@ -130,6 +196,12 @@ remove_hard_limit:
   target:
     entity:
       integration: solcast_solar
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
 
 set_options:
   name: Set options
@@ -138,6 +210,11 @@ set_options:
     entity:
       integration: solcast_solar
   fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: solcast_solar
     api_key:
       example: "your-api-key"
     api_limit:

@@ -18,25 +18,38 @@ from homeassistant.components.solcast_solar.const import (
     API_LIMIT,
     AUTO_DAMPEN,
     AUTO_UPDATE,
+    CONFIG_ENTRY_ID,
     DAMP_FACTOR,
     DOMAIN,
     ENTRY_ID,
+    EXCEPTION_INSTANCE_REQUIRED,
+    EXCEPTION_INSTANCE_UNKNOWN,
+    EXCEPTION_SET_OPTIONS_EMPTY,
     GENERATION_ENTITIES,
     INSTANCE_NAME,
     ISSUE_RECORDS_MISSING,
     ISSUE_RECORDS_MISSING_FIXABLE,
     ISSUE_UNUSUAL_AZIMUTH_NORTHERN,
     RESOURCE_ID,
+    SERVICE_GET_OPTIONS,
+    SERVICE_SET_OPTIONS,
     SITE_DAMP,
 )
 from homeassistant.components.solcast_solar.instance import repair_issue_id, repair_placeholders
 from homeassistant.components.solcast_solar.repairs import RecordsMissingRepairFlow, async_create_fix_flow
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import ATTR_DEVICE_ID, CONF_API_KEY
+from homeassistant.const import ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_LABEL_ID, CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.exceptions import ConfigEntryError
-from homeassistant.helpers import device_registry as dr, entity_registry as er, issue_registry as ir
+from homeassistant.exceptions import ConfigEntryError, ServiceValidationError
+from homeassistant.helpers import (
+    area_registry as ar,
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+    label_registry as lr,
+    service,
+)
 
 from . import (
     DEFAULT_INPUT1,
@@ -371,5 +384,59 @@ async def test_repairs_stay_with_their_entry(recorder_mock: Recorder, hass: Home
         assert result["type"] is FlowResultType.ABORT
         assert west.options[AUTO_UPDATE] == 2
         assert legacy.options[AUTO_UPDATE] != 2
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def _api_key_for(hass: HomeAssistant, data: dict[str, Any]) -> str:
+    """Call get_options with the given entry selection and return the API key of the entry that answered."""
+
+    response = await hass.services.async_call(DOMAIN, SERVICE_GET_OPTIONS, data, blocking=True, return_response=True)
+    assert response is not None
+    return response["data"][CONF_API_KEY]
+
+
+async def test_action_routing(recorder_mock: Recorder, hass: HomeAssistant) -> None:
+    """Actions reach the entry named by config_entry_id or by any target kind, and never guess between named entries."""
+
+    ost_options = _west_options() | {CONF_API_KEY: KEY1, INSTANCE_NAME: "Ost"}
+    try:
+        ost = await async_init_integration(hass, ost_options, unique_id="solcast_ost", title="Solcast Ost", orphan_hard_limit=False)
+        west = await async_init_integration(hass, _west_options(), unique_id="solcast_west", title="Solcast West", orphan_hard_limit=False)
+        west_device = _device(hass, west.entry_id)
+        ost_device = _device(hass, ost.entry_id)
+        roof = ar.async_get(hass).async_create("Roof")
+        label = lr.async_get(hass).async_create("PV")
+        dr.async_get(hass).async_update_device(west_device.id, area_id=roof.id)
+        dr.async_get(hass).async_update_device(ost_device.id, labels={label.label_id})
+        west_sensor = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, "west_total_kwh_forecast_today")
+
+        assert await _api_key_for(hass, {CONFIG_ENTRY_ID: west.entry_id}) == KEY2
+        assert await _api_key_for(hass, {CONFIG_ENTRY_ID: ost.entry_id}) == KEY1
+        assert await _api_key_for(hass, {ATTR_AREA_ID: roof.id}) == KEY2
+        assert await _api_key_for(hass, {ATTR_LABEL_ID: label.label_id}) == KEY1
+        assert await _api_key_for(hass, {ATTR_ENTITY_ID: [west_sensor]}) == KEY2
+        assert await _api_key_for(hass, {ATTR_DEVICE_ID: ost_device.id}) == KEY1
+
+        for data, error in (
+            ({}, EXCEPTION_INSTANCE_REQUIRED),
+            ({ATTR_DEVICE_ID: [west_device.id, ost_device.id]}, EXCEPTION_INSTANCE_REQUIRED),
+            ({ATTR_AREA_ID: ar.async_get(hass).async_create("Garage").id}, EXCEPTION_INSTANCE_UNKNOWN),
+            ({CONFIG_ENTRY_ID: "not_an_entry"}, EXCEPTION_INSTANCE_UNKNOWN),
+        ):
+            with pytest.raises(ServiceValidationError) as raised:
+                await hass.services.async_call(DOMAIN, SERVICE_GET_OPTIONS, data, blocking=True, return_response=True)
+            assert raised.value.translation_key == error, data
+
+        with pytest.raises(ServiceValidationError) as raised:
+            await hass.services.async_call(DOMAIN, SERVICE_SET_OPTIONS, {CONFIG_ENTRY_ID: west.entry_id}, blocking=True)
+        assert raised.value.translation_key == EXCEPTION_SET_OPTIONS_EMPTY
+
+        # Home Assistant before 2026.1 takes hass as the first argument of the target helper.
+        async def _old_helper(hass: HomeAssistant, call: Any, expand_group: bool = True) -> set[str]:
+            return {west.entry_id}
+
+        with patch.object(service, "async_extract_config_entry_ids", _old_helper):
+            assert await _api_key_for(hass, {ATTR_AREA_ID: roof.id}) == KEY2
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

@@ -1,7 +1,7 @@
 """Solcast service actions."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -10,20 +10,19 @@ from typing import Any, Final
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_DEVICE_ID, ATTR_ENTITY_ID, CONF_API_KEY
+from homeassistant.const import ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_FLOOR_ID, ATTR_LABEL_ID, CONF_API_KEY
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationError
 from homeassistant.helpers import (
     config_validation as cv,
-    device_registry as dr,
     entity_registry as er,
     issue_registry as ir,
+    service,
 )
 from homeassistant.util import dt as dt_util
 from homeassistant.util.hass_dict import HassKey
 
 from .advanced import async_is_allow_exceed_api_limit
-from .instance import instance_name, instance_slug, repair_issue_id, repair_placeholders
 from .const import (
     ACTION,
     ACTUALS_ATTEMPT,
@@ -45,6 +44,7 @@ from .const import (
     BRK_SITE,
     BRK_SITE_DETAILED,
     COMPLETION,
+    CONFIG_ENTRY_ID,
     CUSTOM_HOURS,
     DAILY_TYPICAL_FORECAST_UPDATES,
     DAMP_FACTOR,
@@ -82,7 +82,6 @@ from .const import (
     HARD_LIMIT,
     HARD_LIMIT_API,
     HOURS,
-    INSTANCE,
     ISSUE_ACTION_DEPRECATED,
     ISSUE_DEPRECATED_REMOVE_HARD_LIMIT,
     ISSUE_DEPRECATED_SET_CUSTOM_HOURS,
@@ -133,6 +132,7 @@ from .const import (
 )
 from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, UsageStatus
+from .instance import instance_name, repair_issue_id, repair_placeholders
 from .log import get_logger, set_log_instance
 from .migration import sync_legacy_keys
 from .solcastapi import SolcastApi
@@ -153,13 +153,15 @@ from .validators import (
     validate_use_actuals_value,
 )
 
+# Every action names its entry by config_entry_id or by a target (device, entity, area, floor, label).
+_ENTRY_FIELDS: Final = {vol.Optional(CONFIG_ENTRY_ID): cv.string, **cv.TARGET_SERVICE_FIELDS}
+_TARGET_KEYS: Final = (ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_FLOOR_ID, ATTR_LABEL_ID)
+
 SERVICE_DAMP_SCHEMA: Final = vol.All(
     {
         vol.Required(DAMP_FACTOR): cv.string,
         vol.Optional(SITE): cv.string,
-        vol.Optional(INSTANCE): cv.string,
-        vol.Optional(ATTR_DEVICE_ID): vol.Any(cv.string, [cv.string]),
-        vol.Optional(ATTR_ENTITY_ID): vol.Any(cv.string, [cv.string]),
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_QUERY_ESTIMATE_SCHEMA: Final = vol.All(
@@ -168,17 +170,13 @@ SERVICE_QUERY_ESTIMATE_SCHEMA: Final = vol.All(
         vol.Optional(EVENT_END_DATETIME): cv.datetime,
         vol.Optional(DAMPENED): cv.boolean,
         vol.Optional(SITE): cv.string,
-        vol.Optional(INSTANCE): cv.string,
-        vol.Optional(ATTR_DEVICE_ID): vol.Any(cv.string, [cv.string]),
-        vol.Optional(ATTR_ENTITY_ID): vol.Any(cv.string, [cv.string]),
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_DAMP_GET_SCHEMA: Final = vol.All(
     {
         vol.Optional(SITE): cv.string,
-        vol.Optional(INSTANCE): cv.string,
-        vol.Optional(ATTR_DEVICE_ID): vol.Any(cv.string, [cv.string]),
-        vol.Optional(ATTR_ENTITY_ID): vol.Any(cv.string, [cv.string]),
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_QUERY_SCHEMA: Final = vol.All(
@@ -187,9 +185,7 @@ SERVICE_QUERY_SCHEMA: Final = vol.All(
         vol.Required(EVENT_END_DATETIME): cv.datetime,
         vol.Optional(UNDAMPENED): cv.boolean,
         vol.Optional(SITE): cv.string,
-        vol.Optional(INSTANCE): cv.string,
-        vol.Optional(ATTR_DEVICE_ID): vol.Any(cv.string, [cv.string]),
-        vol.Optional(ATTR_ENTITY_ID): vol.Any(cv.string, [cv.string]),
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_SET_OPTIONS_SCHEMA: Final = vol.All(
@@ -214,9 +210,7 @@ SERVICE_SET_OPTIONS_SCHEMA: Final = vol.All(
         vol.Optional(EXCLUDE_SITES): cv.string,
         vol.Optional(SITE_EXPORT_ENTITY): cv.string,
         vol.Optional(SITE_EXPORT_LIMIT): cv.string,
-        vol.Optional(INSTANCE): cv.string,
-        vol.Optional(ATTR_DEVICE_ID): vol.Any(cv.string, [cv.string]),
-        vol.Optional(ATTR_ENTITY_ID): vol.Any(cv.string, [cv.string]),
+        **_ENTRY_FIELDS,
     }
 )
 
@@ -224,17 +218,13 @@ SERVICE_SET_OPTIONS_SCHEMA: Final = vol.All(
 SERVICE_HARD_LIMIT_SCHEMA: Final = vol.All(
     {
         vol.Required(HARD_LIMIT): cv.string,
-        vol.Optional(INSTANCE): cv.string,
-        vol.Optional(ATTR_DEVICE_ID): vol.Any(cv.string, [cv.string]),
-        vol.Optional(ATTR_ENTITY_ID): vol.Any(cv.string, [cv.string]),
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_CUSTOM_HOURS_SCHEMA: Final = vol.All(
     {
         vol.Required(HOURS): cv.string,
-        vol.Optional(INSTANCE): cv.string,
-        vol.Optional(ATTR_DEVICE_ID): vol.Any(cv.string, [cv.string]),
-        vol.Optional(ATTR_ENTITY_ID): vol.Any(cv.string, [cv.string]),
+        **_ENTRY_FIELDS,
     }
 )
 
@@ -286,12 +276,6 @@ class ServiceActions:
         self._solcast = solcast
         self._updater = updater
         self._register()
-
-    def _register(self) -> None:
-        """Remember this entry and point every service at the dispatcher."""
-
-        self._hass.data.setdefault(_OWNERS, {})[self._entry.entry_id] = self
-        _install_dispatchers(self._hass)
 
     async def async_update_forecast(self, call: ServiceCall | None = None, **kwargs: Any) -> None:
         """Handle update forecast action and internal forecast refresh requests."""
@@ -413,6 +397,21 @@ class ServiceActions:
             SERVICE_SET_CUSTOM_HOURS: {ACTION: self.async_set_custom_hours, SCHEMA: SERVICE_CUSTOM_HOURS_SCHEMA},
             SERVICE_SET_HARD_LIMIT: {ACTION: self.async_set_hard_limit, SCHEMA: SERVICE_HARD_LIMIT_SCHEMA},
         }
+
+    def _register(self) -> None:
+        """Register all service actions with Home Assistant; each one dispatches to the entry the call names."""
+        self._hass.data.setdefault(_OWNERS, {})[self._entry.entry_id] = self
+        for action, call in self._get_service_actions().items():
+            _LOGGER.debug("Register action %s.%s", DOMAIN, action)
+            self._hass.services.async_remove(DOMAIN, action)  # Remove the stub action
+            handler = _dispatcher(self._hass, call[ACTION].__name__)
+            if call.get(SUPPORTS_RESPONSE_KEY):
+                self._hass.services.async_register(DOMAIN, action, handler, call[SCHEMA], call[SUPPORTS_RESPONSE_KEY])
+                continue
+            if call.get(SCHEMA):
+                self._hass.services.async_register(DOMAIN, action, handler, call[SCHEMA])
+                continue
+            self._hass.services.async_register(DOMAIN, action, handler)
 
     async def async_get_forecast_data(self, call: ServiceCall) -> dict[str, Any] | None:
         """Handle query forecast data action.
@@ -687,7 +686,7 @@ class ServiceActions:
             ServiceValidationError: Notify that a validation error has occurred.
 
         """
-        if not call.data:
+        if not {key for key in call.data if key not in (CONFIG_ENTRY_ID, *_TARGET_KEYS)}:
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_SET_OPTIONS_EMPTY)
 
         _LOGGER.info("Action: Set options")
@@ -1114,106 +1113,59 @@ def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoo
 _OWNERS: HassKey[dict[str, ServiceActions]] = HassKey(f"{DOMAIN}_actions")
 
 
-def _as_ids(value: Any) -> list[str]:
-    """Return device or entity ids from a service field that may be one value or a list."""
+async def _target_entry_ids(hass: HomeAssistant, call: ServiceCall) -> set[str]:
+    """Return the config entries a call's target refers to, areas, floors and labels included."""
 
-    if value is None or value is False or value == "":
-        return []
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        return [str(item) for item in value if item]
-    return [str(value)]
+    try:
+        return await service.async_extract_config_entry_ids(call)
+    except TypeError:  # Home Assistant before 2026.1 takes hass first.
+        return await service.async_extract_config_entry_ids(hass, call)  # type: ignore[arg-type, call-arg]
 
 
-def _entry_ids_for_call(hass: HomeAssistant, call: ServiceCall) -> list[str]:
-    """Resolve a targeted device or entity to loaded Solcast entries."""
+async def _entry_id_for_call(hass: HomeAssistant, call: ServiceCall) -> str:
+    """Pick the loaded entry an action applies to.
 
-    found: list[str] = []
-
-    owners = hass.data.get(_OWNERS, {})
-
-    def _add(entry_id: str | None) -> None:
-        if entry_id and entry_id in owners and entry_id not in found:
-            found.append(entry_id)
-
-    device_reg = dr.async_get(hass)
-    for device_id in _as_ids(call.data.get(ATTR_DEVICE_ID)):
-        device = device_reg.async_get(device_id)
-        if device is None:
-            continue
-        for domain, identifier in device.identifiers:
-            if domain == DOMAIN:
-                _add(str(identifier))
-
-    entity_reg = er.async_get(hass)
-    for entity_id in _as_ids(call.data.get(ATTR_ENTITY_ID)):
-        entity = entity_reg.async_get(entity_id)
-        if entity is not None:
-            _add(entity.config_entry_id)
-    return found
-
-
-def _owner_for_call(hass: HomeAssistant, call: ServiceCall) -> ServiceActions:
-    """Pick the entry a service call applies to.
-
-    A chosen device or entity wins. Without a target, the original unnamed
-    entry is used while it is loaded, otherwise the only loaded entry.
+    The config_entry_id field wins, then a target. Without either, the original
+    unnamed entry is used while it is loaded, otherwise the only loaded entry.
     """
 
     owners = hass.data.get(_OWNERS, {})
-    targeted = _entry_ids_for_call(hass, call)
-    asked = bool(_as_ids(call.data.get(ATTR_DEVICE_ID)) or _as_ids(call.data.get(ATTR_ENTITY_ID)))
-    if asked:
+    if (entry_id := call.data.get(CONFIG_ENTRY_ID)) is not None:
+        if entry_id in owners:
+            return str(entry_id)
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_UNKNOWN)
+
+    if any(call.data.get(key) for key in _TARGET_KEYS):
+        targeted = [entry_id for entry_id in await _target_entry_ids(hass, call) if entry_id in owners]
         if len(targeted) == 1:
-            return owners[targeted[0]]
-        if len(targeted) > 1:
-            raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_REQUIRED)
-        raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_UNKNOWN)
+            return targeted[0]
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_REQUIRED if targeted else EXCEPTION_INSTANCE_UNKNOWN
+        )
 
-    wanted = str(call.data.get(INSTANCE, "") or "").strip()
-    if wanted:
-        slug = instance_slug(wanted)
-        for owner in owners.values():
-            name = instance_name(owner._entry.options)
-            if name.lower() == wanted.lower() or (slug and instance_slug(name) == slug):
-                return owner
-        raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_UNKNOWN)
-
-    legacy = [owner for owner in owners.values() if not instance_name(owner._entry.options)]
-    if len(legacy) == 1:
-        return legacy[0]
+    unnamed = [entry_id for entry_id in owners if not instance_name(_entry_options(hass, entry_id))]
+    if len(unnamed) == 1:
+        return unnamed[0]
     if len(owners) == 1:
-        return next(iter(owners.values()))
+        return next(iter(owners))
     raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_REQUIRED)
 
 
+def _entry_options(hass: HomeAssistant, entry_id: str) -> Mapping[str, Any] | None:
+    """Return the options of a config entry."""
+
+    return entry.options if (entry := hass.config_entries.async_get_entry(entry_id)) is not None else None
+
+
 def _dispatcher(hass: HomeAssistant, method_name: str) -> Callable[[ServiceCall], Any]:
-    """Return a service handler that forwards to the selected entry."""
+    """Return an action handler that forwards to the selected entry."""
 
     async def handler(call: ServiceCall) -> Any:
-        owner = _owner_for_call(hass, call)
-        set_log_instance(instance_name(owner._entry.options))
-        return await getattr(owner, method_name)(call)
+        entry_id = await _entry_id_for_call(hass, call)
+        set_log_instance(instance_name(_entry_options(hass, entry_id)))
+        return await getattr(hass.data[_OWNERS][entry_id], method_name)(call)
 
     return handler
-
-
-def _install_dispatchers(hass: HomeAssistant) -> None:
-    """Register one dispatcher per service. A later entry replaces the same handlers."""
-
-    owner = next(iter(hass.data[_OWNERS].values()))
-    for action, spec in owner._get_service_actions().items():
-        handler = _dispatcher(hass, spec[ACTION].__name__)
-        _LOGGER.debug("Register action %s.%s", DOMAIN, action)
-        hass.services.async_remove(DOMAIN, action)
-        if spec.get(SUPPORTS_RESPONSE_KEY):
-            hass.services.async_register(DOMAIN, action, handler, spec.get(SCHEMA), spec[SUPPORTS_RESPONSE_KEY])
-            continue
-        if spec.get(SCHEMA):
-            hass.services.async_register(DOMAIN, action, handler, spec[SCHEMA])
-            continue
-        hass.services.async_register(DOMAIN, action, handler)
 
 
 def release_entry_actions(hass: HomeAssistant, entry: ConfigEntry) -> None:

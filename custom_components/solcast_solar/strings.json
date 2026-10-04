@@ -312,10 +312,10 @@
       "message": "At least one option must be specified."
     },
     "instance_required": {
-      "message": "More than one Solcast entry is loaded. Choose the device."
+      "message": "More than one Solcast entry is loaded or targeted. Choose one Solcast entry."
     },
     "instance_unknown": {
-      "message": "That device does not belong to a loaded Solcast entry."
+      "message": "The chosen entry or target does not belong to a loaded Solcast entry."
     }
   },
   "issues": {
@@ -549,19 +549,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Deletes the solcast.json file to remove all current solcast site data.",
-      "name": "Clear all saved Solcast data"
+      "name": "Clear all saved Solcast data",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+        }
+      }
     },
     "diagnostic": {
       "description": "Run a diagnostic self-test to validate API connectivity, cache file integrity, generation entity accessibility, and overall configuration health.",
-      "name": "Diagnostic self-test"
+      "name": "Diagnostic self-test",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+        }
+      }
     },
     "force_update_estimates": {
       "description": "Force fetches the latest estimated actual data from Solcast.",
-      "name": "Force Update Estimated Actuals"
+      "name": "Force Update Estimated Actuals",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Force fetches the latest forecasts data from Solcast.",
-      "name": "Force Update"
+      "name": "Force Update",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+        }
+      }
     },
     "get_dampening": {
       "description": "Get the forecast dampening factors.",
@@ -569,13 +593,23 @@
         "site": {
           "description": "Optional site to get dampening. (Note: Will not work if granular dampening is not enabled.)",
           "name": "Site ID"
+        },
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
         }
       },
       "name": "Get forecasts dampening"
     },
     "get_options": {
       "description": "Get current integration configuration options.",
-      "name": "Get options"
+      "name": "Get options",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+        }
+      }
     },
     "query_estimate_data": {
       "description": "Return a data set for a given query.",
@@ -587,6 +621,10 @@
         "start_date_time": {
           "description": "Query estimated actual data events from date time.",
           "name": "Start date time"
+        },
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
         }
       },
       "name": "Query estimated actual data"
@@ -609,13 +647,23 @@
         "undampened": {
           "description": "Optional boolean to retrieve un-dampened forecast",
           "name": "Undampened"
+        },
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
         }
       },
       "name": "Query forecast data"
     },
     "remove_hard_limit": {
       "description": "Remove set limit.",
-      "name": "Remove inverter forecast hard limit"
+      "name": "Remove inverter forecast hard limit",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+        }
+      }
     },
     "set_custom_hours": {
       "description": "Set the custom X hours sensor number of hours.",
@@ -623,6 +671,10 @@
         "hours": {
           "description": "Number of hours to set (1-144).",
           "name": "Hours"
+        },
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
         }
       },
       "name": "Set custom hours sensor"
@@ -637,6 +689,10 @@
         "site": {
           "description": "Optional site to set per-site dampening. (Note: Omitting site clears per-site dampening unless 48 values.)",
           "name": "Site ID"
+        },
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
         }
       },
       "name": "Set forecasts dampening"
@@ -647,6 +703,10 @@
         "hard_limit": {
           "description": "Set the max value in Watts that the inverter can produce. Use 0 to disable the hard limit.",
           "name": "Limit value in Watts"
+        },
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
         }
       },
       "name": "Set inverter forecast hard limit"
@@ -733,13 +793,23 @@
         "use_actuals": {
           "description": "Forecast history for the Energy dashboard: 0=forecasts, 1=actuals, 2=dampened actuals.",
           "name": "Use actuals"
+        },
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
         }
       },
       "name": "Set options"
     },
     "update_forecasts": {
       "description": "Fetches the latest forecasts data from Solcast.",
-      "name": "Update"
+      "name": "Update",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast entry",
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry."
+        }
+      }
     }
   },
   "system_health": {

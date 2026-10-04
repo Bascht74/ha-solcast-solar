@@ -11,15 +11,15 @@
       "api_error": "Solcast API error: {error_detail}",
       "api_key_empty": "API key must not be empty",
       "api_looks_like_site": "API key looks like a site ID",
+      "instance_name_duplicate": "That name is already used.",
+      "instance_name_invalid": "The name must contain a letter or a digit.",
+      "instance_name_required": "Another entry needs a name.",
+      "instance_name_reserved": "That name is reserved for the files of the first entry. Choose another name.",
       "internal_error": "An unexpected error occurred. Check the logs for more information.",
       "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
-      "limit_too_many": "There are more API limit counts entered than keys",
-      "instance_name_required": "Another entry needs a name.",
-      "instance_name_invalid": "The name must contain a letter or a digit.",
-      "instance_name_duplicate": "That name is already used.",
-      "instance_name_reserved": "That name is reserved for the files of the first entry. Choose another name."
+      "limit_too_many": "There are more API limit counts entered than keys"
     },
     "step": {
       "reauth_confirm": {
@@ -263,6 +263,12 @@
     "init_usage_corrupt": {
       "message": "Usage data is corrupt, check or delete `config/solcast_solar/solcast-usage.json`."
     },
+    "instance_required": {
+      "message": "More than one Solcast entry is loaded or targeted. Choose one Solcast entry."
+    },
+    "instance_unknown": {
+      "message": "The chosen entry or target does not belong to a loaded Solcast entry."
+    },
     "integration_not_loaded": {
       "message": "Integration not loaded, not performing action."
     },
@@ -310,12 +316,6 @@
     },
     "set_options_empty": {
       "message": "At least one option must be specified."
-    },
-    "instance_required": {
-      "message": "More than one Solcast entry is loaded. Choose the device."
-    },
-    "instance_unknown": {
-      "message": "That device does not belong to a loaded Solcast entry."
     }
   },
   "issues": {
@@ -494,17 +494,17 @@
           "api_key": "Enter one or more Solcast API keys, separated by commas",
           "api_limit": "Enter a forecast update daily limit, comma separated when using multiple keys",
           "attr_breakdown": "Select which breakdowns are enabled",
-          "auto_dampen": "Requires estimated actuals and a PV generation entity — see the integration documentation",
+          "auto_dampen": "Requires estimated actuals and a PV generation entity \u2014 see the integration documentation",
           "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)",
           "config_damp": "Click submit to proceed to the dampening factor editor",
           "custom_hours": "Number of hours for the custom sensor (minimum 1, maximum 144)",
           "exclude_sites": "Site(s) to exclude from the Energy dashboard and sensor totals when adding local and remote site API keys for a single Home Assistant local/remote deployment",
           "generation_entities": "For automated dampening: energy (Wh/kWh/MWh, total increasing) or power (W/kW/MW, instantaneous)",
-          "get_actuals": "Uses one API call per site per day — see the integration documentation; a reduced API limit is recommended",
+          "get_actuals": "Uses one API call per site per day \u2014 see the integration documentation; a reduced API limit is recommended",
           "hard_limit_api": "See the integration documentation; comma separate multiple values for each key",
           "key_estimate": "",
-          "site_damp": "Granular dampening is set — clear to revert to overall hourly dampening",
-          "site_export_entity": "Optional — for automated dampening (Wh/kWh/MWh, total increasing)",
+          "site_damp": "Granular dampening is set \u2014 clear to revert to overall hourly dampening",
+          "site_export_entity": "Optional \u2014 for automated dampening (Wh/kWh/MWh, total increasing)",
           "site_export_limit": "Required if a site export entity is specified",
           "use_actuals": ""
         },
@@ -549,23 +549,51 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Deletes the solcast.json file to remove all current solcast site data.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Clear all saved Solcast data"
     },
     "diagnostic": {
       "description": "Run a diagnostic self-test to validate API connectivity, cache file integrity, generation entity accessibility, and overall configuration health.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Diagnostic self-test"
     },
     "force_update_estimates": {
       "description": "Force fetches the latest estimated actual data from Solcast.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Force Update Estimated Actuals"
     },
     "force_update_forecasts": {
       "description": "Force fetches the latest forecasts data from Solcast.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Force Update"
     },
     "get_dampening": {
       "description": "Get the forecast dampening factors.",
       "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        },
         "site": {
           "description": "Optional site to get dampening. (Note: Will not work if granular dampening is not enabled.)",
           "name": "Site ID"
@@ -575,11 +603,21 @@
     },
     "get_options": {
       "description": "Get current integration configuration options.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Get options"
     },
     "query_estimate_data": {
       "description": "Return a data set for a given query.",
       "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        },
         "end_date_time": {
           "description": "Query estimated actual data events up to date time.",
           "name": "End date time"
@@ -594,6 +632,10 @@
     "query_forecast_data": {
       "description": "Return a data set for a given query.",
       "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        },
         "end_date_time": {
           "description": "Query forecast data events up to date time.",
           "name": "End date time"
@@ -615,11 +657,21 @@
     },
     "remove_hard_limit": {
       "description": "Remove set limit.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Remove inverter forecast hard limit"
     },
     "set_custom_hours": {
       "description": "Set the custom X hours sensor number of hours.",
       "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        },
         "hours": {
           "description": "Number of hours to set (1-144).",
           "name": "Hours"
@@ -630,6 +682,10 @@
     "set_dampening": {
       "description": "Set forecast dampening factors.",
       "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        },
         "damp_factor": {
           "description": "String of dampening factor values comma separated (24 or 48 values).",
           "name": "Dampening string"
@@ -644,6 +700,10 @@
     "set_hard_limit": {
       "description": "Prevent forecast values being higher than the inverter can produce.",
       "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        },
         "hard_limit": {
           "description": "Set the max value in Watts that the inverter can produce. Use 0 to disable the hard limit.",
           "name": "Limit value in Watts"
@@ -698,6 +758,10 @@
           "description": "Auto update mode: 0=none, 1=sunrise to sunset, 2=all day.",
           "name": "Auto update"
         },
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        },
         "custom_hours": {
           "description": "Number of hours for the custom hours sensor (1-144).",
           "name": "Custom hours"
@@ -739,6 +803,12 @@
     },
     "update_forecasts": {
       "description": "Fetches the latest forecasts data from Solcast.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The entry this action applies to. Without it, a chosen device or entity decides; otherwise the entry without a name, or the only entry.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Update"
     }
   },
