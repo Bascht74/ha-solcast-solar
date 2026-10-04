@@ -20,6 +20,7 @@ from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.util import dt as dt_util
+from homeassistant.util.hass_dict import HassKey
 
 from .advanced import async_is_allow_exceed_api_limit
 from .instance import instance_name, instance_slug, repair_issue_id, repair_placeholders
@@ -289,7 +290,7 @@ class ServiceActions:
     def _register(self) -> None:
         """Remember this entry and point every service at the dispatcher."""
 
-        _OWNERS[self._entry.entry_id] = self
+        self._hass.data.setdefault(_OWNERS, {})[self._entry.entry_id] = self
         _install_dispatchers(self._hass)
 
     async def async_update_forecast(self, call: ServiceCall | None = None, **kwargs: Any) -> None:
@@ -1110,7 +1111,7 @@ def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoo
     }
 
 
-_OWNERS: dict[str, ServiceActions] = {}
+_OWNERS: HassKey[dict[str, ServiceActions]] = HassKey(f"{DOMAIN}_actions")
 
 
 def _as_ids(value: Any) -> list[str]:
@@ -1130,8 +1131,10 @@ def _entry_ids_for_call(hass: HomeAssistant, call: ServiceCall) -> list[str]:
 
     found: list[str] = []
 
+    owners = hass.data.get(_OWNERS, {})
+
     def _add(entry_id: str | None) -> None:
-        if entry_id and entry_id in _OWNERS and entry_id not in found:
+        if entry_id and entry_id in owners and entry_id not in found:
             found.append(entry_id)
 
     device_reg = dr.async_get(hass)
@@ -1139,8 +1142,6 @@ def _entry_ids_for_call(hass: HomeAssistant, call: ServiceCall) -> list[str]:
         device = device_reg.async_get(device_id)
         if device is None:
             continue
-        for entry_id in device.config_entries:
-            _add(entry_id)
         for domain, identifier in device.identifiers:
             if domain == DOMAIN:
                 _add(str(identifier))
@@ -1160,38 +1161,37 @@ def _owner_for_call(hass: HomeAssistant, call: ServiceCall) -> ServiceActions:
     entry is used while it is loaded, otherwise the only loaded entry.
     """
 
+    owners = hass.data.get(_OWNERS, {})
     targeted = _entry_ids_for_call(hass, call)
     asked = bool(_as_ids(call.data.get(ATTR_DEVICE_ID)) or _as_ids(call.data.get(ATTR_ENTITY_ID)))
     if asked:
         if len(targeted) == 1:
-            return _OWNERS[targeted[0]]
+            return owners[targeted[0]]
         if len(targeted) > 1:
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_REQUIRED)
         raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_UNKNOWN)
 
     wanted = str(call.data.get(INSTANCE, "") or "").strip()
-    owners = list(_OWNERS.values())
     if wanted:
         slug = instance_slug(wanted)
-        for owner in owners:
+        for owner in owners.values():
             name = instance_name(owner._entry.options)
             if name.lower() == wanted.lower() or (slug and instance_slug(name) == slug):
                 return owner
         raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_UNKNOWN)
 
-    legacy = [owner for owner in owners if not instance_name(owner._entry.options)]
+    legacy = [owner for owner in owners.values() if not instance_name(owner._entry.options)]
     if len(legacy) == 1:
         return legacy[0]
     if len(owners) == 1:
-        return owners[0]
+        return next(iter(owners.values()))
     raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_REQUIRED)
 
 
-def _dispatcher(method_name: str) -> Callable[[ServiceCall], Any]:
+def _dispatcher(hass: HomeAssistant, method_name: str) -> Callable[[ServiceCall], Any]:
     """Return a service handler that forwards to the selected entry."""
 
     async def handler(call: ServiceCall) -> Any:
-        hass = next(iter(_OWNERS.values()))._hass
         owner = _owner_for_call(hass, call)
         return await getattr(owner, method_name)(call)
 
@@ -1201,9 +1201,9 @@ def _dispatcher(method_name: str) -> Callable[[ServiceCall], Any]:
 def _install_dispatchers(hass: HomeAssistant) -> None:
     """Register one dispatcher per service. A later entry replaces the same handlers."""
 
-    owner = next(iter(_OWNERS.values()))
+    owner = next(iter(hass.data[_OWNERS].values()))
     for action, spec in owner._get_service_actions().items():
-        handler = _dispatcher(spec[ACTION].__name__)
+        handler = _dispatcher(hass, spec[ACTION].__name__)
         _LOGGER.debug("Register action %s.%s", DOMAIN, action)
         hass.services.async_remove(DOMAIN, action)
         if spec.get(SUPPORTS_RESPONSE_KEY):
@@ -1218,8 +1218,9 @@ def _install_dispatchers(hass: HomeAssistant) -> None:
 def release_entry_actions(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Drop one entry. Services stay until the last entry is gone."""
 
-    _OWNERS.pop(entry.entry_id, None)
-    if not _OWNERS:
+    owners = hass.data.get(_OWNERS, {})
+    owners.pop(entry.entry_id, None)
+    if not owners:
         unregister_actions(hass)
 
 

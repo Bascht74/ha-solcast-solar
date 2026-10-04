@@ -42,7 +42,7 @@ class _ExecutorHass:
 
 def _make_sites_cache(tmp_path: Path, fail_copy: bool = False) -> SitesCache:
     """Create SitesCache with a minimal fake API object."""
-    api = SimpleNamespace(config_dir=str(tmp_path), hass=_ExecutorHass(fail_copy=fail_copy))
+    api = SimpleNamespace(config_dir=str(tmp_path), filename=str(tmp_path / "solcast.json"), hass=_ExecutorHass(fail_copy=fail_copy))
     return SitesCache(api)  # pyright: ignore[reportArgumentType]
 
 
@@ -179,6 +179,7 @@ async def test_sites_data_uses_combined_extant_match_for_key_collapse(tmp_path: 
 
     api = SimpleNamespace(
         config_dir=str(tmp_path),
+        filename=str(tmp_path / "solcast.json"),
         options=SimpleNamespace(api_key="newkey"),
         sites_status=SitesStatus.OK,
         sites=[],

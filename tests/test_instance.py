@@ -1,7 +1,7 @@
 """Rules that keep the original Solcast entry and separate a named one."""
 
-from custom_components.solcast_solar.const import INTEGRATION, TITLE
-from custom_components.solcast_solar.instance import (
+from homeassistant.components.solcast_solar.const import INTEGRATION, TITLE
+from homeassistant.components.solcast_solar.instance import (
     cache_stem,
     device_name_for,
     entry_title,

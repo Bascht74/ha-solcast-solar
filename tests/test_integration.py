@@ -585,6 +585,11 @@ async def test_api_failure(
         # Test exceptions during get sites with the cache present
         await exceptions(assertions2_except)
 
+        # Entries loaded from cache above would make an untargeted action ambiguous.
+        for loaded in hass.config_entries.async_entries(DOMAIN):
+            if loaded.state is ConfigEntryState.LOADED:
+                assert await hass.config_entries.async_unload(loaded.entry_id)
+
         # Test forecast update exceptions
         await exceptions_update()
 
