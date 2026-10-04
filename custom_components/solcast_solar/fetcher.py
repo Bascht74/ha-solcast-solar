@@ -755,10 +755,9 @@ class Fetcher:
                                 _LOGGER.debug("API returned data")
                             response_json = await self.api.hass.async_add_executor_job(json.loads, response_text)
                             unavailable = repair_issue_id(ISSUE_API_UNAVAILABLE, self.api.entry)
-                            for candidate in dict.fromkeys((unavailable, ISSUE_API_UNAVAILABLE)):
-                                if issue_registry.async_get_issue(DOMAIN, candidate) is not None:
-                                    _LOGGER.debug("Remove issue for %s", candidate)
-                                    ir.async_delete_issue(self.api.hass, DOMAIN, candidate)
+                            if issue_registry.async_get_issue(DOMAIN, unavailable) is not None:
+                                _LOGGER.debug("Remove issue for %s", unavailable)
+                                ir.async_delete_issue(self.api.hass, DOMAIN, unavailable)
                                 if (trigger := self.api.advanced_options[ADVANCED_TRIGGER_ON_API_AVAILABLE]) and trigger:
                                     await async_trigger_automation_by_name(self.api.hass, trigger)
                             _LOGGER.debug(
