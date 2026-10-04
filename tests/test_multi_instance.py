@@ -7,13 +7,24 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from homeassistant import config_entries
 from homeassistant.components.recorder import Recorder
 from homeassistant.components.solcast_solar import state
 from homeassistant.components.solcast_solar.updater import Updater
-from homeassistant.components.solcast_solar.const import API_LIMIT, AUTO_UPDATE, DAMP_FACTOR, DOMAIN, INSTANCE_NAME, RESOURCE_ID
+from homeassistant.components.solcast_solar.const import (
+    API_LIMIT,
+    AUTO_DAMPEN,
+    AUTO_UPDATE,
+    DAMP_FACTOR,
+    DOMAIN,
+    GENERATION_ENTITIES,
+    INSTANCE_NAME,
+    RESOURCE_ID,
+    SITE_DAMP,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_DEVICE_ID, CONF_API_KEY
 from homeassistant.core import HomeAssistant
@@ -25,9 +36,13 @@ from . import (
     DEFAULT_INPUT1,
     KEY1,
     KEY2,
+    ExtraSensors,
     async_cleanup_integration_tests,
     async_init_integration,
+    get_config_dir,
     no_error_or_exception,
+    reload_integration,
+    wait_for_it,
 )
 
 
@@ -268,5 +283,36 @@ async def test_accuracy_follows_each_entry_sensor(recorder_mock: Recorder, hass:
             calculated.clear()
             await original.runtime_data.coordinator.updater.update_estimated_actuals_history()
             assert calculated == [original.entry_id]
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_named_original_runs_automated_dampening(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """An entry that carries a name models automated dampening and keeps the factors in its own file."""
+
+    options = copy.deepcopy(DEFAULT_INPUT1)
+    options[INSTANCE_NAME] = "Süd-&Westdach"
+    options[AUTO_DAMPEN] = True
+    options[GENERATION_ENTITIES] = [
+        "sensor.solar_export_sensor_1111_1111_1111_1111",
+        "sensor.solar_export_sensor_2222_2222_2222_2222",
+    ]
+    try:
+        entry = await async_init_integration(hass, options, extra_sensors=ExtraSensors.YES_WATT_HOUR)
+        caplog.clear()
+        await reload_integration(hass, entry)
+        await wait_for_it(hass, caplog, freezer, "Task dampening model_automated took")
+
+        config_dir = get_config_dir(hass.config.config_dir)
+        assert (config_dir / "solcast-suedwestdach-dampening.json").is_file()
+        assert (config_dir / "solcast-suedwestdach-generation.json").is_file()
+        assert not (config_dir / "solcast-dampening.json").exists()
+        assert entry.options[SITE_DAMP] is True
+        assert len(entry.runtime_data.coordinator.solcast.dampening.factors["all"]) == 48
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
