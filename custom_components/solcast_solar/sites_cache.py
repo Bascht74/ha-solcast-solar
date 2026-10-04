@@ -806,7 +806,7 @@ class SitesCache:
         backup_day = dt_util.now(UTC).strftime("%y%m%d")
         config_dir = Path(self.api.config_dir)
         cache_files = await self.api.hass.async_add_executor_job(list_matching_files, config_dir, "solcast*.json")
-        cache_files = [cache_file for cache_file in cache_files if self._is_this_entry_cache(cache_file)]
+        cache_files = [cache_file for cache_file in cache_files if self.is_this_entry_cache(cache_file)]
 
         for cache_file in cache_files:
             backup_file = cache_file.with_name(f"{cache_file.stem}-{backup_day}{cache_file.suffix}.bak")
@@ -944,7 +944,7 @@ class SitesCache:
         name = f"{self._cache_stem()}-{kind}.json" if not api_key else f"{self._cache_stem()}-{kind}-{api_key}.json"
         return f"{self.api.config_dir}/{name}"
 
-    def _is_this_entry_cache(self, path: Path) -> bool:
+    def is_this_entry_cache(self, path: Path) -> bool:
         """Whether a solcast*.json file belongs to this entry and not to another one."""
 
         name, stem = path.name, self._cache_stem()

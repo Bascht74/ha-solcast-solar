@@ -569,6 +569,13 @@ async def test_entries_together_and_apart(
 
         config_dir = Path(original.runtime_data.coordinator.solcast.config_dir)
 
+        # A zero-length cache file is removed by the entry it belongs to only.
+        empty = config_dir / "solcast-west-generation.json"
+        empty.write_text("", encoding="utf-8")
+        await hass.config_entries.async_reload(original.entry_id)
+        await hass.async_block_till_done()
+        assert empty.exists()
+
         def _others() -> dict[str, int]:
             return {
                 path.name: path.stat().st_mtime_ns for path in config_dir.glob("solcast*.json") if not path.name.startswith("solcast-west")
@@ -580,6 +587,7 @@ async def test_entries_together_and_apart(
         await hass.async_block_till_done()
         assert west.state is ConfigEntryState.LOADED
         assert original.state is ConfigEntryState.LOADED
+        assert not empty.exists()
         assert _others() == before
         assert hass_storage["solcast_solar.state"] == original_store
         assert await _api_key_for(hass, {}) == KEY1

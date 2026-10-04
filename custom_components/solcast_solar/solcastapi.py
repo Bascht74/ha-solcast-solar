@@ -342,7 +342,7 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                 file.replace(target_path)
 
         unlinked: list[str] = []
-        for file in Path(self.config_dir).glob("solcast*.json"):
+        for file in filter(self.sites_cache.is_this_entry_cache, Path(self.config_dir).glob("solcast*.json")):
             if file.stat().st_size == 0:
                 _LOGGER.critical("Removing zero-length file %s", file.resolve())
                 file.unlink()
