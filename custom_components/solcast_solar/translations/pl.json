@@ -306,35 +306,35 @@
   "issues": {
     "action_deprecated": {
       "description": "Akcja `{deprecated_action}` jest przestarzała i zostanie usunięta w przyszłej wersji. Zamiast tego użyj akcji `{new_action}`.",
-      "title": "Przestarzała akcja"
+      "title": "Przestarzała akcja ({instance})"
     },
     "advanced_deprecated": {
       "description": "Zaawansowana opcja konfiguracyjna `{option}` została zmieniona na `{new_option}`. Zaktualizuj swoje zaawansowane opcje konfiguracyjne, aby używać nowej nazwy opcji.{stops_working}",
-      "title": "Zaawansowana opcja przestarzała"
+      "title": "Zaawansowana opcja przestarzała ({instance})"
     },
     "advanced_problem": {
       "description": "Plik zaawansowanej konfiguracji zawiera błędy.\n{problems}\n\nPopraw je, odwołując się do dokumentacji integracji pod linkiem 'Dowiedz się więcej'.",
-      "title": "Problem z zaawansowaną opcją"
+      "title": "Problem z zaawansowaną opcją ({instance})"
     },
     "api_unavailable": {
       "description": "Podczas aktualizacji Solcast API wielokrotnie zgłaszało status `429 / Try again later`. Oznacza to, że Solcast API jest zajęte i aktywnie blokuje żądania kont hobbystów.\n\n* Witryna solcast.com nie jest dotknięta problemem, ale API jest tymczasowo niedostępne dla ciebie.\n* Strona stanu API pod adresem status.solcast.com prawie na pewno nie wskaże żadnego problemu.\n* Nie próbuj rozwiązać tej sytuacji.\n* Nie zmieniaj klucza API.\n* Nie próbuj aktualizować integracji.\n* Unikaj ponownego uruchamiania integracji.\n* Integracja będzie nadal dostarczać ostatnią prognozę słoneczną pobraną z Solcast.\n* To nie jest problem z integracją i rozwiąże się samoczynnie. Nic nie zmieniaj.\n\n(Aby wyciszyć ten problem, utwórz zaawansowana opcja konfiguracji api_raise_issue i ustaw ją na false.)",
-      "title": "Solcast API tymczasowo niedostępne"
+      "title": "Solcast API tymczasowo niedostępne ({instance})"
     },
     "actuals_api_limit": {
       "description": "Automatyczna aktualizacja i szacowane wartości rzeczywiste są włączone, podczas gdy limit API jest skonfigurowany na maksymalną wartość dla hobbystów (`{configured_value}`). Szacowane wartości rzeczywiste są zbierane tuż po północy i wykorzystują jedno wywołanie API na każdą instalację dachową dla każdego skonfigurowanego klucza API. Zmniejsz limit API do `{suggested_value}`, aby zarezerwować wywołania dla szacowanych wartości rzeczywistych.",
-      "title": "Dostosuj limit API dla szacowanych wartości rzeczywistych"
+      "title": "Dostosuj limit API dla szacowanych wartości rzeczywistych ({instance})"
     },
     "actuals_quota_today": {
-      "title": "Pobieranie szacowanych wartości rzeczywistych może przekroczyć dzienny limit API",
+      "title": "Pobieranie szacowanych wartości rzeczywistych może przekroczyć dzienny limit API ({instance})",
       "description": "Pobieranie szacowanych wartości rzeczywistych zostało włączone. Na podstawie typowego dziennego użycia API do aktualizacji prognozy ({api_used} wywołań) i wywnioskowanego limitu konta {api_limit} wywołań, dodanie {actuals_cost} wywołania/wywołań potrzebnych do pobrania szacowanych wartości rzeczywistych przekroczyłoby limit w typowym dniu. Pobieranie zostanie mimo to podjęte tuż po północy, ale ono (lub kolejna aktualizacja prognozy) może zakończyć się niepowodzeniem z odpowiedzią `429 Too Many Requests`.\n\nTo ostrzeżenie może pojawić się, gdy licznik typowego użycia jest jeszcze inicjowany rzeczywistymi danymi. Typowy licznik uwzględnia wyłącznie automatyczne aktualizacje/aktualizacje automatyzacji i wymuszone wywołania prognozy. Sprawdź skonfigurowany limit API i wszelkie automatyzacje wymuszonych aktualizacji, jeśli chcesz korzystać z szacowanych wartości rzeczywistych."
     },
     "corrupt_file": {
       "description": "Plik(i) danych w pamięci podręcznej `{files}` jest(są) uszkodzony(e). Integracja spróbuje się odzyskać, usuwając plik(i) i ponownie pobierając dane z Solcast. Spodziewaj się zwiększonego wykorzystania API i potencjalnych awarii API oraz utraty historii prognoz z powodu tej sytuacji. Możliwe jest odzyskanie plików z kopii zapasowej, ale nadal spodziewaj się awarii wywołań API.",
-      "title": "Uszkodzone dane w pamięci podręcznej"
+      "title": "Uszkodzone dane w pamięci podręcznej ({instance})"
     },
     "records_missing": {
       "description": "Brakuje danych prognozy na przyszłość, co jest nieoczekiwane, ponieważ automatyczna aktualizacja jest włączona. Zbadaj przyczynę, sprawdzając dziennik Home Assistanta. Przeczytaj FAQ dotyczące rozwiązywania problemów przed zgłoszeniem problemu z integracją.",
-      "title": "Brak prognoz na przyszłość"
+      "title": "Brak prognoz na przyszłość ({instance})"
     },
     "records_missing_fixable": {
       "fix_flow": {
@@ -353,23 +353,23 @@
           }
         }
       },
-      "title": "Brak prognoz na przyszłość"
+      "title": "Brak prognoz na przyszłość ({instance})"
     },
     "records_missing_initial": {
       "description": "Brakuje danych prognozy i/lub szacowanych wartości rzeczywistych, prawdopodobnie dlatego, że nie nastąpiła początkowa aktualizacja prognozy. Prawdopodobnie jest to spowodowane osiągnięciem limitu wywołań API. Będziesz mieć problemy z jednostkami czujników, a pulpit nawigacyjny Energii prawdopodobnie będzie miał brakujące dane. Sytuacja ta rozwiąże się sama.",
-      "title": "Brak prognoz"
+      "title": "Brak prognoz ({instance})"
     },
     "records_missing_unfixable": {
       "description": "Brak danych prognozy na przyszłość, co jest nieoczekiwane. Sprawdź dzienniki.",
-      "title": "Brak prognoz na przyszłość"
+      "title": "Brak prognoz na przyszłość ({instance})"
     },
     "unusual_azimuth_northern": {
       "description": "Azymut dla miejsca {site} jest nietypowy dla szerokości geograficznej tego dachu na półkuli północnej. Czy powinno to być {proposal} zamiast {extant}? (Jeśli strona jest skierowana na północ, możesz zignorować ten problem.)",
-      "title": "Nietypowy azymut"
+      "title": "Nietypowy azymut ({instance})"
     },
     "unusual_azimuth_southern": {
       "description": "Azymut dla miejsca {site} jest nietypowy dla szerokości geograficznej tego dachu na półkuli południowej. Czy powinno to być {proposal} zamiast {extant}? (Jeśli strona jest skierowana na południe, możesz zignorować ten problem.)",
-      "title": "Nietypowy azymut"
+      "title": "Nietypowy azymut ({instance})"
     }
   },
   "options": {

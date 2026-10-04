@@ -83,6 +83,7 @@ from .enums import (
     UpdateResult,
     UsageStatus,
 )
+from .instance import repair_issue_id, repair_placeholders
 from .issues import check_unusual_azimuth
 from .log import get_logger
 from .migration import SchemaIncompatibleError, clear_cache, upgrade_cache_schema
@@ -191,14 +192,15 @@ class SitesCache:
         """Check and clean up any existing issues if the conditions are now resolved."""
         issue_registry = ir.async_get(self.api.hass)
         for issue in [ISSUE_UNUSUAL_AZIMUTH_NORTHERN, ISSUE_UNUSUAL_AZIMUTH_SOUTHERN]:
-            if (i := issue_registry.async_get_issue(DOMAIN, issue)) is not None:
-                if (
-                    i.dismissed_version is not None
-                    and i.translation_placeholders is not None
-                    and self._dismissal.get(i.translation_placeholders.get(SITE, ""), False)
-                ) or not any_unusual:
-                    _LOGGER.debug("Remove %sissue for %s", "ignored " if i.dismissed_version is not None else "", issue)
-                    ir.async_delete_issue(self.api.hass, DOMAIN, issue)
+            for candidate in dict.fromkeys((repair_issue_id(issue, self.api.entry), issue)):
+                if (i := issue_registry.async_get_issue(DOMAIN, candidate)) is not None:
+                    if (
+                        i.dismissed_version is not None
+                        and i.translation_placeholders is not None
+                        and self._dismissal.get(i.translation_placeholders.get(SITE, ""), False)
+                    ) or not any_unusual:
+                        _LOGGER.debug("Remove %sissue for %s", "ignored " if i.dismissed_version is not None else "", candidate)
+                        ir.async_delete_issue(self.api.hass, DOMAIN, candidate)
 
     async def delete_solcast_file(self, *args: tuple[Any]) -> None:
         """Delete the solcast json files.
@@ -224,7 +226,8 @@ class SitesCache:
         tracked at startup, and necessary adjustments are made to file naming.
 
         Single key installations have cache files named like `solcast-sites.json`, while
-        multi-key installations have caches named `solcast-sites-api_key.json`
+        multi-key installations have caches named `solcast-sites-api_key.json`. A named
+        extra entry uses its own stem, for example `solcast-norddach-sites.json`.
 
         The reason is that sites are loaded in groups of API key, and similarly for API
         usage, so these must be cached separately.
@@ -267,8 +270,8 @@ class SitesCache:
                     if unusual:
                         log = (
                             _LOGGER.warning
-                            if issue_registry.async_get_issue(DOMAIN, ISSUE_UNUSUAL_AZIMUTH_NORTHERN) is None
-                            and issue_registry.async_get_issue(DOMAIN, ISSUE_UNUSUAL_AZIMUTH_SOUTHERN) is None
+                            if issue_registry.async_get_issue(DOMAIN, repair_issue_id(ISSUE_UNUSUAL_AZIMUTH_NORTHERN, self.api.entry)) is None
+                            and issue_registry.async_get_issue(DOMAIN, repair_issue_id(ISSUE_UNUSUAL_AZIMUTH_SOUTHERN, self.api.entry)) is None
                             and not self._dismissal.get(site, False)
                             else _LOGGER.debug
                         )
@@ -282,18 +285,21 @@ class SitesCache:
                             ir.async_create_issue(
                                 self.api.hass,
                                 DOMAIN,
-                                raise_issue,
+                                repair_issue_id(raise_issue, self.api.entry),
                                 is_fixable=False,
                                 is_persistent=True,
                                 severity=ir.IssueSeverity.WARNING,
                                 translation_key=raise_issue,
-                                translation_placeholders={
-                                    SITE: site,
-                                    SITE_ATTRIBUTE_LATITUDE: str(v[SITE_ATTRIBUTE_LATITUDE]),
-                                    PROPOSAL: str(proposal),
-                                    EXTANT: str(v[SITE_ATTRIBUTE_AZIMUTH]),
-                                    LEARN_MORE: "",
-                                },
+                                translation_placeholders=repair_placeholders(
+                                    self.api.entry,
+                                    {
+                                        SITE: site,
+                                        SITE_ATTRIBUTE_LATITUDE: str(v[SITE_ATTRIBUTE_LATITUDE]),
+                                        PROPOSAL: str(proposal),
+                                        EXTANT: str(v[SITE_ATTRIBUTE_AZIMUTH]),
+                                        LEARN_MORE: "",
+                                    },
+                                ),
                                 learn_more_url=LEARN_MORE_UNUSUAL_AZIMUTH,
                             )
                             raise_issue = ""
@@ -321,29 +327,30 @@ class SitesCache:
 
         async def from_single_site_to_multi(api_keys: list[str]):
             """Transition from a single API key to multiple API keys."""
-            single_sites = f"{self.api.config_dir}/solcast-sites.json"
-            single_usage = f"{self.api.config_dir}/solcast-usage.json"
+            single_sites = self._scoped_cache("sites")
+            single_usage = self._scoped_cache("usage")
             if Path(single_sites).is_file():
                 async with aiofiles.open(single_sites) as file:
                     single_api_key = json.loads(await file.read(), cls=JSONDecoder)[SITES][0].get(API_KEY, api_keys[0])
-                multi_sites = f"{self.api.config_dir}/solcast-sites-{single_api_key}.json"
+                multi_sites = self._scoped_cache("sites", single_api_key)
                 if not Path(multi_sites).is_file() and Path(single_sites).is_file():
-                    multi_usage = f"{self.api.config_dir}/solcast-usage-{single_api_key}.json"
+                    multi_usage = self._scoped_cache("usage", single_api_key)
                     rename(single_sites, multi_sites, single_api_key)
                     rename(single_usage, multi_usage, single_api_key)
 
         async def from_multi_site_to_single(api_keys: list[str]):
             """Transition from multiple API keys to a single API key."""
-            single_sites = f"{self.api.config_dir}/solcast-sites.json"
+            single_sites = self._scoped_cache("sites")
             if not Path(single_sites).is_file():
-                rename(f"{self.api.config_dir}/solcast-sites-{api_keys[0]}.json", single_sites, api_keys[0])
-                rename(f"{self.api.config_dir}/solcast-usage-{api_keys[0]}.json", f"{self.api.config_dir}/solcast-usage.json", api_keys[0])
+                rename(self._scoped_cache("sites", api_keys[0]), single_sites, api_keys[0])
+                rename(self._scoped_cache("usage", api_keys[0]), self._scoped_cache("usage"), api_keys[0])
 
         def remove_orphans(all_cached: list[str], multi_cached: list[str]):
-            """Remove orphaned cache files."""
+            """Remove orphaned cache files for this entry only."""
+            stem = re.escape(self._cache_stem())
             for file in all_cached:
                 if file not in multi_cached:
-                    component_parts = re.search(r"(.+solcast-(sites-|usage-))(.+)(\.json)", file)
+                    component_parts = re.search(rf"(.+{stem}-(sites-|usage-))(.+)(\.json)", file)
                     if component_parts is not None:
                         _LOGGER.warning(
                             "Removing orphaned %s",
@@ -353,10 +360,11 @@ class SitesCache:
 
         def list_all_and_multi_key_files() -> tuple[tuple[list[str], list[str]], tuple[list[str], list[str]]]:
             config_dir = Path(self.api.config_dir)
-            all_sites = sorted(str(s) for s in config_dir.glob("solcast-sites*.json"))
-            all_usage = sorted(str(u) for u in config_dir.glob("solcast-usage*.json"))
-            multi_sites = sorted(str(s) for s in config_dir.glob("solcast-sites-*.json"))
-            multi_usage = sorted(str(u) for u in config_dir.glob("solcast-usage-*.json"))
+            stem = self._cache_stem()
+            all_sites = sorted(str(s) for s in config_dir.glob(f"{stem}-sites*.json"))
+            all_usage = sorted(str(u) for u in config_dir.glob(f"{stem}-usage*.json"))
+            multi_sites = sorted(str(s) for s in config_dir.glob(f"{stem}-sites-*.json"))
+            multi_usage = sorted(str(u) for u in config_dir.glob(f"{stem}-usage-*.json"))
             return (all_sites, all_usage), (multi_sites, multi_usage)
 
         async def load_extant_sites_and_usage(sites: list[str], usages: list[str]):
@@ -384,7 +392,7 @@ class SitesCache:
                     except json.decoder.JSONDecodeError:
                         _LOGGER.error("JSONDecodeError, usage ignored: %s", usage)
                         continue
-                    match = re.search(r"solcast-usage-(.+)\.json", usage)
+                    match = re.search(rf"{re.escape(self._cache_stem())}-usage-(.+)\.json$", Path(usage).name)
                     if match:
                         extant_usage[match.group(1)] = response_json
                     elif not self.multi_key and single_key:
@@ -399,8 +407,8 @@ class SitesCache:
                 await from_single_site_to_multi(api_keys)
             else:
                 await from_multi_site_to_single(api_keys)
-        multi_sites = [f"{self.api.config_dir}/solcast-sites-{api_key}.json" for api_key in api_keys]
-        multi_usage = [f"{self.api.config_dir}/solcast-usage-{api_key}.json" for api_key in api_keys]
+        multi_sites = [self._scoped_cache("sites", api_key) for api_key in api_keys]
+        multi_usage = [self._scoped_cache("usage", api_key) for api_key in api_keys]
 
         (all_sites, all_usage), (multi_key_sites, multi_key_usage) = await self.api.hass.async_add_executor_job(
             list_all_and_multi_key_files
@@ -793,6 +801,7 @@ class SitesCache:
         backup_day = dt_util.now(UTC).strftime("%y%m%d")
         config_dir = Path(self.api.config_dir)
         cache_files = await self.api.hass.async_add_executor_job(list_matching_files, config_dir, "solcast*.json")
+        cache_files = [cache_file for cache_file in cache_files if self._is_this_entry_cache(cache_file)]
 
         for cache_file in cache_files:
             backup_file = cache_file.with_name(f"{cache_file.stem}-{backup_day}{cache_file.suffix}.bak")
@@ -915,6 +924,48 @@ class SitesCache:
 
     # Private methods (alphabetical).
 
+    def _cache_stem(self) -> str:
+        """Return ``solcast`` or ``solcast-<slug>`` from this entry's forecast file."""
+
+        return Path(self.api.filename).stem
+
+    def _scoped_cache(self, kind: str, api_key: str | None = None) -> str:
+        """Return this entry's sites or usage cache path.
+
+        The original entry keeps ``solcast-sites.json``. A named entry gets
+        ``solcast-<slug>-sites.json``. Several keys in one entry add the key.
+        """
+
+        name = f"{self._cache_stem()}-{kind}.json" if not api_key else f"{self._cache_stem()}-{kind}-{api_key}.json"
+        return f"{self.api.config_dir}/{name}"
+
+    def _is_this_entry_cache(self, path: Path) -> bool:
+        """Whether a cache file belongs to this entry and not to another instance."""
+
+        name = path.name
+        if not name.endswith(".json"):
+            return False
+        stem = self._cache_stem()
+        if stem != "solcast":
+            return name == f"{stem}.json" or name.startswith(f"{stem}-")
+        if name == "solcast.json":
+            return True
+        if not name.startswith("solcast-"):
+            return False
+        rest = name[len("solcast-") : -len(".json")]
+        legacy = {
+            "undampened",
+            "actuals",
+            "actuals-dampened",
+            "advanced",
+            "dampening",
+            "dampening-history",
+            "generation",
+            "sites",
+            "usage",
+        }
+        return rest in legacy or rest.startswith("sites-") or rest.startswith("usage-")
+
     def _get_sites_cache_filename(self, api_key: str) -> str:
         """Build a site details cache filename.
 
@@ -924,7 +975,7 @@ class SitesCache:
         Returns:
             str: A fully qualified cache filename using a simple name or separate files for more than one API key.
         """
-        return f"{self.api.config_dir}/solcast-sites{'' if not self.multi_key else '-' + api_key}.json"
+        return self._scoped_cache("sites", api_key if self.multi_key else None)
 
     def _get_usage_cache_filename(self, api_key: str) -> str:
         """Build an API cache filename.
@@ -935,7 +986,7 @@ class SitesCache:
         Returns:
             str: A fully qualified cache filename using a simple name or separate files for more than one API key.
         """
-        return f"{self.api.config_dir}/solcast-usage{'' if not self.multi_key else '-' + api_key}.json"
+        return self._scoped_cache("usage", api_key if self.multi_key else None)
 
     async def _sites_data(self, prior_crash: bool = False, use_cache: bool = True) -> tuple[int, str, str]:  # noqa: C901
         """Request site details.

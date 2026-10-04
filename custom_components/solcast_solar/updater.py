@@ -358,6 +358,7 @@ class Updater:
             self._coordinator.solcast.api_limit,
             get_actuals,
             allow_exceed_api_limit_maximum=self._coordinator.solcast.advanced_options.get(ADVANCED_ALLOW_EXCEED_API_LIMIT_MAXIMUM, False),
+            entry=self._coordinator.entry,
         )
 
         scheduled = False

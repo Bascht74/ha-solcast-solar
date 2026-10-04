@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from datetime import datetime as dt
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
@@ -31,6 +32,7 @@ from .const import (
     SUGGESTED_VALUE,
 )
 from .enums import AutoUpdate
+from .instance import repair_placeholders, scoped_issue_id
 from .log import get_logger
 from .util import split_and_strip
 
@@ -68,15 +70,26 @@ def check_unusual_azimuth(latitude: float, azimuth: float) -> tuple[bool, str, i
     return unusual, issue_key, proposal
 
 
-def sync_actuals_api_limit_issue(hass: HomeAssistant, options: Mapping[str, Any], sites: list[dict[str, Any]]) -> None:
+def _scoped(issue_id: str, entry: ConfigEntry | None) -> str:
+    """Suffix repair IDs for a named entry so two entries do not share one repair."""
+
+    if entry is None:
+        return issue_id
+    return scoped_issue_id(issue_id, entry.options, entry.entry_id)
+
+
+def sync_actuals_api_limit_issue(
+    hass: HomeAssistant, options: Mapping[str, Any], sites: list[dict[str, Any]], entry: ConfigEntry | None = None
+) -> None:
     """Raise or remove warning issue when estimated actuals consume auto-update API calls."""
 
     issue_registry = ir.async_get(hass)
+    issue_id = _scoped(ISSUE_ACTUALS_API_LIMIT, entry)
 
     def _remove_issue() -> None:
-        if issue_registry.async_get_issue(DOMAIN, ISSUE_ACTUALS_API_LIMIT) is not None:
-            _LOGGER.debug("Remove issue for %s", ISSUE_ACTUALS_API_LIMIT)
-            ir.async_delete_issue(hass, DOMAIN, ISSUE_ACTUALS_API_LIMIT)
+        if issue_registry.async_get_issue(DOMAIN, issue_id) is not None:
+            _LOGGER.debug("Remove issue for %s", issue_id)
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
     try:
         auto_update = int(options.get(AUTO_UPDATE, AutoUpdate.NONE))
@@ -135,15 +148,18 @@ def sync_actuals_api_limit_issue(hass: HomeAssistant, options: Mapping[str, Any]
     ir.async_create_issue(
         hass,
         DOMAIN,
-        ISSUE_ACTUALS_API_LIMIT,
+        issue_id,
         is_fixable=False,
         is_persistent=False,
         severity=ir.IssueSeverity.WARNING,
         translation_key=ISSUE_ACTUALS_API_LIMIT,
-        translation_placeholders={
-            CONFIGURED_VALUE: configured_value,
-            SUGGESTED_VALUE: suggested_value,
-        },
+        translation_placeholders=repair_placeholders(
+            entry,
+            {
+                CONFIGURED_VALUE: configured_value,
+                SUGGESTED_VALUE: suggested_value,
+            },
+        ),
     )
 
 
@@ -156,15 +172,17 @@ def sync_actuals_quota_risk_issue(
     api_limit: int,
     get_actuals: bool,
     allow_exceed_api_limit_maximum: bool = False,
+    entry: ConfigEntry | None = None,
 ) -> None:
     """Raise or remove warning issue when typical daily API usage may exhaust quota if actuals are fetched."""
 
     issue_registry = ir.async_get(hass)
+    issue_id = _scoped(ISSUE_ACTUALS_QUOTA_TODAY, entry)
 
     def _remove_issue() -> None:
-        if issue_registry.async_get_issue(DOMAIN, ISSUE_ACTUALS_QUOTA_TODAY) is not None:
-            _LOGGER.debug("Remove issue for %s", ISSUE_ACTUALS_QUOTA_TODAY)
-            ir.async_delete_issue(hass, DOMAIN, ISSUE_ACTUALS_QUOTA_TODAY)
+        if issue_registry.async_get_issue(DOMAIN, issue_id) is not None:
+            _LOGGER.debug("Remove issue for %s", issue_id)
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
     if not get_actuals or api_limit == 0:
         _remove_issue()
@@ -210,16 +228,19 @@ def sync_actuals_quota_risk_issue(
         ir.async_create_issue(
             hass,
             DOMAIN,
-            ISSUE_ACTUALS_QUOTA_TODAY,
+            issue_id,
             is_fixable=False,
             is_persistent=False,
             severity=ir.IssueSeverity.WARNING,
             translation_key=ISSUE_ACTUALS_QUOTA_TODAY,
-            translation_placeholders={
-                API_USED: str(effective),
-                API_LIMIT: str(inferred_quota),
-                ACTUALS_COST: str(actuals_cost),
-            },
+            translation_placeholders=repair_placeholders(
+                entry,
+                {
+                    API_USED: str(effective),
+                    API_LIMIT: str(inferred_quota),
+                    ACTUALS_COST: str(actuals_cost),
+                },
+            ),
         )
         return
 
@@ -228,77 +249,83 @@ def sync_actuals_quota_risk_issue(
         _remove_issue()
 
 
-async def raise_or_clear_advanced_problems(problems: list[str], hass: HomeAssistant):
+async def raise_or_clear_advanced_problems(problems: list[str], hass: HomeAssistant, entry: ConfigEntry | None = None):
     """Raise or clear advanced unknown option issues."""
     issue_registry = ir.async_get(hass)
+    issue_id = _scoped(ISSUE_ADVANCED_PROBLEM, entry)
     if problems:
         problem_list = "".join([("\n* " + problem) for problem in sorted(problems)])
-        issue = issue_registry.async_get_issue(DOMAIN, ISSUE_ADVANCED_PROBLEM)
+        issue = issue_registry.async_get_issue(DOMAIN, issue_id)
         if (
             issue is not None
             and issue.translation_placeholders is not None
             and issue.translation_placeholders.get(PROBLEMS) != problem_list
         ):
-            ir.async_delete_issue(hass, DOMAIN, ISSUE_ADVANCED_PROBLEM)
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
             await hass.async_block_till_done()
         _LOGGER.debug("Raising advanced option problems issue for: %s", ", ".join(problems))
         ir.async_create_issue(
             hass,
             DOMAIN,
-            ISSUE_ADVANCED_PROBLEM,
+            issue_id,
             is_fixable=False,
             is_persistent=True,
             translation_key=ISSUE_ADVANCED_PROBLEM,
-            translation_placeholders={
-                PROBLEMS: problem_list,
-            },
+            translation_placeholders=repair_placeholders(entry, {PROBLEMS: problem_list}),
             severity=ir.IssueSeverity.ERROR,
             learn_more_url=LEARN_MORE_ADVANCED,
         )
-        issue = issue_registry.async_get_issue(DOMAIN, ISSUE_ADVANCED_PROBLEM)
+        issue = issue_registry.async_get_issue(DOMAIN, issue_id)
     else:
         issue_registry = ir.async_get(hass)
-        issue = issue_registry.async_get_issue(DOMAIN, ISSUE_ADVANCED_PROBLEM)
+        issue = issue_registry.async_get_issue(DOMAIN, issue_id)
         if issue is not None:
             _LOGGER.debug("Removing advanced problems issue")
-            ir.async_delete_issue(hass, DOMAIN, ISSUE_ADVANCED_PROBLEM)
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 async def raise_or_clear_advanced_deprecated(
-    deprecated_in_use: dict[str, str], hass: HomeAssistant, stops_working: dict[str, dt] | None = None
+    deprecated_in_use: dict[str, str],
+    hass: HomeAssistant,
+    stops_working: dict[str, dt] | None = None,
+    entry: ConfigEntry | None = None,
 ):
     """Raise or clear advanced deprecated option issues."""
+    issue_id = _scoped(ISSUE_ADVANCED_DEPRECATED, entry)
     if deprecated_in_use:
         ir.async_create_issue(
             hass,
             DOMAIN,
-            ISSUE_ADVANCED_DEPRECATED,
+            issue_id,
             is_fixable=False,
             is_persistent=True,
             translation_key=ISSUE_ADVANCED_DEPRECATED,
-            translation_placeholders={
-                OPTION: ", ".join(deprecated_in_use.keys()),
-                NEW_OPTION: ", ".join(deprecated_in_use.values()),
-                STOPS_WORKING: (
-                    " ("
-                    + ", ".join(
-                        [
-                            f"{option} stops working after {date.strftime(DT_DATE_ONLY_FORMAT)}"
-                            for option, date in stops_working.items()
-                            if option in deprecated_in_use
-                        ]
+            translation_placeholders=repair_placeholders(
+                entry,
+                {
+                    OPTION: ", ".join(deprecated_in_use.keys()),
+                    NEW_OPTION: ", ".join(deprecated_in_use.values()),
+                    STOPS_WORKING: (
+                        " ("
+                        + ", ".join(
+                            [
+                                f"{option} stops working after {date.strftime(DT_DATE_ONLY_FORMAT)}"
+                                for option, date in stops_working.items()
+                                if option in deprecated_in_use
+                            ]
+                        )
+                        + ")"
                     )
-                    + ")"
-                )
-                if stops_working
-                else "",
-            },
+                    if stops_working
+                    else "",
+                },
+            ),
             severity=ir.IssueSeverity.WARNING,
             learn_more_url=LEARN_MORE_ADVANCED,
         )
     else:
         issue_registry = ir.async_get(hass)
-        issue = issue_registry.async_get_issue(DOMAIN, ISSUE_ADVANCED_DEPRECATED)
+        issue = issue_registry.async_get_issue(DOMAIN, issue_id)
         if issue is not None:
             _LOGGER.debug("Removing advanced deprecation issue")
-            ir.async_delete_issue(hass, DOMAIN, ISSUE_ADVANCED_DEPRECATED)
+            ir.async_delete_issue(hass, DOMAIN, issue_id)

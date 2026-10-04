@@ -72,6 +72,7 @@ from .const import (
     UPDATE_TRIES,
 )
 from .enums import AutoUpdate, SolcastApiStatus, UpdateOutcome, UpdateResult
+from .instance import repair_issue_id, repair_placeholders
 from .redact import redact_api_key, redact_msg_api_key
 from .state import raise_and_record
 
@@ -559,23 +560,29 @@ class Fetcher:
             await self.sort_and_prune(site, self.api.data_undampened, 14, forecasts_undampened)
         finally:
             issue_registry = ir.async_get(self.api.hass)
+            missing_initial = repair_issue_id(ISSUE_RECORDS_MISSING_INITIAL, self.api.entry)
             if (
                 failure
                 and (
                     self.api.data_undampened[SITE_INFO].get(site) is None
                     or self.api.data_undampened[SITE_INFO][site][FORECASTS][0][PERIOD_START] > dt_util.now(UTC) - timedelta(hours=1)
                 )
-                and issue_registry.async_get_issue(DOMAIN, ISSUE_RECORDS_MISSING_INITIAL) is None
+                and issue_registry.async_get_issue(DOMAIN, missing_initial) is None
             ):
-                _LOGGER.warning("Raise issue `%s` for missing forecast data", ISSUE_RECORDS_MISSING_INITIAL)
+                _LOGGER.warning("Raise issue `%s` for missing forecast data", missing_initial)
+                if missing_initial != ISSUE_RECORDS_MISSING_INITIAL and issue_registry.async_get_issue(
+                    DOMAIN, ISSUE_RECORDS_MISSING_INITIAL
+                ) is not None:
+                    ir.async_delete_issue(self.api.hass, DOMAIN, ISSUE_RECORDS_MISSING_INITIAL)
                 ir.async_create_issue(
                     self.api.hass,
                     DOMAIN,
-                    ISSUE_RECORDS_MISSING_INITIAL,
+                    missing_initial,
                     is_fixable=False,
                     is_persistent=True,
                     severity=ir.IssueSeverity.WARNING,
                     translation_key=ISSUE_RECORDS_MISSING_INITIAL,
+                    translation_placeholders=repair_placeholders(self.api.entry),
                     learn_more_url=LEARN_MORE_MISSING_FORECAST_DATA,
                 )
 
@@ -747,9 +754,11 @@ class Fetcher:
                             else:
                                 _LOGGER.debug("API returned data")
                             response_json = await self.api.hass.async_add_executor_job(json.loads, response_text)
-                            if issue_registry.async_get_issue(DOMAIN, ISSUE_API_UNAVAILABLE) is not None:
-                                _LOGGER.debug("Remove issue for %s", ISSUE_API_UNAVAILABLE)
-                                ir.async_delete_issue(self.api.hass, DOMAIN, ISSUE_API_UNAVAILABLE)
+                            unavailable = repair_issue_id(ISSUE_API_UNAVAILABLE, self.api.entry)
+                            for candidate in dict.fromkeys((unavailable, ISSUE_API_UNAVAILABLE)):
+                                if issue_registry.async_get_issue(DOMAIN, candidate) is not None:
+                                    _LOGGER.debug("Remove issue for %s", candidate)
+                                    ir.async_delete_issue(self.api.hass, DOMAIN, candidate)
                                 if (trigger := self.api.advanced_options[ADVANCED_TRIGGER_ON_API_AVAILABLE]) and trigger:
                                     await async_trigger_automation_by_name(self.api.hass, trigger)
                             _LOGGER.debug(
@@ -781,16 +790,18 @@ class Fetcher:
 
                             if received_429 == tries:
                                 if self.api.advanced_options[ADVANCED_API_RAISE_ISSUES]:
-                                    if issue_registry.async_get_issue(DOMAIN, ISSUE_API_UNAVAILABLE) is None:
-                                        _LOGGER.debug("Raise issue for %s", ISSUE_API_UNAVAILABLE)
+                                    unavailable = repair_issue_id(ISSUE_API_UNAVAILABLE, self.api.entry)
+                                    if issue_registry.async_get_issue(DOMAIN, unavailable) is None:
+                                        _LOGGER.debug("Raise issue for %s", unavailable)
                                         ir.async_create_issue(
                                             self.api.hass,
                                             DOMAIN,
-                                            ISSUE_API_UNAVAILABLE,
+                                            unavailable,
                                             is_fixable=False,
                                             is_persistent=True,
                                             severity=ir.IssueSeverity.WARNING,
                                             translation_key=ISSUE_API_UNAVAILABLE,
+                                            translation_placeholders=repair_placeholders(self.api.entry),
                                             learn_more_url=LEARN_MORE_MISSING_FORECAST_DATA,
                                         )
                                         if (trigger := self.api.advanced_options[ADVANCED_TRIGGER_ON_API_UNAVAILABLE]) and trigger:

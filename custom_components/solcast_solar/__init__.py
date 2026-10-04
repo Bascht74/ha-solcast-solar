@@ -30,7 +30,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
 from . import entry_state, state
-from .actions import ServiceActions, register_stub_actions, unregister_actions
+from .actions import ServiceActions, register_stub_actions, release_entry_actions
 from .const import (
     ADVANCED_AUTOMATED_DAMPENING_ADAPTIVE_MODEL_CONFIGURATION,
     ADVANCED_USER_AGENT,
@@ -79,6 +79,7 @@ from .const import (
 )
 from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, HistoryType, SitesStatus, UsageStatus
+from .instance import cache_file_path, cache_stem
 from .issues import sync_actuals_api_limit_issue
 from .log import get_logger
 from .solcastapi import ConnectionOptions, SolcastApi
@@ -139,11 +140,7 @@ async def __get_options(hass: HomeAssistant, entry: ConfigEntry) -> ConnectionOp
         entry.options[CONF_API_KEY],
         entry.options.get(API_LIMIT, 10),
         DEFAULT_SOLCAST_HTTPS_URL,
-        hass.config.path(
-            f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}/solcast.json"
-            if CONFIG_FOLDER_DISCRETE
-            else f"{hass.config.config_dir}/solcast.json"
-        ),
+        cache_file_path(hass, entry.options),
         await __get_time_zone(hass),
         entry.options.get(AUTO_UPDATE, AutoUpdate.NONE),
         dampening_option,
@@ -372,7 +369,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         case _:
             pass
 
-    sync_actuals_api_limit_issue(hass, entry.options, solcast.sites)
+    sync_actuals_api_limit_issue(hass, entry.options, solcast.sites, entry=entry)
 
     await __get_granular_dampening(hass, entry, solcast)
 
@@ -447,7 +444,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        unregister_actions(hass)
+        release_entry_actions(hass, entry)
 
     return unload_ok
 
@@ -581,7 +578,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     else:
         determination = "Refresh sensors only" + (", with spline recalculate" if recalculate_splines else "")
     _LOGGER.debug("Options updated, action: %s", determination)
-    sync_actuals_api_limit_issue(hass, entry.options, coordinator.solcast.sites)
+    sync_actuals_api_limit_issue(hass, entry.options, coordinator.solcast.sites, entry=entry)
     if not reload:
         await coordinator.solcast.set_options(entry.options)
         if recalculate_and_refresh:
@@ -678,10 +675,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             default_list: list[str] = []
             config_dir = f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}" if CONFIG_FOLDER_DISCRETE else hass.config.config_dir
+            stem = cache_stem(new_options)
+            several_keys = len(new_options[CONF_API_KEY].split(",")) > 1
             for api_key in new_options[CONF_API_KEY].split(","):
-                api_cache_filename = (
-                    f"{config_dir}/solcast-usage{'' if len(new_options[CONF_API_KEY].split(',')) < 2 else '-' + api_key.strip()}.json"
-                )
+                api_cache_filename = f"{config_dir}/{stem}-usage{'-' + api_key.strip() if several_keys else ''}.json"
                 async with aiofiles.open(api_cache_filename) as f:
                     usage = json.loads(await f.read())
                 default_list.append(str(usage[DAILY_LIMIT]))

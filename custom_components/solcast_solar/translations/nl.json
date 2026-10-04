@@ -306,35 +306,35 @@
   "issues": {
     "action_deprecated": {
       "description": "De actie `{deprecated_action}` is verouderd en wordt verwijderd in een toekomstige versie. Gebruik in plaats daarvan de actie `{new_action}`.",
-      "title": "Verouderde actie"
+      "title": "Verouderde actie ({instance})"
     },
     "actuals_api_limit": {
       "description": "Automatische update en geschatte werkelijke waarden zijn ingeschakeld terwijl de API-limiet is ingesteld op de maximale hobbyistwaarde (`{configured_value}`). Geschatte werkelijke waarden worden verzameld direct na middernacht en verbruiken één API-aanroep per daklocatie voor elke geconfigureerde API-sleutel. Verlaag uw API-limiet naar `{suggested_value}` om aanroepen te reserveren voor geschatte werkelijke waarden.",
-      "title": "Pas de API-limiet aan voor geschatte werkelijke waarden"
+      "title": "Pas de API-limiet aan voor geschatte werkelijke waarden ({instance})"
     },
     "actuals_quota_today": {
-      "title": "Ophalen van geschatte werkelijke waarden kan het dagelijkse API-quotum overschrijden",
+      "title": "Ophalen van geschatte werkelijke waarden kan het dagelijkse API-quotum overschrijden ({instance})",
       "description": "Het ophalen van geschatte werkelijke waarden is ingeschakeld. Op basis van het typische dagelijkse API-gebruik voor prognose-updates ({api_used} aanroepen) en het afgeleid accountquotum van {api_limit} aanroepen, zou het toevoegen van de {actuals_cost} aanroep(en) voor het ophalen van geschatte werkelijke waarden het quotum op een gemiddelde dag overschrijden. Het ophalen wordt toch geprobeerd direct na middernacht, maar dit (of een volgende prognose-update) kan mislukken met een `429 Too Many Requests`-respons.\n\nDeze waarschuwing kan verschijnen terwijl de typische gebruiksteller nog gevoed wordt met echte gegevens. Het typische aantal weerspiegelt alleen automatische updates/automatisering-updates en geforceerde prognose-aanroepen. Controleer uw geconfigureerde API-limiet en eventuele automatiseringen voor geforceerde updates als u geschatte werkelijke waarden wilt gebruiken."
     },
     "advanced_deprecated": {
       "description": "Geavanceerde configuratieoptie(s) `{option}` gewijzigd in `{new_option}`. Werk uw geavanceerde configuratieopties bij om de nieuwe optienaam te gebruiken.{stops_working}",
-      "title": "Geavanceerde optie verouderd"
+      "title": "Geavanceerde optie verouderd ({instance})"
     },
     "advanced_problem": {
       "description": "Het geavanceerde configuratiebestand bevat fouten.\n{problems}\n\nLos deze op aan de hand van de integratiedocumentatie via de link ‘Meer informatie’.",
-      "title": "Probleem met geavanceerde optie"
+      "title": "Probleem met geavanceerde optie ({instance})"
     },
     "api_unavailable": {
       "description": "De Solcast API heeft tijdens een update herhaaldelijk de status `429 / Probeer het later opnieuw` gemeld.\n\n* Probeer deze situatie niet op te lossen.\n* Wijzig uw API-sleutel niet.\n* Start de integratie niet opnieuw op\n* Dit is geen integratieprobleem en lost zichzelf op. Wijzig niets.\n\n(Om dit probleem te onderdrukken, maakt u een geavanceerde configuratieoptie api_raise_issue aan en stelt u deze in op false.)",
-      "title": "Solcast API tijdelijk niet beschikbaar"
+      "title": "Solcast API tijdelijk niet beschikbaar ({instance})"
     },
     "corrupt_file": {
       "description": "Het/de cachegegevensbestand(en) `{files}` is/zijn beschadigd. De integratie zal proberen te herstellen door het/de bestand(en) te verwijderen en de gegevens opnieuw op te halen uit Solcast. Houd rekening met een verhoogd API-gebruik en mogelijke API-storingen, en verlies van voorspellingsgeschiedenis als gevolg van deze situatie. Mogelijk kunnen de bestanden worden hersteld vanuit de back-up, maar houd toch rekening met API-storingen.",
-      "title": "Beschadigde cachegegevens"
+      "title": "Beschadigde cachegegevens ({instance})"
     },
     "records_missing": {
       "description": "Er ontbreken toekomstige voorspelling gegevens, wat onverwacht is omdat automatische updates zijn ingeschakeld. Onderzoek de oorzaak door het logboek van Home Assistant te bekijken. Lees de veelgestelde vragen over probleemoplossing voordat u een integratieprobleem meldt.",
-      "title": "Toekomstprognoses ontbreken"
+      "title": "Toekomstprognoses ontbreken ({instance})"
     },
     "records_missing_fixable": {
       "fix_flow": {
@@ -353,23 +353,23 @@
           }
         }
       },
-      "title": "Toekomstprognoses ontbreken"
+      "title": "Toekomstprognoses ontbreken ({instance})"
     },
     "records_missing_initial": {
       "description": "De voorspelde en/of geschatte werkelijke gegevens ontbreken, waarschijnlijk omdat de eerste voorspellingsupdate niet heeft plaatsgevonden. Dit komt waarschijnlijk doordat de limiet voor API-aanroepen is bereikt. U zult problemen met sensoren krijgen en het energiedashboard zal waarschijnlijk onvolledige gegevens bevatten. Dit lost zichzelf op.",
-      "title": "Toekomstvoorspellingen ontbreken"
+      "title": "Toekomstvoorspellingen ontbreken ({instance})"
     },
     "records_missing_unfixable": {
       "description": "De toekomstvoorspellingen ontbreken, wat onverwacht is. Controleer de logboeken.",
-      "title": "Toekomstvoorspellingen ontbreken"
+      "title": "Toekomstvoorspellingen ontbreken ({instance})"
     },
     "unusual_azimuth_northern": {
       "description": "De azimut voor locatie {site} is ongebruikelijk voor de breedtegraad van dit dak op het noordelijk halfrond. Moet dit {proposal} zijn in plaats van {extant}? (Negeer dit probleem als de locatie naar het noorden is gericht.)",
-      "title": "Ongebruikelijke azimut"
+      "title": "Ongebruikelijke azimut ({instance})"
     },
     "unusual_azimuth_southern": {
       "description": "De azimut voor locatie {site} is ongebruikelijk voor de breedtegraad van dit dak op het zuidelijk halfrond. Moet dit {proposal} zijn in plaats van {extant}? (Negeer dit probleem als de locatie naar het zuiden is gericht.)",
-      "title": "Ongebruikelijke azimut"
+      "title": "Ongebruikelijke azimut ({instance})"
     }
   },
   "options": {

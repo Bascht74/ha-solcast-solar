@@ -15,7 +15,10 @@
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
       "limit_too_many": "There are more API limit counts entered than keys",
-      "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less)."
+      "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
+      "instance_name_required": "Another entry needs a name.",
+      "instance_name_invalid": "The name must contain a letter or a digit.",
+      "instance_name_duplicate": "That name is already used."
     },
     "step": {
       "reauth_confirm": {
@@ -44,12 +47,14 @@
         "data": {
           "api_key": "API key",
           "api_limit": "API limit",
-          "auto_update": "Auto-update"
+          "auto_update": "Auto-update",
+          "instance_name": "Name"
         },
         "data_description": {
           "api_key": "Enter one or more Solcast API keys, separated by commas",
           "api_limit": "Enter a forecast update daily limit, comma separated when using multiple keys",
-          "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)"
+          "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)",
+          "instance_name": "Name of this plant, for example West. Leave empty only for the first entry. Further entries need a name so their files and sensors stay separate."
         },
         "description": "Solcast Account Details\n\n(If not using auto-update then an automation is required - see the integration documentation)\n\nThe Solcast API must be available to initially configure this integration. If you receive a status message '429 / Try again later' then the API is unavailable and configuration cannot be completed. You need to wait. Note that the API status page at status.solcast.com will almost certainly not show any API issues. The cause most likely lies with a single bad API user who is affecting availability for all hobbyists."
       }
@@ -304,40 +309,46 @@
     },
     "set_options_empty": {
       "message": "At least one option must be specified."
+    },
+    "instance_required": {
+      "message": "More than one Solcast entry is loaded. Choose the device."
+    },
+    "instance_unknown": {
+      "message": "That device does not belong to a loaded Solcast entry."
     }
   },
   "issues": {
     "action_deprecated": {
       "description": "The `{deprecated_action}` action is deprecated and will be removed in a future release. Use the `{new_action}` action instead.",
-      "title": "Deprecated action"
+      "title": "Deprecated action ({instance})"
     },
     "advanced_deprecated": {
       "description": "Advanced configuration option(s) `{option}` changed to `{new_option}`. Please update your advanced configuration options to use the new option name.{stops_working}",
-      "title": "Advanced option deprecated"
+      "title": "Advanced option deprecated ({instance})"
     },
     "advanced_problem": {
       "description": "The advanced configuration file contains errors.\n{problems}\n\nPlease fix these, referring to the integration documentation at the 'Learn more' link.",
-      "title": "Advanced option problem"
+      "title": "Advanced option problem ({instance})"
     },
     "api_unavailable": {
       "description": "The Solcast API has reported `429 / Try again later` status repeatedly during an update. This means that the Solcast API is busy and is actively blocking requests for hobbyist accounts.\n\n* The solcast.com website is unaffected, but the API is temporarily unavailable to you.\n* The API status page at status.solcast.com will almost certainly indicate no issue.\n* Do not attempt to fix this situation.\n* Do not change your API key.\n* Do not attempt an integration upgrade.\n* Avoid restarting the integration.\n* The integration will continue providing the last solar forecast it retrieved from Solcast.\n* This is not an integration issue and will resolve itself. Change nothing.\n\n(To suppress this issue, create an advanced configuration option api_raise_issue and set it to false.)",
-      "title": "Solcast API temporarily unavailable"
+      "title": "Solcast API temporarily unavailable ({instance})"
     },
     "actuals_api_limit": {
       "description": "Auto-update and estimated actuals are enabled while API limit is configured at hobbyist maximum value (`{configured_value}`). Estimated actuals are collected just after midnight and use one API call per rooftop site for each configured API key. Reduce your API limit to `{suggested_value}` to reserve calls for estimated actuals.",
-      "title": "Adjust API limit for estimated actuals"
+      "title": "Adjust API limit for estimated actuals ({instance})"
     },
     "actuals_quota_today": {
       "description": "Estimated actuals fetching has been enabled. Based on typical daily forecast update API usage ({api_used} calls) and the inferred {api_limit} call account quota, adding the {actuals_cost} call(s) needed for the estimated actuals fetch would exceed the quota on a typical day. The fetch will still be attempted just after midnight, but it (or a subsequent forecast update) may fail with a `429 Too Many Requests` response.\n\nThis warning may appear while the typical usage counter is still being seeded from real data. The typical count reflects auto-update/automation update and forced forecast calls only. Review your configured API limit and any force-update automations if you want to use estimated actuals.",
-      "title": "Estimated actuals fetch may exceed daily API quota"
+      "title": "Estimated actuals fetch may exceed daily API quota ({instance})"
     },
     "corrupt_file": {
       "description": "The cached data file(s) `{files}` is corrupted. The integration will attempt to recover by deleting the file(s) and re-fetching data from Solcast. Expect increased API usage and potential API failures, and loss of forecast history due to this situation. Possibly recover the files from backup, but still expect API call failures.",
-      "title": "Corrupted cached data"
+      "title": "Corrupted cached data ({instance})"
     },
     "records_missing": {
       "description": "Future forecast data is missing, which is unexpected because auto-update is enabled. Investigate the cause by examining the Home Assistant log. Read the troubleshooting FAQ before raising an integration issue.",
-      "title": "Future forecasts missing"
+      "title": "Future forecasts missing ({instance})"
     },
     "records_missing_fixable": {
       "fix_flow": {
@@ -356,23 +367,23 @@
           }
         }
       },
-      "title": "Future forecasts missing"
+      "title": "Future forecasts missing ({instance})"
     },
     "records_missing_initial": {
       "description": "Forecast and/or estimated actual data is missing, likely because the initial forecast update did not occur. This is likely because the API call limit has been reached. You _will_ have sensor entity issues, and the Energy dashboard will likely have missing data. This will resolve itself.",
-      "title": "Forecasts missing"
+      "title": "Forecasts missing ({instance})"
     },
     "records_missing_unfixable": {
       "description": "Future forecast data is missing, which is unexpected. Check the logs.",
-      "title": "Future forecasts missing"
+      "title": "Future forecasts missing ({instance})"
     },
     "unusual_azimuth_northern": {
       "description": "The azimuth for site {site} is unusual for the latitude of this northern hemisphere rooftop. Should this be {proposal} instead of {extant}? (Ignore the issue if the site is facing towards North.)",
-      "title": "Unusual azimuth"
+      "title": "Unusual azimuth ({instance})"
     },
     "unusual_azimuth_southern": {
       "description": "The azimuth for site {site} is unusual for the latitude of this southern hemisphere rooftop. Should this be {proposal} instead of {extant}? (Ignore the issue if the site is facing towards South.)",
-      "title": "Unusual azimuth"
+      "title": "Unusual azimuth ({instance})"
     }
   },
   "options": {

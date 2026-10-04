@@ -2,26 +2,44 @@
 update_forecasts:
   name: Update
   description: Fetches the forecasts from Solcast
+  target:
+    entity:
+      integration: solcast_solar
 
 force_update_forecasts:
   name: Force Update Forecasts
   description: Force fetches the forecasts from Solcast
+  target:
+    entity:
+      integration: solcast_solar
 
 force_update_estimates:
   name: Force Update Estimates
   description: Force fetches estimated actuals from Solcast
+  target:
+    entity:
+      integration: solcast_solar
 
 clear_all_solcast_data:
   name: Clear saved Solcast site data
   description: Deletes cached Solcast forecast and estimated actual data files, then reloads integration data
+  target:
+    entity:
+      integration: solcast_solar
 
 diagnostic:
   name: Diagnostic
   description: Run a diagnostic self-test to validate configuration health
+  target:
+    entity:
+      integration: solcast_solar
 
 query_forecast_data:
   name: Query forecasts
   description: List of forecasts between start date/time and end date/time
+  target:
+    entity:
+      integration: solcast_solar
   fields:
     start_date_time:
       example: "2024-10-06T00:00:00Z"
@@ -39,6 +57,9 @@ query_forecast_data:
 query_estimate_data:
   name: Query estimates
   description: List of estimated actuals between optional start and end date/time values; defaults to yesterday when omitted
+  target:
+    entity:
+      integration: solcast_solar
   fields:
     start_date_time:
       example: "2024-10-06T00:00:00Z"
@@ -56,6 +77,9 @@ query_estimate_data:
 set_custom_hours:
   name: Set custom hours sensor
   description: Deprecated; use the set_options action with the custom_hours option instead
+  target:
+    entity:
+      integration: solcast_solar
   fields:
     hours:
       example: "6"
@@ -63,6 +87,9 @@ set_custom_hours:
 set_dampening:
   name: Set forecasts dampening
   description: Set the hourly or half-hourly forecast dampening factors
+  target:
+    entity:
+      integration: solcast_solar
   fields:
     damp_factor:
       example: "1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1"
@@ -72,6 +99,9 @@ set_dampening:
 get_dampening:
   name: Get forecasts dampening
   description: Get the forecast dampening factors
+  target:
+    entity:
+      integration: solcast_solar
   fields:
     site:
       example: "1234-5678-9012-3456"
@@ -79,10 +109,16 @@ get_dampening:
 get_options:
   name: Get options
   description: Get current integration configuration options
+  target:
+    entity:
+      integration: solcast_solar
 
 set_hard_limit:
   name: Set inverter forecast hard limit in kW
   description: Deprecated; use the set_options action with the hard_limit option instead
+  target:
+    entity:
+      integration: solcast_solar
   fields:
     hard_limit:
       description: Set the max value in kW that the inverter can produce. Use 0 to disable the hard limit.
@@ -91,10 +127,16 @@ set_hard_limit:
 remove_hard_limit:
   name: Remove inverter forecast hard limit
   description: Deprecated; use the set_options action with the hard_limit option set to 0 instead
+  target:
+    entity:
+      integration: solcast_solar
 
 set_options:
   name: Set options
   description: Set one or more integration configuration options
+  target:
+    entity:
+      integration: solcast_solar
   fields:
     api_key:
       example: "your-api-key"

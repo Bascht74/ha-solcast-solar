@@ -90,6 +90,7 @@ from .dates import DateTimeHelper
 from .enums import AutoUpdate, HistoryType, SitesStatus, SolcastApiStatus, UsageStatus
 from .fetcher import Fetcher
 from .forecast import ForecastQuery
+from .instance import repair_issue_id, repair_placeholders
 from .log import get_logger
 from .redact import redact_api_key
 from .sites_cache import FRESH_DATA, SitesCache
@@ -367,14 +368,12 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
             ir.async_create_issue(
                 self.hass,
                 DOMAIN,
-                ISSUE_CORRUPT_FILE,
+                repair_issue_id(ISSUE_CORRUPT_FILE, self.entry),
                 is_fixable=False,
                 is_persistent=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key=ISSUE_CORRUPT_FILE,
-                translation_placeholders={
-                    FILES: str(unlinked),
-                },
+                translation_placeholders=repair_placeholders(self.entry, {FILES: str(unlinked)}),
                 learn_more_url=LEARN_MORE_CORRUPT_FILE,
             )
 
@@ -1046,16 +1045,17 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         issue_registry = ir.async_get(self.hass)
 
         def _remove_issues():
-            # Remove any relevant issues that may exist.
+            # Remove any relevant issues that may exist, including repairs raised before instance IDs.
             for check_issue in (
                 ISSUE_RECORDS_MISSING,
                 ISSUE_RECORDS_MISSING_FIXABLE,
                 ISSUE_RECORDS_MISSING_INITIAL,  # Raised elsewhere but cleaned up here
                 ISSUE_RECORDS_MISSING_UNFIXABLE,
             ):
-                if issue_registry.async_get_issue(DOMAIN, check_issue) is not None:
-                    _LOGGER.debug("Remove issue for %s", check_issue)
-                    ir.async_delete_issue(self.hass, DOMAIN, check_issue)
+                for candidate in dict.fromkeys((repair_issue_id(check_issue, self.entry), check_issue)):
+                    if issue_registry.async_get_issue(DOMAIN, candidate) is not None:
+                        _LOGGER.debug("Remove issue for %s", candidate)
+                        ir.async_delete_issue(self.hass, DOMAIN, candidate)
 
         if 0 < contiguous < self.advanced_options[ADVANCED_FORECAST_FUTURE_DAYS] - 1:
             if self.entry is not None:
@@ -1066,16 +1066,18 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
 
                 # If auto-update is enabled yet the prior forecast update was manual then do not raise an issue.
                 raise_issue = None if self.data[AUTO_UPDATED] == 0 and self.entry.options[AUTO_UPDATE] != AutoUpdate.NONE else raise_issue
-                if raise_issue is not None and issue_registry.async_get_issue(DOMAIN, raise_issue) is None:
-                    _LOGGER.warning("Raise issue `%s` for missing forecast data", raise_issue)
+                scoped_issue = repair_issue_id(raise_issue, self.entry) if raise_issue is not None else None
+                if scoped_issue is not None and issue_registry.async_get_issue(DOMAIN, scoped_issue) is None:
+                    _LOGGER.warning("Raise issue `%s` for missing forecast data", scoped_issue)
                     ir.async_create_issue(
                         self.hass,
                         DOMAIN,
-                        raise_issue,
+                        scoped_issue,
                         is_fixable=self.entry.options[AUTO_UPDATE] == AutoUpdate.NONE and not any(self.data[FAILURE][LAST_14D]),
                         data={CONTIGUOUS: contiguous, ENTRY_ID: self.entry.entry_id if self.entry is not None else ""},
                         severity=ir.IssueSeverity.WARNING,
                         translation_key=raise_issue,
+                        translation_placeholders=repair_placeholders(self.entry),
                         learn_more_url=LEARN_MORE_MISSING_FORECAST_DATA,
                     )
                 if not raise_issue:
