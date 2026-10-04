@@ -55,6 +55,7 @@ from .const import (
     ENTITY_TOTAL_KWH_FORECAST,
     ENTITY_TOTAL_KWH_FORECAST_TODAY,
     ENTITY_TOTAL_KWH_FORECAST_TOMORROW,
+    EXCLUDE_SITES,
     FACTORS,
     HARD_LIMIT,
     HARD_LIMIT_API,
@@ -548,12 +549,14 @@ def _warn_duplicate_rooftops(hass: HomeAssistant, entry: ConfigEntry, sites: lis
         except AttributeError:
             continue
         shared = own_ids & {site[RESOURCE_ID] for site in other_sites}
+        excluded = set(entry.options.get(EXCLUDE_SITES, [])) | set(other.options.get(EXCLUDE_SITES, []))
         for resource_id in sorted(shared):
             _LOGGER.warning(
                 "Rooftop %s is already used by Solcast entry %s. "
-                "The same rooftop in two entries shares one sensor ID, so only one of them is created",
+                "The same rooftop in two entries shares one sensor ID, so only one of them is created%s",
                 resource_id,
                 other.title,
+                "" if resource_id in excluded else ", and both entries count it; exclude it in one of them",
             )
 
 

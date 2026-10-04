@@ -19,7 +19,8 @@
       "instance_name_required": "Another entry needs a name.",
       "instance_name_invalid": "The name must contain a letter or a digit.",
       "instance_name_duplicate": "That name is already used.",
-      "instance_name_reserved": "That name is reserved for the files of the first entry. Choose another name."
+      "instance_name_reserved": "That name is reserved for the files of the first entry. Choose another name.",
+      "rooftop_in_use": "Rooftop {rooftops} is already counted by {entries}. Exclude it there first, or use another API key."
     },
     "step": {
       "reauth_confirm": {
@@ -413,7 +414,8 @@
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
       "limit_too_many": "There are more API limit counts entered than keys",
-      "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less)."
+      "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
+      "rooftop_in_use": "Rooftop {rooftops} is already counted by {entries}. Exclude it in one of the two entries."
     },
     "step": {
       "dampen": {

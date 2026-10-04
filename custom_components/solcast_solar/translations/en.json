@@ -19,7 +19,8 @@
       "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
-      "limit_too_many": "There are more API limit counts entered than keys"
+      "limit_too_many": "There are more API limit counts entered than keys",
+      "rooftop_in_use": "Rooftop {rooftops} is already counted by {entries}. Exclude it there first, or use another API key."
     },
     "step": {
       "reauth_confirm": {
@@ -413,7 +414,8 @@
       "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
-      "limit_too_many": "There are more API limit counts entered than keys"
+      "limit_too_many": "There are more API limit counts entered than keys",
+      "rooftop_in_use": "Rooftop {rooftops} is already counted by {entries}. Exclude it in one of the two entries."
     },
     "step": {
       "dampen": {

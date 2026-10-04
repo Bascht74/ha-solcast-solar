@@ -28,7 +28,11 @@ rules:
   runtime-data: done
   test-before-configure: done
   test-before-setup: done
-  unique-config-entry: done
+  unique-config-entry:
+    status: done
+    comment: |
+      Several entries are allowed; each named one has its own files and IDs. A rooftop can be counted
+      by one entry only (checked in the user, reconfigure, reauth and options flows).
   # Silver
   action-exceptions: done
   config-entry-unloading: done
@@ -67,7 +71,7 @@ rules:
   dynamic-devices:
     status: exempt
     comment: |
-      A single device is created for the integration instance. There can only be one instance.
+      A single service device is created for each config entry.
   entity-category: done
   entity-device-class: done
   entity-disabled-by-default: done
@@ -79,7 +83,7 @@ rules:
   stale-devices:
     status: exempt
     comment: |
-      A single device is created for the integration instance. There can only be one instance.
+      A single service device is created for each config entry and removed with it.
   # Platinum
   async-dependency: done
   inject-websession: done

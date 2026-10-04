@@ -14,7 +14,9 @@ from homeassistant import config_entries
 from homeassistant.components.recorder import Recorder
 from homeassistant.components.solcast_solar import state
 from homeassistant.components.solcast_solar.updater import Updater
+from homeassistant.components.solcast_solar.config_flow import SolcastSolarOptionFlowHandler
 from homeassistant.components.solcast_solar.const import (
+    AFFIRMATION_UNCHANGED,
     API_LIMIT,
     AUTO_DAMPEN,
     AUTO_UPDATE,
@@ -24,7 +26,9 @@ from homeassistant.components.solcast_solar.const import (
     ENTRY_ID,
     EXCEPTION_INSTANCE_REQUIRED,
     EXCEPTION_INSTANCE_UNKNOWN,
+    EXCEPTION_ROOFTOP_IN_USE,
     EXCEPTION_SET_OPTIONS_EMPTY,
+    EXCLUDE_SITES,
     GENERATION_ENTITIES,
     INSTANCE_NAME,
     ISSUE_RECORDS_MISSING,
@@ -34,6 +38,7 @@ from homeassistant.components.solcast_solar.const import (
     SERVICE_GET_OPTIONS,
     SERVICE_SET_OPTIONS,
     SITE_DAMP,
+    SITE_EXPORT_ENTITY,
 )
 from homeassistant.components.solcast_solar.instance import repair_issue_id, repair_placeholders
 from homeassistant.components.solcast_solar.repairs import RecordsMissingRepairFlow, async_create_fix_flow
@@ -438,5 +443,52 @@ async def test_action_routing(recorder_mock: Recorder, hass: HomeAssistant) -> N
 
         with patch.object(service, "async_extract_config_entry_ids", _old_helper):
             assert await _api_key_for(hass, {ATTR_AREA_ID: roof.id}) == KEY2
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_rooftop_counted_once(recorder_mock: Recorder, hass: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """One API key may serve two entries, but each rooftop is counted by one entry only."""
+
+    user_input = {CONF_API_KEY: KEY1, API_LIMIT: "10", AUTO_UPDATE: "1", INSTANCE_NAME: "Zwei"}
+    try:
+        original = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input)
+        assert result.get("errors") == {"base": EXCEPTION_ROOFTOP_IN_USE}
+
+        # With the second rooftop excluded in the original entry, a second entry on the same key counts it.
+        hass.config_entries.async_update_entry(original, options={**original.options, EXCLUDE_SITES: ["2222-2222-2222-2222"]})
+        await hass.async_block_till_done()
+        caplog.clear()
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input)
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        await hass.async_block_till_done()
+        zwei = result["result"]
+        assert zwei.state is ConfigEntryState.LOADED
+        assert zwei.options[EXCLUDE_SITES] == ["1111-1111-1111-1111"]
+        assert "Rooftop 1111-1111-1111-1111 is already used by Solcast entry Solcast PV Forecast" in caplog.text
+        assert "both entries count it" not in caplog.text
+
+        # Counting the first rooftop in both entries is refused; unchanged settings still save.
+        flow = SolcastSolarOptionFlowHandler(zwei)
+        flow.hass = hass
+        form = {**zwei.options, SITE_EXPORT_ENTITY: []}
+        result = await flow.async_step_init({**form, EXCLUDE_SITES: []})
+        assert result.get("errors") == {"base": EXCEPTION_ROOFTOP_IN_USE}
+        result = await flow.async_step_init(form)
+        assert result.get("reason") == AFFIRMATION_UNCHANGED
+
+        # A new key whose rooftop another entry counts is refused by reconfigure and reauth.
+        west = await async_init_integration(hass, _west_options(), unique_id="solcast_west", title="Solcast West", orphan_hard_limit=False)
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": west.entry_id}, data=west.data
+        )
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_API_KEY: "1a", API_LIMIT: "10", AUTO_UPDATE: "1"})
+        assert result.get("errors") == {"base": EXCEPTION_ROOFTOP_IN_USE}
+        result = await west.start_reauth_flow(hass)
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_API_KEY: "1a"})
+        assert result.get("errors") == {"base": EXCEPTION_ROOFTOP_IN_USE}
+        assert west.options[CONF_API_KEY] == KEY2
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
