@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import date, datetime as dt, timedelta, tzinfo
 from operator import itemgetter
 from pathlib import Path
-import sys
 import time
 from types import MappingProxyType
 from typing import Any
@@ -90,6 +89,7 @@ from .dates import DateTimeHelper
 from .enums import AutoUpdate, HistoryType, SitesStatus, SolcastApiStatus, UsageStatus
 from .fetcher import Fetcher
 from .forecast import ForecastQuery
+from .instance import repair_issue_id, repair_placeholders
 from .log import get_logger
 from .redact import redact_api_key
 from .sites_cache import FRESH_DATA, SitesCache
@@ -127,9 +127,6 @@ _STATUS_TRANSLATE: dict[int, str] = {
     997: "Connect call failed",
     999: "Prior crash",
 }
-
-# Return the function name at a specified caller depth. 0=current, 1=caller, 2=caller of caller, etc.
-FunctionName = lambda n=0: sys._getframe(n + 1).f_code.co_name  # noqa: E731, SLF001 # type: ignore[no-redef]
 
 
 @dataclass
@@ -291,7 +288,8 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         self.site_data_forecasts: dict[str, list[dict[str, Any]]] = {}
         self.site_data_forecasts_undampened: dict[str, list[dict[str, Any]]] = {}
         self.site_transfers: dict[str, str] = {}
-        self.sites: list[dict[str, Any]] = []
+        self.sites: list[dict[str, Any]] = []  # The sites this entry fetches.
+        self.sites_all: list[dict[str, Any]] = []  # Every site of the API key(s), excluded sites too.
         self.sites_status: SitesStatus = SitesStatus.UNKNOWN
         self.status: SolcastApiStatus = SolcastApiStatus.UNKNOWN
         self.status_message: str = ""
@@ -310,7 +308,6 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
 
         # Configuration directory and file paths.
         self.config_dir = f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}" if CONFIG_FOLDER_DISCRETE else hass.config.config_dir
-        (Path(self.config_dir).mkdir(parents=False, exist_ok=True)) if CONFIG_FOLDER_DISCRETE else None
         _LOGGER.debug("Configuration directory is %s", self.config_dir)
 
         file_path = Path(self.config_dir) / Path(options.file_path).name
@@ -333,6 +330,7 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
     def _migrate_config_files(self) -> list[str]:
         """Migrate config files to discrete folder if required."""
 
+        (Path(self.config_dir).mkdir(parents=False, exist_ok=True)) if CONFIG_FOLDER_DISCRETE else None
         source_path = Path(self.config_dir) / ".." if CONFIG_FOLDER_DISCRETE else Path(self.config_dir) / "solcast_solar"
         if source_path.exists():
             for file in source_path.glob("solcast*.json"):
@@ -341,7 +339,7 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                 file.replace(target_path)
 
         unlinked: list[str] = []
-        for file in Path(self.config_dir).glob("solcast*.json"):
+        for file in filter(self.sites_cache.is_this_entry_cache, Path(self.config_dir).glob("solcast*.json")):
             if file.stat().st_size == 0:
                 _LOGGER.critical("Removing zero-length file %s", file.resolve())
                 file.unlink()
@@ -367,14 +365,12 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
             ir.async_create_issue(
                 self.hass,
                 DOMAIN,
-                ISSUE_CORRUPT_FILE,
+                repair_issue_id(ISSUE_CORRUPT_FILE, self.entry),
                 is_fixable=False,
                 is_persistent=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key=ISSUE_CORRUPT_FILE,
-                translation_placeholders={
-                    FILES: str(unlinked),
-                },
+                translation_placeholders=repair_placeholders(self.entry, {FILES: str(unlinked)}),
                 learn_more_url=LEARN_MORE_CORRUPT_FILE,
             )
 
@@ -544,18 +540,56 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         return min(list(self.api_limits.values()))
 
     @property
-    def api_maximum_sites(self) -> int:
-        """API maximum sites for all API keys).
-
-        Used principally when determining auto-update frequency.
+    def api_sites_per_key(self) -> dict[str, int]:
+        """The number of sites this entry fetches with each API key.
 
         Returns:
-            int: The highest number of sites for all configured API keys.
+            dict[str, int]: The fetched sites per API key; a key whose sites are all excluded is absent.
         """
         api_key_sites: defaultdict[str, int] = defaultdict(int)
         for site in self.sites:
             api_key_sites[site[CONF_API_KEY]] += 1
-        return max(api_key_sites.values()) if api_key_sites else 1
+        return dict(api_key_sites)
+
+    @property
+    def forecast_updates_per_day(self) -> int:
+        """Forecast updates a day that the API limit of every key allows.
+
+        Each update fetches every site this entry fetches. Solcast counts every call per API key and UTC day,
+        so while estimated actuals are fetched one call per fetched site is kept for their daily fetch.
+
+        Returns:
+            int: The number of forecast updates a day, zero when a limit leaves none.
+        """
+        return min(
+            (
+                max((self.api_limits[api_key] - (sites if self.options.get_actuals else 0)) // sites, 0)
+                for api_key, sites in self.api_sites_per_key.items()
+            ),
+            default=0,
+        )
+
+    def api_actuals_reserve(self, api_key: str) -> int:
+        """Calls of an API key still kept for the estimated actuals fetch of this UTC day.
+
+        Arguments:
+            api_key (str): The API key.
+
+        Returns:
+            int: One call per fetched site of the key, less the estimated actuals calls made since UTC midnight.
+        """
+        if not self.options.get_actuals:
+            return 0
+        return max(self.api_sites_per_key.get(api_key, 0) - self.api_actuals.get(api_key, 0), 0)
+
+    def apply_site_exclusion(self) -> None:
+        """Keep every site in `sites_all`, and fetch, count and show only the sites that are not excluded."""
+
+        self.sites_all = self.sites
+        self.sites = [site for site in self.sites_all if site[RESOURCE_ID] not in self.options.exclude_sites]
+        for site in self.sites_all:
+            if site[RESOURCE_ID] in self.options.exclude_sites:
+                _LOGGER.debug("Site %s is excluded, so it is not fetched", site[RESOURCE_ID])
 
     @property
     def api_typical_forecast_updates_count(self) -> int:
@@ -657,7 +691,7 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                 _api_key = redact_api_key(api_key) if multi_key else ALL
                 siteinfo = {site: {forecast[PERIOD_START]: forecast for forecast in data[SITE_INFO][site][FORECASTS]} for site in sites}
                 earliest: dt = dt_util.now(self.tz)
-                latest: dt = earliest
+                latest: dt = max(limits[LAST_PERIOD] for limits in sites.values())
                 for limits in sites.values():
                     if len(sites_hard_limit[api_key]) == 0:
                         msg = f"Build hard limit period values from scratch for {data_set} {_api_key}"
@@ -667,7 +701,6 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                         earliest = min(earliest, limits[EARLIEST_PERIOD])
                     else:
                         earliest = self.dt_helper.day_start_utc()  # Past hard limits done, so re-calculate from today onwards
-                    latest = limits[LAST_PERIOD]
                 if _api_key not in logged_hard_limit:
                     logged_hard_limit.append(_api_key)
                     _LOGGER.debug(
@@ -685,7 +718,8 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                     earliest + timedelta(minutes=HALF_HOUR_MINUTES * x)
                     for x in range(int((latest - earliest).total_seconds() / HALF_HOUR_SECONDS))
                 ]
-                sites_hard_limit[api_key] = {est: {} for est in estimates}
+                past = sites_hard_limit[api_key]  # Keep the past hard limits when re-calculating from today onwards
+                sites_hard_limit[api_key] = {est: {p: v for p, v in past.get(est, {}).items() if p < earliest} for est in estimates}
                 for count, period in enumerate(periods):
                     for pv_estimate in estimates:
                         estimate = {site: siteinfo[site].get(period, {}).get(pv_estimate) for site in sites}
@@ -769,19 +803,18 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                                     ),
                                 }
 
-                                # If the site is not excluded, add to the total.
-                                if resource_id not in self.options.exclude_sites:
-                                    extant: dict[str, Any] | None = actuals.get(period_start)
-                                    if extant is not None:
-                                        extant[ESTIMATE] = round(
-                                            extant[ESTIMATE] + site_actuals[period_start][ESTIMATE],
-                                            4,
-                                        )
-                                    else:
-                                        actuals[period_start] = {
-                                            PERIOD_START: period_start,
-                                            ESTIMATE: round(site_actuals[period_start][ESTIMATE], 4),
-                                        }
+                                # Add to the total.
+                                extant: dict[str, Any] | None = actuals.get(period_start)
+                                if extant is not None:
+                                    extant[ESTIMATE] = round(
+                                        extant[ESTIMATE] + site_actuals[period_start][ESTIMATE],
+                                        4,
+                                    )
+                                else:
+                                    actuals[period_start] = {
+                                        PERIOD_START: period_start,
+                                        ESTIMATE: round(site_actuals[period_start][ESTIMATE], 4),
+                                    }
 
                             # Prevent blocking
                             if actual_count % 200 == 0:
@@ -879,34 +912,33 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                                     for est in [ESTIMATE, ESTIMATE10, ESTIMATE90]
                                 }
 
-                                if resource_id not in self.options.exclude_sites:
-                                    # If the forecast is for today, and the site is not excluded, add to the total.
-                                    if dampened and period_start_local.date() == today:
-                                        if tally is None:
-                                            tally = 0.0
-                                        tally += (
-                                            min(
-                                                forecast[self.use_forecast_confidence],
-                                                sites_hard_limit[api_key][self.use_forecast_confidence]
-                                                .get(period_start, {})
-                                                .get(resource_id, 100),
-                                            )
-                                            * 0.5
+                                # If the forecast is for today, add to the total.
+                                if dampened and period_start_local.date() == today:
+                                    if tally is None:
+                                        tally = 0.0
+                                    tally += (
+                                        min(
+                                            forecast[self.use_forecast_confidence],
+                                            sites_hard_limit[api_key][self.use_forecast_confidence]
+                                            .get(period_start, {})
+                                            .get(resource_id, 100),
                                         )
+                                        * 0.5
+                                    )
 
-                                    extant: dict[str, Any] | None = forecasts.get(period_start)
-                                    if extant is not None:
-                                        for est in [ESTIMATE, ESTIMATE10, ESTIMATE90]:
-                                            extant[est] = round(
-                                                extant[est] + site_forecasts[period_start][est],
-                                                4,
-                                            )
-                                    else:
-                                        forecasts[period_start] = {
-                                            PERIOD_START: period_start,
-                                        } | {est: site_forecasts[period_start][est] for est in (ESTIMATE, ESTIMATE10, ESTIMATE90)}
-                                        if dampened and self.options.auto_dampen and period_start >= self.dt_helper.day_start_utc():
-                                            forecasts[period_start][DAMPENING_FACTOR] = round(self.dampening.auto_factors[period_start], 4)
+                                extant: dict[str, Any] | None = forecasts.get(period_start)
+                                if extant is not None:
+                                    for est in [ESTIMATE, ESTIMATE10, ESTIMATE90]:
+                                        extant[est] = round(
+                                            extant[est] + site_forecasts[period_start][est],
+                                            4,
+                                        )
+                                else:
+                                    forecasts[period_start] = {
+                                        PERIOD_START: period_start,
+                                    } | {est: site_forecasts[period_start][est] for est in (ESTIMATE, ESTIMATE10, ESTIMATE90)}
+                                    if dampened and self.options.auto_dampen and period_start >= self.dt_helper.day_start_utc():
+                                        forecasts[period_start][DAMPENING_FACTOR] = round(self.dampening.auto_factors[period_start], 4)
 
                             # Prevent blocking
                             if forecast_count % 50 == 0:
@@ -974,17 +1006,11 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
             end_utc = self.dt_helper.day_start_utc(future=future_day + 1)
             start_index, end_index = self.query.get_list_slice(self.data_forecasts, start_utc, end_utc)
 
-            expected_intervals = 48
-            _is_dst: bool | None = (
-                self.dt_helper.is_interval_dst(self.data_forecasts[start_index]) if start_index < len(self.data_forecasts) else None
-            )
-            for interval in range(start_index, min(len(self.data_forecasts), start_index + 8)):
-                is_daylight = self.dt_helper.is_interval_dst(self.data_forecasts[interval])
-                if is_daylight != _is_dst:
-                    time_transitioning = True
-                    transition_from_dst = _is_dst
-                    expected_intervals = 50 if _is_dst else 46
-                    break
+            # The local day is 23, 23.5, 24, 24.5 or 25 hours long, whenever and by how much the clocks change (Cairo, Santiago, Lord Howe).
+            expected_intervals = round((end_utc - start_utc).total_seconds() / 1800)
+            if expected_intervals != 48:
+                time_transitioning = True
+                transition_from_dst = expected_intervals > 48
             intervals = end_index - start_index
             forecasts_date = dt_util.now(self.tz).date() + timedelta(days=future_day)
 
@@ -1053,9 +1079,10 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                 ISSUE_RECORDS_MISSING_INITIAL,  # Raised elsewhere but cleaned up here
                 ISSUE_RECORDS_MISSING_UNFIXABLE,
             ):
-                if issue_registry.async_get_issue(DOMAIN, check_issue) is not None:
-                    _LOGGER.debug("Remove issue for %s", check_issue)
-                    ir.async_delete_issue(self.hass, DOMAIN, check_issue)
+                issue_id = repair_issue_id(check_issue, self.entry)
+                if issue_registry.async_get_issue(DOMAIN, issue_id) is not None:
+                    _LOGGER.debug("Remove issue for %s", issue_id)
+                    ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
         if 0 < contiguous < self.advanced_options[ADVANCED_FORECAST_FUTURE_DAYS] - 1:
             if self.entry is not None:
@@ -1066,16 +1093,20 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
 
                 # If auto-update is enabled yet the prior forecast update was manual then do not raise an issue.
                 raise_issue = None if self.data[AUTO_UPDATED] == 0 and self.entry.options[AUTO_UPDATE] != AutoUpdate.NONE else raise_issue
-                if raise_issue is not None and issue_registry.async_get_issue(DOMAIN, raise_issue) is None:
-                    _LOGGER.warning("Raise issue `%s` for missing forecast data", raise_issue)
+                if (
+                    raise_issue is not None
+                    and issue_registry.async_get_issue(DOMAIN, scoped_issue := repair_issue_id(raise_issue, self.entry)) is None
+                ):
+                    _LOGGER.warning("Raise issue `%s` for missing forecast data", scoped_issue)
                     ir.async_create_issue(
                         self.hass,
                         DOMAIN,
-                        raise_issue,
+                        scoped_issue,
                         is_fixable=self.entry.options[AUTO_UPDATE] == AutoUpdate.NONE and not any(self.data[FAILURE][LAST_14D]),
                         data={CONTIGUOUS: contiguous, ENTRY_ID: self.entry.entry_id if self.entry is not None else ""},
                         severity=ir.IssueSeverity.WARNING,
                         translation_key=raise_issue,
+                        translation_placeholders=repair_placeholders(self.entry),
                         learn_more_url=LEARN_MORE_MISSING_FORECAST_DATA,
                     )
                 if not raise_issue:

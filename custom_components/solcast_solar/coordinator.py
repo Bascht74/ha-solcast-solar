@@ -72,6 +72,7 @@ from .const import (
     VALUE,
 )
 from .enums import AutoUpdate
+from .instance import shared_unique_id
 from .log import get_logger
 from .solcastapi import SolcastApi
 from .updater import Updater
@@ -184,6 +185,11 @@ class SolcastUpdateCoordinator(DataUpdateCoordinator):
 
         await self._updater.setup()
 
+        if missed := self.solcast.sites_cache.missed_midnight_resets:
+            # Home Assistant was stopped over UTC midnight, so rotate the failure statistics that the midnight task did not.
+            self.solcast.sites_cache.missed_midnight_resets = 0
+            await self.solcast.fetcher.reset_failure_stats(days=missed)
+
         self.tasks[TASK_MIDNIGHT_UPDATE] = async_track_utc_time_change(
             self.hass, self._update_utc_midnight_usage_sensor_data, hour=0, minute=0, second=0
         )
@@ -199,7 +205,7 @@ class SolcastUpdateCoordinator(DataUpdateCoordinator):
         if not await self._updater.check_estimated_actuals_fetch():
             if self.solcast.options.get_actuals:
                 entity_registry = er.async_get(self.hass)
-                entity_id = entity_registry.async_get_entity_id(SENSOR, DOMAIN, ENTITY_ACCURACY)
+                entity_id = entity_registry.async_get_entity_id(SENSOR, DOMAIN, shared_unique_id(self.entry.options, ENTITY_ACCURACY))
                 if entity_id is not None:
                     entity = entity_registry.async_get(entity_id)
                     if entity is not None and not entity.disabled_by:
@@ -427,9 +433,8 @@ class SolcastUpdateCoordinator(DataUpdateCoordinator):
             ret[API_FORCE_USED] = self.solcast.successes_forced_24h
             ret[API_ACTUALS_USED] = self.solcast.successes_actuals_24h
             ret[DAILY_TYPICAL_FORECAST_UPDATES] = self.solcast.api_typical_forecast_updates_count
-            ret[API_USED_TOTAL_COMBINED] = (
-                self.solcast.api_used_count + self.solcast.successes_forced_24h + self.solcast.successes_actuals_24h
-            )
+            # The tracked count includes the estimated actuals calls.
+            ret[API_USED_TOTAL_COMBINED] = self.solcast.api_used_count + self.solcast.successes_forced_24h
 
         return ret
 

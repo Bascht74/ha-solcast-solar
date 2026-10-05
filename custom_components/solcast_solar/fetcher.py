@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
-from datetime import UTC, datetime as dt, timedelta
+from datetime import UTC, date, datetime as dt, timedelta
 from enum import Enum
 from hashlib import md5
 import json
@@ -14,7 +14,7 @@ import random
 import time
 from typing import TYPE_CHECKING, Any
 
-from aiohttp import ClientConnectionError, ClientResponseError
+from aiohttp import ClientConnectionError, ClientConnectorDNSError, ClientResponseError
 from aiohttp.client_reqrep import ClientResponse
 
 from homeassistant.const import ATTR_ENTITY_ID
@@ -25,6 +25,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     ADVANCED_API_RAISE_ISSUES,
+    ADVANCED_DNS_TIMEOUT_RETRIES,
     ADVANCED_FORECAST_FUTURE_DAYS,
     ADVANCED_HISTORY_MAX_DAYS,
     ADVANCED_LOG_UPDATE_FAILURE_ONLY,
@@ -72,6 +73,7 @@ from .const import (
     UPDATE_TRIES,
 )
 from .enums import AutoUpdate, SolcastApiStatus, UpdateOutcome, UpdateResult
+from .instance import api_keys_in_use, repair_issue_id, repair_placeholders
 from .redact import redact_api_key, redact_msg_api_key
 from .state import raise_and_record
 
@@ -116,6 +118,26 @@ class Fetcher:
         """
         self.api = api
         self._next_update: str | None = None
+        self._overspent_logged: dict[str, date] = {}  # The UTC day a refusal caused by another entry was logged, per API key.
+
+    def _log_shared_key_overspent(self, api_key: str) -> None:
+        """Log once per UTC day that Solcast refused a call below this entry's limit while another entry uses the same API key."""
+
+        used, limit = self.api.api_used[api_key], self.api.api_limits[api_key]
+        entry_id = self.api.entry.entry_id if self.api.entry is not None else None
+        if used >= limit or not (others := api_keys_in_use(self.api.hass, entry_id, api_key)):
+            return
+        if self._overspent_logged.get(api_key) == (today := dt_util.utcnow().date()):
+            return
+        self._overspent_logged[api_key] = today
+        _LOGGER.warning(
+            "Solcast reports the daily limit of API key %s reached at %d of this entry's %d calls; "
+            "%s uses the same API key and spent more than its share",
+            redact_api_key(api_key),
+            used,
+            limit,
+            ", ".join(others),
+        )
 
     def _log_failure(self, message: str, *args: Any) -> None:
         """Log at warning or error level based on the failure-only advanced option."""
@@ -134,6 +156,18 @@ class Fetcher:
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Task %s failed: %s", task_name, err)
             return None
+
+    @staticmethod
+    def _dns_error_message(err: ClientConnectorDNSError) -> str:
+        """Return a stable message for a DNS connector error."""
+        if (os_error := getattr(err, "os_error", None)) is not None:
+            return str(os_error)
+        return err.__class__.__name__
+
+    @staticmethod
+    def _is_dns_timeout_error(err: ClientConnectorDNSError) -> bool:
+        """Return whether a DNS connector error was caused by resolver timeout."""
+        return "timeout while contacting dns servers" in Fetcher._dns_error_message(err).lower()
 
     async def build_forecast_and_actuals(self, raise_exc=False) -> bool:
         """Build the forecast and estimated actual data.
@@ -162,13 +196,17 @@ class Fetcher:
                     await raise_and_record(self.api.hass, self.api.entry, ConfigEntryNotReady, EXCEPTION_BUILD_FAILED_ACTUALS)
         return success
 
-    async def reset_failure_stats(self) -> None:
-        """Reset the failure statistics and the success counters."""
+    async def reset_failure_stats(self, days: int = 1) -> None:
+        """Reset the failure statistics and the success counters.
+
+        Arguments:
+            days (int): The number of days that have passed since the last reset.
+        """
 
         _LOGGER.debug("Resetting failure statistics")
         self.api.data[FAILURE][LAST_24H] = 0
-        self.api.data[FAILURE][LAST_7D] = [0, *self.api.data[FAILURE][LAST_7D][:-1]]
-        self.api.data[FAILURE][LAST_14D] = [0, *self.api.data[FAILURE][LAST_14D][:-1]]
+        self.api.data[FAILURE][LAST_7D] = ([0] * days + self.api.data[FAILURE][LAST_7D])[:7]
+        self.api.data[FAILURE][LAST_14D] = ([0] * days + self.api.data[FAILURE][LAST_14D])[:14]
         self.api.data[SUCCESS][SUCCESS_TRACKED] = {}
         self.api.data[SUCCESS][SUCCESS_FORCED] = {}
         self.api.data[SUCCESS][SUCCESS_ACTUALS] = {}
@@ -253,6 +291,7 @@ class Fetcher:
             )
             _LOGGER.debug("Estimated actuals dictionary for site %s length %s", site[RESOURCE_ID], len(actuals))
             self.increment_success_count(force=False, api_key=api_key, actuals=True)
+            await self.api.sites_cache.serialise_usage(api_key)
 
         if status == _DataCallStatus.SUCCESS and dampen_yesterday:
             # Backfill recovered historical actuals with the latest dampening factors if needed, then
@@ -398,7 +437,7 @@ class Fetcher:
             ),
             key=itemgetter(PERIOD_START),
         )
-        data[SITE_INFO].update({site: {FORECASTS: copy.deepcopy(_forecasts)}})
+        data[SITE_INFO].update({site: {FORECASTS: await self.api.hass.async_add_executor_job(copy.deepcopy, _forecasts)}})
 
     async def http_data_call(
         self,
@@ -559,23 +598,25 @@ class Fetcher:
             await self.sort_and_prune(site, self.api.data_undampened, 14, forecasts_undampened)
         finally:
             issue_registry = ir.async_get(self.api.hass)
+            missing_initial = repair_issue_id(ISSUE_RECORDS_MISSING_INITIAL, self.api.entry)
             if (
                 failure
                 and (
                     self.api.data_undampened[SITE_INFO].get(site) is None
                     or self.api.data_undampened[SITE_INFO][site][FORECASTS][0][PERIOD_START] > dt_util.now(UTC) - timedelta(hours=1)
                 )
-                and issue_registry.async_get_issue(DOMAIN, ISSUE_RECORDS_MISSING_INITIAL) is None
+                and issue_registry.async_get_issue(DOMAIN, missing_initial) is None
             ):
-                _LOGGER.warning("Raise issue `%s` for missing forecast data", ISSUE_RECORDS_MISSING_INITIAL)
+                _LOGGER.warning("Raise issue `%s` for missing forecast data", missing_initial)
                 ir.async_create_issue(
                     self.api.hass,
                     DOMAIN,
-                    ISSUE_RECORDS_MISSING_INITIAL,
+                    missing_initial,
                     is_fixable=False,
                     is_persistent=True,
                     severity=ir.IssueSeverity.WARNING,
                     translation_key=ISSUE_RECORDS_MISSING_INITIAL,
+                    translation_placeholders=repair_placeholders(self.api.entry),
                     learn_more_url=LEARN_MORE_MISSING_FORECAST_DATA,
                 )
 
@@ -599,14 +640,20 @@ class Fetcher:
         Arguments:
             force (bool): True if the update was a forced forecast update (quota not consumed).
             api_key (str): The API key used for the site fetch.
-            actuals (bool): True if the call was an estimated actuals fetch (tracked separately from forced forecast updates).
+            actuals (bool): True if the call was an estimated actuals fetch (counted in the tracked usage, as Solcast counts it).
         """
         key = md5(api_key[-6:].encode()).hexdigest()
         if actuals:
             self.api.api_actuals[api_key] = self.api.api_actuals.get(api_key, 0) + 1
+            self.api.api_used[api_key] += 1
             actuals_data = self.api.data[SUCCESS].setdefault(SUCCESS_ACTUALS, {})
             actuals_data[key] = actuals_data.get(key, 0) + 1
-            _LOGGER.debug("Actuals API counter for %s incremented to %d", redact_api_key(api_key), actuals_data[key])
+            _LOGGER.debug(
+                "Actuals API counter for %s incremented to %d, tracked API counter to %d",
+                redact_api_key(api_key),
+                actuals_data[key],
+                self.api.api_used[api_key],
+            )
         elif force:
             self.api.api_forced[api_key] = self.api.api_forced.get(api_key, 0) + 1
             forced = self.api.data[SUCCESS][SUCCESS_FORCED]
@@ -659,7 +706,8 @@ class Fetcher:
                 async with asyncio.timeout(900):
                     issue_registry = ir.async_get(self.api.hass)
 
-                    if self.api.api_used[api_key] < self.api.api_limits[api_key] or force:
+                    reserve = 0 if force else self.api.api_actuals_reserve(api_key)
+                    if force or self.api.api_used[api_key] + reserve < self.api.api_limits[api_key]:
                         base_url = self.api.get_solcast_base_url(
                             self.api.advanced_options[ADVANCED_SOLCAST_URL],
                             self.api.advanced_options[ADVANCED_SOLCAST_PORT],
@@ -669,35 +717,56 @@ class Fetcher:
 
                         tries = UPDATE_TRIES
                         counter = 0
+                        dns_timeout_retries = self.api.advanced_options[ADVANCED_DNS_TIMEOUT_RETRIES]
                         backoff = UPDATE_BACKOFF  # On every retry the back-off increases by (at least) UPDATE_BACKOFF seconds more than the previous back-off.
                         while True:
                             _LOGGER.debug("Fetching path %s", path)
                             counter += 1
                             response_text = ""
-                            try:
-                                response: ClientResponse = await self.api.aiohttp_session.get(
-                                    url=url, params=params, headers=self.api.headers, ssl=False
-                                )
-                                _LOGGER.debug("Fetch data url %s", redact_msg_api_key(str(response.url), api_key))
-                                status = response.status
-                                if status == 200:
-                                    response_text = await response.text()
-                            except TimeoutError:
-                                _LOGGER.error("Connection error: Timed out connecting to server")
-                                status = 1000
-                                self.increment_failure_count()
-                                break
-                            except ConnectionRefusedError as e:
-                                _LOGGER.error("Connection error, connection refused: %s", e)
-                                status = 1000
-                                self.increment_failure_count()
-                                break
-                            except (ClientConnectionError, ClientResponseError) as e:
-                                _LOGGER.error("Client error: %s", e)
-                                status = 1000
-                                self.increment_failure_count()
-                                break
-                            if status in (200, 400, 401, 403, 404, 500):  # Do not retry for these statuses.
+                            dns_timeout_attempts = 0
+                            while True:
+                                try:
+                                    response: ClientResponse = await self.api.aiohttp_session.get(
+                                        url=url, params=params, headers=self.api.headers, ssl=False
+                                    )
+                                    _LOGGER.debug("Fetch data url %s", redact_msg_api_key(str(response.url), api_key))
+                                    status = response.status
+                                    if status == 200:
+                                        response_text = await response.text()
+                                    break
+                                except TimeoutError:
+                                    _LOGGER.error("Connection error: Timed out connecting to server")
+                                    status = 1000
+                                    break
+                                except ClientConnectorDNSError as err:
+                                    if self._is_dns_timeout_error(err) and dns_timeout_attempts < dns_timeout_retries:
+                                        dns_timeout_attempts += 1
+                                        _LOGGER.debug(
+                                            "DNS resolution timeout fetching path %s for site %s, retry %d/%d",
+                                            path,
+                                            site,
+                                            dns_timeout_attempts,
+                                            dns_timeout_retries,
+                                        )
+                                        continue
+                                    _LOGGER.error("Client error: %s", self._dns_error_message(err))
+                                    if self._is_dns_timeout_error(err):
+                                        failure_reason = (
+                                            f"DNS resolution timeout after {dns_timeout_attempts} retries"
+                                            if dns_timeout_attempts
+                                            else "DNS resolution timeout"
+                                        )
+                                    status = 1000
+                                    break
+                                except ConnectionRefusedError as e:
+                                    _LOGGER.error("Connection error, connection refused: %s", e)
+                                    status = 1000
+                                    break
+                                except (ClientConnectionError, ClientResponseError) as e:
+                                    _LOGGER.error("Client error: %s", redact_msg_api_key(str(e), api_key))
+                                    status = 1000
+                                    break
+                            if status in (200, 400, 401, 403, 404, 500, 1000):  # Do not retry for these statuses.
                                 if status != 200:
                                     self.increment_failure_count()
                                 break
@@ -712,6 +781,7 @@ class Fetcher:
                                         if response_status.get(ERROR_CODE) == "TooManyRequests":
                                             _LOGGER.debug("Set status to 998, API limit exceeded")
                                             status = 998
+                                            self._log_shared_key_overspent(api_key)
                                             self.api.api_used[api_key] = self.api.api_limits[api_key]
                                             await self.api.sites_cache.serialise_usage(api_key)
                                             break
@@ -720,6 +790,8 @@ class Fetcher:
                                         break
                                 else:
                                     received_429 += 1
+                            if status != 429:  # A retried 502, 503 or 504 is a failure too.
+                                self.increment_failure_count()
                             if counter >= tries:
                                 failure_reason = f"{self.api.http_status_translate(status)} after {tries} attempts"
                                 if not self.api.advanced_options[ADVANCED_LOG_UPDATE_FAILURE_ONLY]:
@@ -747,9 +819,10 @@ class Fetcher:
                             else:
                                 _LOGGER.debug("API returned data")
                             response_json = await self.api.hass.async_add_executor_job(json.loads, response_text)
-                            if issue_registry.async_get_issue(DOMAIN, ISSUE_API_UNAVAILABLE) is not None:
-                                _LOGGER.debug("Remove issue for %s", ISSUE_API_UNAVAILABLE)
-                                ir.async_delete_issue(self.api.hass, DOMAIN, ISSUE_API_UNAVAILABLE)
+                            unavailable = repair_issue_id(ISSUE_API_UNAVAILABLE, self.api.entry)
+                            if issue_registry.async_get_issue(DOMAIN, unavailable) is not None:
+                                _LOGGER.debug("Remove issue for %s", unavailable)
+                                ir.async_delete_issue(self.api.hass, DOMAIN, unavailable)
                                 if (trigger := self.api.advanced_options[ADVANCED_TRIGGER_ON_API_AVAILABLE]) and trigger:
                                     await async_trigger_automation_by_name(self.api.hass, trigger)
                             _LOGGER.debug(
@@ -781,16 +854,18 @@ class Fetcher:
 
                             if received_429 == tries:
                                 if self.api.advanced_options[ADVANCED_API_RAISE_ISSUES]:
-                                    if issue_registry.async_get_issue(DOMAIN, ISSUE_API_UNAVAILABLE) is None:
-                                        _LOGGER.debug("Raise issue for %s", ISSUE_API_UNAVAILABLE)
+                                    unavailable = repair_issue_id(ISSUE_API_UNAVAILABLE, self.api.entry)
+                                    if issue_registry.async_get_issue(DOMAIN, unavailable) is None:
+                                        _LOGGER.debug("Raise issue for %s", unavailable)
                                         ir.async_create_issue(
                                             self.api.hass,
                                             DOMAIN,
-                                            ISSUE_API_UNAVAILABLE,
+                                            unavailable,
                                             is_fixable=False,
                                             is_persistent=True,
                                             severity=ir.IssueSeverity.WARNING,
                                             translation_key=ISSUE_API_UNAVAILABLE,
+                                            translation_placeholders=repair_placeholders(self.api.entry),
                                             learn_more_url=LEARN_MORE_MISSING_FORECAST_DATA,
                                         )
                                         if (trigger := self.api.advanced_options[ADVANCED_TRIGGER_ON_API_UNAVAILABLE]) and trigger:
@@ -803,10 +878,17 @@ class Fetcher:
                             self.api.api_used[api_key],
                             self.api.api_limits[api_key],
                         )
+                        if reserve:
+                            _LOGGER.debug("%d API call(s) kept for today's estimated actuals", reserve)
                         return None
 
         except asyncio.exceptions.CancelledError:
             _LOGGER.info("Fetch cancelled")
+            raise
+        except TimeoutError:  # All attempts exceeded the fifteen minute limit
+            _LOGGER.error("Fetch timed out after all attempts")
+            self.increment_failure_count()
+            failure_reason = "Timed out"
         except json.decoder.JSONDecodeError:
             return response_text
 

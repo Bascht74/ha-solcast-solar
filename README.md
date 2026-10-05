@@ -235,7 +235,7 @@ Your feedback from testing betas is most welcome in the repository [discussions]
 
  [<img src="https://github.com/BJReplay/ha-solcast-solar/blob/main/.github/SCREENSHOTS/Setupanewintegration.png">](https://github.com/BJReplay/ha-solcast-solar/blob/main/.github/SCREENSHOTS/Setupanewintegration.png)
 
-1. Enter your `Solcast API Key`, `API limit`, desired auto-update choice and click `Submit`. If you have more than one Solcast account because you have more than two rooftop setups, enter all Solcast account API keys separated by a comma `xxxxxxxx-xxxxx-xxxx,yyyyyyyy-yyyyy-yyyy`. (_Note: This may breach Solcast terms and conditions by having more than one account if the locations of these account sites are within one kilometre of each other, or 0.62 miles._) Your API limit will be 10 for new Solcast users or 50 for early adopters. If the API limit is the same for multiple accounts then enter a single value for that, or both values separated by a comma, or the least API limit of all accounts as a single value. See [Excluded sites configuration](#excluded-sites-configuration) for a multiple API key use case.
+1. Enter your `Solcast API Key`, `API limit`, desired auto-update choice and click `Submit`. If you have more than one Solcast account because you have more than two rooftop setups, enter all Solcast account API keys separated by a comma `xxxxxxxx-xxxxx-xxxx,yyyyyyyy-yyyyy-yyyy`. (_Note: This may breach Solcast terms and conditions by having more than one account if the locations of these account sites are within one kilometre of each other, or 0.62 miles._) Your API limit will be 10 for new Solcast users or 50 for early adopters. If the API limit is the same for multiple accounts then enter a single value for that, or both values separated by a comma, or the least API limit of all accounts as a single value.
 1. If an auto-update option was not chosen then create your own automation to call the action `solcast_solar.update_forecasts` at the times you would like to update the solar forecast.
 1. Set up the Home Assistant Energy dashboard settings.
 1. To change other configuration options after installation, select the integration in `Devices & Services` then `CONFIGURE`.
@@ -259,7 +259,7 @@ Make sure you use your `API Key` and not your rooftop ID created in Solcast. You
 
 The default for new installations is automatic scheduled forecast update.
 
-Using auto-update will get forecast updates that are automatically spread across hours when the sun is up, or alternatively over a 24-hour period. It calculates the number of daily updates that will occur according to the number of Solcast rooftop sites and the API limit that is configured, or lowest possible number of updates for all sites in the case of multiple API keys.
+Using auto-update will get forecast updates that are automatically spread across hours when the sun is up, or alternatively over a 24-hour period. It calculates the number of daily updates that will occur according to the number of Solcast rooftop sites that are not excluded and the API limit that is configured, keeping one call per site free for the daily estimated actuals when these are fetched, or lowest possible number of updates for all sites in the case of multiple API keys.
 
 Should it be desired to fetch an update outside of these hours, then the API limit in the integration configuration may be reduced, and an automation may then be set up to call the action `solcast_solar.force_update_forecasts` at the desired time of day. (Note that calling the action `solcast_solar.update_forecasts` will be refused if auto-update is enabled, so use force update instead.)
 
@@ -581,7 +581,7 @@ YAML:
 | --- | --- |
 | `solcast_solar.update_forecasts` | Update the forecast data (refused if auto-update is enabled). |
 | `solcast_solar.force_update_forecasts` | Force update the forecast data (performs an update regardless of API usage tracking or auto-update setting, and does not increment the API use counter, refused if auto-update is not enabled.) |
-| `solcast_solar.force_update_estimates` | Force update the estimated actual data (does not increment the API use counter, refused if get estimated actuals is not enabled.) |
+| `solcast_solar.force_update_estimates` | Force update the estimated actual data (performs an update regardless of API usage tracking, and increments the API use counter by one per site, refused if get estimated actuals is not enabled.) |
 | `solcast_solar.clear_all_solcast_data` | Deletes cached data, and initiates an immediate fetch of new past actual and forecast values. |
 | `solcast_solar.query_forecast_data` | Return a list of forecast data using a datetime range start - end. |
 | `solcast_solar.query_estimate_data` | Return a list of estimated actual data using a datetime range start - end. |
@@ -750,7 +750,7 @@ All diagnostic sensor names are preceded by `Solcast PV Forecast` except for `Ro
 
 `API Used` attributes include the following:
 
-* `api_actuals_used`: The count of successful estimated actuals API calls today (always untracked).
+* `api_actuals_used`: The count of successful estimated actuals API calls today (also counted in `API Used`, as Solcast counts them).
 * `api_force_used`: The count of successful forced API calls today (those that bypassed the API limit tracked).
 * `daily_typical_forecast_updates`: The integration learns the typical forecast update cadence (excluding actuals updates).
 * `api_used_total_combined`: A simple running total of forecast updates, forced forecast updates and estimated actual updates.
@@ -925,7 +925,7 @@ The base dampening factor adjustment is done because when there is significant f
 
 Aside from forecasts, the Solcast service also estimates the likely past actual generation during the day for every rooftop site, based on high resolution satellite imagery, weather observations, and how "clear" the air is (vapour/smog). This data is referred to as an "estimated actual", and it is generally quite accurate for a given location.
 
-Getting estimated actual data does require an API call, and that API call will use up API quota for a hobbyist user. You will need to factor API call consumption for this purpose when taking advantage of automated dampening, with one call used per configured Solcast rooftop site per day per API key. (Reduce the API limit for forecast updates in options by one for a single rooftop site, or by two for two sites.)
+Getting estimated actual data does require an API call, and that API call will use up API quota for a hobbyist user. One call is used per Solcast rooftop site that is not excluded, per day, and these calls count against the API limit. The integration keeps them free: auto-update plans its forecast updates around them (with a limit of ten and two sites, four updates use eight calls and the estimated actuals the other two), and a forecast update by an automation is refused when it would need one of them. So leave the API limit at the daily quota of your Solcast account.
 
 Past estimated actual data is acquired just after midnight each day local time, randomised to update within 15 minutes. Where automated dampening is enabled, new dampening factors for the day ahead are modelled immediately after the estimated actual update. It is also possible to force an update of the estimated actuals, and this will also attempt to model dampening factors if appropriate.
 
@@ -947,7 +947,7 @@ The integration determines the units by inspecting the `unit_of_measurement` att
 
 > [!NOTE]
 >
-> Do not include generation entities for "remote" rooftop sites that have been explicitly excluded from sensor totals. Auto-dampening does not work for excluded rooftops.
+> Do not include generation entities for "remote" rooftop sites that have been excluded. Auto-dampening does not work for excluded rooftops.
 
 ##### Optional input: Site export to the grid, combined with a limit value
 
@@ -1201,11 +1201,9 @@ The hard limit may be set in the integration configuration or set by using the s
 
 ### Excluded sites configuration
 
-It is possible to exclude one or more Solcast sites from the calculation of sensor totals and the Energy dashboard forecast.
+It is possible to exclude one or more Solcast sites. An excluded site is not fetched at all: it gets no forecast, no estimated actuals and no site sensor, and it uses no API calls, so the other sites get more updates.
 
-The use case is to allow a local "main" site or sites to be the overall combined forecast values, and a "remote" site to be visualised separately with Apex charts and/or template sensors that get their value from site breakdown sensor attributes. Note that it is not possible to build a separate Energy dashboard feed from templated sensors (this data comes directly from the integration as a data dictionary).
-
-Utilising this advanced feature alongside template sensors and Apex charts is not a simple thing, however examples are provided throughout the readme for both templated sensors built from attribute data, and for an Apex chart. See [Interacting](#interacting), [Sample template sensors](#sample-template-sensors) and [Sample Apex chart for dashboard](#sample-apex-chart-for-dashboard).
+The use case is a site whose forecast is not wanted here, for example a "remote" site that another Home Assistant installation fetches.
 
 Configuration is by way of the `CONFIGURE` dialogue.
 

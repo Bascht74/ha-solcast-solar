@@ -209,7 +209,7 @@ Inside the json structure there is a `forecasts` key for each rooftop site, whic
 
 Solcast removed an API call to get API quota usage, so the answer is because _**you**_ told it to.
 
-To answer a question with a question, is the API quota set correctly in the integration configuration? If not, then set it to 50 or as appropriate, given you may be using calls for estimated actuals or forced updates as well.
+To answer a question with a question, is the API quota set correctly in the integration configuration? If not, then set it to 50 or as appropriate, given you may be using calls for forced updates as well. (Calls for estimated actuals count against the limit, and auto-update keeps them free.)
 
 ### Q: What polls to Solcast happen, when do they happen, and are they important?
 
@@ -235,11 +235,11 @@ It can also be called should the integration have been sitting disabled/failed f
 
 This occurs for each rooftop ID, so if you have two Solcast sites defined, then _two_ calls are made.
 
-This will use up API quota for each site defined, then on top of that usage a forecast update will occur using more quota.
+This will use up API quota for each site that is not excluded, then on top of that usage a forecast update will occur using more quota.
 
 3. When a forecast update is requested.
 
-Auto-update is enabled, or an automation is created by you in Home Assistant to trigger how often solar forecasts are gathered, and when this triggers the service `solcast_solar.update_forecasts` it will update all of the rooftop IDs for all of the accounts.
+Auto-update is enabled, or an automation is created by you in Home Assistant to trigger how often solar forecasts are gathered, and when this triggers the service `solcast_solar.update_forecasts` it will update all of the rooftop IDs that are not excluded, for all of the accounts.
 
 This will use up API quota, and if you have two sites configured for an API key then it'll use up two calls for that key.
 
@@ -251,7 +251,7 @@ But don't panic and raise an issue. It's almost certainly them, not you or us, a
 
 4. When "estimated actuals" are updated just past midnight, or when requested to be updated using an action.
 
-This will use up API quota for each site defined if the option to get estimated actuals is enabled. Updates occur by default within fifteen minutes of the midnight local time roll-over, or when requested by an action call.
+This will use up API quota for each site that is not excluded if the option to get estimated actuals is enabled. Updates occur by default within fifteen minutes of the midnight local time roll-over, or when requested by an action call.
 
 That's all the API calls there are!
 

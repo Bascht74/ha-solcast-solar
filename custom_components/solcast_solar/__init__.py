@@ -25,12 +25,13 @@ from homeassistant.helpers import (
     aiohttp_client,
     config_validation as cv,
     entity_registry as er,
+    issue_registry as ir,
 )
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
 from . import entry_state, state
-from .actions import ServiceActions, register_stub_actions, unregister_actions
+from .actions import ServiceActions, register_stub_actions, release_entry_actions
 from .const import (
     ADVANCED_AUTOMATED_DAMPENING_ADAPTIVE_MODEL_CONFIGURATION,
     ADVANCED_USER_AGENT,
@@ -54,6 +55,7 @@ from .const import (
     DELAYED_RESTART_ON_CRASH,
     DOMAIN,
     DT_DATE_FORMAT,
+    EXCEPTION_ALL_SITES_EXCLUDED,
     EXCEPTION_INIT_CANNOT_GET_SITES,
     EXCEPTION_INIT_CANNOT_GET_SITES_CACHE_INVALID,
     EXCEPTION_INIT_KEY_INVALID,
@@ -68,6 +70,7 @@ from .const import (
     HARD_LIMIT_API,
     HEADERS_ACCEPT,
     HEADERS_USER_AGENT,
+    INSTANCE_SLUG,
     KEY_ESTIMATE,
     LAST_ATTEMPT,
     SITE_DAMP,
@@ -79,8 +82,18 @@ from .const import (
 )
 from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, HistoryType, SitesStatus, UsageStatus
-from .issues import sync_actuals_api_limit_issue
-from .log import get_logger
+from .instance import (
+    cache_file_path,
+    cache_stem,
+    entry_slug,
+    instance_name,
+    is_named_instance,
+    is_reserved_slug,
+    shared_unique_id,
+)
+from .issues import refresh_issue_placeholders, sync_shared_api_limit_issues
+from .log import get_logger, set_log_instance
+from .redact import redact_filename_api_key
 from .solcastapi import ConnectionOptions, SolcastApi
 from .state import raise_and_record
 
@@ -139,11 +152,7 @@ async def __get_options(hass: HomeAssistant, entry: ConfigEntry) -> ConnectionOp
         entry.options[CONF_API_KEY],
         entry.options.get(API_LIMIT, 10),
         DEFAULT_SOLCAST_HTTPS_URL,
-        hass.config.path(
-            f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}/solcast.json"
-            if CONFIG_FOLDER_DISCRETE
-            else f"{hass.config.config_dir}/solcast.json"
-        ),
+        cache_file_path(hass, entry.options),
         await __get_time_zone(hass),
         entry.options.get(AUTO_UPDATE, AutoUpdate.NONE),
         dampening_option,
@@ -300,9 +309,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """
 
     random.seed()
+    set_log_instance(instance_name(entry.options))
 
     if ENTRY_OPTIONS_DEVELOPMENT:
         await async_migrate_entry(hass, entry)
+
+    if is_named_instance(entry.options) and INSTANCE_SLUG not in entry.options:
+        # Store the file slug once, so a later change of the transliteration cannot move this entry's files.
+        hass.config_entries.async_update_entry(entry, options={**entry.options, INSTANCE_SLUG: entry_slug(entry.options)})
+    refresh_issue_placeholders(hass, entry)
+    sync_shared_api_limit_issues(hass)
 
     version = await get_version(hass)
     options = await __get_options(hass, entry)
@@ -365,14 +381,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         case SitesStatus.UNKNOWN:
             await raise_and_record(hass, entry, ConfigEntryError, EXCEPTION_INIT_UNKNOWN)
         case SitesStatus.OK:
-            pass
+            if not solcast.sites:
+                await raise_and_record(hass, entry, ConfigEntryError, EXCEPTION_ALL_SITES_EXCLUDED)
     match solcast.usage_status:
         case UsageStatus.ERROR:
             await raise_and_record(hass, entry, ConfigEntryError, EXCEPTION_INIT_USAGE_CORRUPT)
         case _:
             pass
-
-    sync_actuals_api_limit_issue(hass, entry.options, solcast.sites)
 
     await __get_granular_dampening(hass, entry, solcast)
 
@@ -444,12 +459,34 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """
     # Terminate all tasks
     await tasks_cancel(hass, entry)
+    # A disabled entry no longer counts towards the API limits of its keys.
+    sync_shared_api_limit_issues(hass)
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        unregister_actions(hass)
+        release_entry_actions(hass, entry)
 
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove a named entry's cache files, crash store and repairs; the original entry's are never touched."""
+
+    sync_shared_api_limit_issues(hass, removed=entry.entry_id)
+    # A reserved name from before the flow refused it would share the original entry's file names.
+    if not is_named_instance(entry.options) or is_reserved_slug(entry_slug(entry.options)):
+        return
+    cache = Path(cache_file_path(hass, entry.options))
+
+    def _remove_files() -> None:
+        for path in (cache, *cache.parent.glob(f"{cache.stem}-*")):
+            path.unlink(missing_ok=True)
+
+    await hass.async_add_executor_job(_remove_files)
+    await state.async_remove_named(hass, entry.entry_id)
+    for domain, issue_id in list(ir.async_get(hass).issues):
+        if domain == DOMAIN and issue_id.endswith(f"_{entry.entry_id}"):
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 async def tasks_cancel(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -470,7 +507,7 @@ async def tasks_cancel(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:  # noqa: C901
     """Reconfigure the integration when options get updated.
 
-    * Changing API key or limit, auto-update, hard limit or the custom hour sensor results in a restart.
+    * Changing API key or limit, auto-update, hard limit, the custom hour sensor, generation entities or excluded sites results in a restart.
     * Changing dampening results in forecast recalculation and sensor refresh.
     * Other alterations simply refresh sensor values and attributes.
 
@@ -480,6 +517,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     """
     coordinator = entry.runtime_data.coordinator
+    set_log_instance(instance_name(entry.options))
 
     reload = False
     recalculate_and_refresh = False
@@ -488,18 +526,18 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     def changed(config: str) -> bool:
         return coordinator.solcast.entry_options.get(config) != entry.options.get(config)
 
-    state = entry_state.get(entry.entry_id)
+    entry_status = entry_state.get(entry.entry_id)
 
     # Old API key tracking.
     if changed(CONF_API_KEY):
-        if state.reset_old_key:
-            state.reset_old_key = False
-            state.old_api_key = entry.options.get(CONF_API_KEY)
+        if entry_status.reset_old_key:
+            entry_status.reset_old_key = False
+            entry_status.old_api_key = entry.options.get(CONF_API_KEY)
         else:
-            state.old_api_key = coordinator.solcast.entry_options.get(CONF_API_KEY)
+            entry_status.old_api_key = coordinator.solcast.entry_options.get(CONF_API_KEY)
 
     # Multi-API key hard limit tracking and clean up.
-    previous_hard_limit = state.old_hard_limit or coordinator.solcast.hard_limit
+    previous_hard_limit = entry_status.old_hard_limit or coordinator.solcast.hard_limit
     if previous_hard_limit != entry.options[HARD_LIMIT_API]:
         old_multi_key = len(previous_hard_limit.split(",")) > 1
         new_multi_key = len(entry.options[HARD_LIMIT_API].split(",")) > 1
@@ -508,15 +546,17 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
             entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
             if old_multi_key:
                 _LOGGER.debug("Hard limit changed from multi to single")
-                clean_up = [f"hard_limit_{api_key[-6:]}" for api_key in entry.options[CONF_API_KEY].split(",")]
+                clean_up = [
+                    shared_unique_id(entry.options, f"hard_limit_{api_key[-6:]}") for api_key in entry.options[CONF_API_KEY].split(",")
+                ]
             else:
                 _LOGGER.debug("Hard limit changed from single to multi")
-                clean_up = [HARD_LIMIT]
+                clean_up = [shared_unique_id(entry.options, HARD_LIMIT)]
             for entity in entities:
                 if entity.unique_id in clean_up:
                     _LOGGER.warning("Cleaning up orphaned %s", entity.entity_id)
                     entity_registry.async_remove(entity.entity_id)
-    state.old_hard_limit = entry.options[HARD_LIMIT_API]
+    entry_status.old_hard_limit = entry.options[HARD_LIMIT_API]
 
     # Config changes, which when changed will cause a reload.
     reload = (
@@ -527,6 +567,8 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
         or changed(CUSTOM_HOURS)
         or changed(SITE_EXPORT_ENTITY)
         or changed(GET_ACTUALS)
+        or changed(GENERATION_ENTITIES)
+        or changed(EXCLUDE_SITES)
     )
 
     # Config changes, which when changed will cause a forecast recalculation only, without reload.
@@ -542,10 +584,6 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
         if recalculate_and_refresh:
             coordinator.solcast.damp = damp_factors
 
-        # Site exclusion changes.
-        if changed(EXCLUDE_SITES):
-            recalculate_and_refresh = True
-
         # Attribute changes, which will need a recalculation of splines.
         if not recalculate_and_refresh:
             recalculate_splines = (
@@ -554,12 +592,11 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
         if changed(AUTO_DAMPEN):
             reload = True
-        if coordinator.solcast.entry_options.get(AUTO_DAMPEN, False):
+        if changed(AUTO_DAMPEN) and coordinator.solcast.entry_options.get(AUTO_DAMPEN, False):
             # Turning auto-dampening off, so reset the granular dampening file content.
             path = Path(coordinator.solcast.dampening.get_filename())
             _LOGGER.debug("Unlink %s", path)
-            if path.exists():
-                path.unlink()
+            await hass.async_add_executor_job(path.unlink, True)
 
         if changed(SITE_DAMP):
             damp_changed = True
@@ -567,8 +604,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 if coordinator.solcast.dampening.allow_granular_reset():
                     coordinator.solcast.dampening.factors = {}
                     path = Path(coordinator.solcast.dampening.get_filename())
-                    if path.exists():
-                        path.unlink()
+                    await hass.async_add_executor_job(path.unlink, True)
             await coordinator.solcast.dampening.apply_forward()
 
         if damp_changed or changed(USE_ACTUALS):
@@ -581,7 +617,6 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     else:
         determination = "Refresh sensors only" + (", with spline recalculate" if recalculate_splines else "")
     _LOGGER.debug("Options updated, action: %s", determination)
-    sync_actuals_api_limit_issue(hass, entry.options, coordinator.solcast.sites)
     if not reload:
         await coordinator.solcast.set_options(entry.options)
         if recalculate_and_refresh:
@@ -678,10 +713,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             default_list: list[str] = []
             config_dir = f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}" if CONFIG_FOLDER_DISCRETE else hass.config.config_dir
+            stem = cache_stem(new_options)
+            several_keys = len(new_options[CONF_API_KEY].split(",")) > 1
             for api_key in new_options[CONF_API_KEY].split(","):
-                api_cache_filename = (
-                    f"{config_dir}/solcast-usage{'' if len(new_options[CONF_API_KEY].split(',')) < 2 else '-' + api_key.strip()}.json"
-                )
+                api_cache_filename = f"{config_dir}/{stem}-usage{'-' + api_key.strip() if several_keys else ''}.json"
                 async with aiofiles.open(api_cache_filename) as f:
                     usage = json.loads(await f.read())
                 default_list.append(str(usage[DAILY_LIMIT]))
@@ -689,7 +724,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception as e:  # noqa: BLE001
             _LOGGER.warning(
                 "Could not load API usage cached limit while upgrading config, using default of ten: %s",
-                e,
+                redact_filename_api_key(str(e)),
             )
             default = "10"
         new_options["api_quota"] = default

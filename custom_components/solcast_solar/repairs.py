@@ -23,6 +23,7 @@ from .const import (
     DOMAIN,
     ENTRY_ID,
     EXCEPTION_ENTRY_NOT_FOUND,
+    ISSUE_RECORDS_MISSING_FIXABLE,
     LEARN_MORE,
 )
 from .log import get_logger
@@ -104,7 +105,9 @@ async def async_create_fix_flow(
 ) -> RepairsFlow:
     """Create flow."""
 
-    if issue_id == "records_missing_fixable":
+    # A named entry's issue ID carries its entry ID, so match the kind of issue, not the ID.
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    if issue is not None and issue.translation_key == ISSUE_RECORDS_MISSING_FIXABLE:
         entry = hass.config_entries.async_get_entry(data[ENTRY_ID]) if data.get(ENTRY_ID) and data[ENTRY_ID] != "" else None
         return RecordsMissingRepairFlow(entry=entry)
 

@@ -7,9 +7,9 @@ rules:
   config-flow-test-coverage: done
   config-flow: done
   dependency-transparency:
-    status: exempt
+    status: done
     comment: |
-      This integration does not utilise an externally hosted dependency.
+      The requirements aiofiles and watchfiles are open source, published on PyPI and built in public CI.
   docs-actions: done
   docs-high-level-description: done
   docs-installation-instructions: done
@@ -28,7 +28,12 @@ rules:
   runtime-data: done
   test-before-configure: done
   test-before-setup: done
-  unique-config-entry: done
+  unique-config-entry:
+    status: done
+    comment: |
+      Several entries are allowed. Each needs a name of its own (the unique ID of a new entry) and an API key
+      of its own, and a rooftop can be counted by one entry only; the user, reconfigure, reauth and options
+      flows and the set_options action check this. Entries that already share a key keep loading.
   # Silver
   action-exceptions: done
   config-entry-unloading: done
@@ -42,7 +47,11 @@ rules:
       It is not desirable to log once when the Solcast REST API is unavailable and then once more when re-connected. Each interaction is atomic, and a connection is not held open.
   parallel-updates: done
   reauthentication-flow: done
-  test-coverage: done
+  test-coverage:
+    status: done
+    comment: |
+      The whole suite covers every statement. tests/.coveragerc excludes only `pragma: no cover`, type-checking
+      imports, bare `try:` lines and fall-backs for older Core versions; CI requires 100 % on two Core versions.
   # Gold
   devices: done
   diagnostics: done
@@ -67,7 +76,7 @@ rules:
   dynamic-devices:
     status: exempt
     comment: |
-      A single device is created for the integration instance. There can only be one instance.
+      A single service device is created for each config entry.
   entity-category: done
   entity-device-class: done
   entity-disabled-by-default: done
@@ -79,7 +88,7 @@ rules:
   stale-devices:
     status: exempt
     comment: |
-      A single device is created for the integration instance. There can only be one instance.
+      A single service device is created for each config entry and removed with it.
   # Platinum
   async-dependency: done
   inject-websession: done
