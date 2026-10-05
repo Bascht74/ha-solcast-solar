@@ -41,6 +41,7 @@ from .const import (
     TASK_NEW_DAY_GENERATION,
 )
 from .enums import AutoUpdate
+from .instance import shared_unique_id
 from .issues import sync_actuals_quota_risk_issue
 from .util import ordinal
 
@@ -68,6 +69,7 @@ class Updater:
         self.accuracy_data: dict[str, Any] = {}
         self._intervals: list[dt] = []
         self._update_sequence: list[int] = []
+        self._checked_window: dt | None = None
         self._sunrise: dt
         self._sunrise_tomorrow: dt
         self._sunrise_yesterday: dt
@@ -234,6 +236,9 @@ class Updater:
             if len(self._intervals) > 0:
                 _now = self._coordinator.solcast.dt_helper.real_now_utc().replace(microsecond=0)
                 _from = _now.replace(minute=int(_now.minute / 5) * 5, second=0)
+                if _from == self._checked_window:
+                    return  # Setup and the five-minute timer can both run in one window; schedule each update once.
+                self._checked_window = _from
 
                 pop_expired: list[int] = []
                 for index, interval in enumerate(self._intervals):
@@ -358,6 +363,7 @@ class Updater:
             self._coordinator.solcast.api_limit,
             get_actuals,
             allow_exceed_api_limit_maximum=self._coordinator.solcast.advanced_options.get(ADVANCED_ALLOW_EXCEED_API_LIMIT_MAXIMUM, False),
+            entry=self._coordinator.entry,
         )
 
         scheduled = False
@@ -437,7 +443,9 @@ class Updater:
 
         if self._coordinator.solcast.options.get_actuals:
             entity_registry = er.async_get(self._coordinator.hass)
-            entity_id = entity_registry.async_get_entity_id(SENSOR, DOMAIN, ENTITY_ACCURACY)
+            entity_id = entity_registry.async_get_entity_id(
+                SENSOR, DOMAIN, shared_unique_id(self._coordinator.entry.options, ENTITY_ACCURACY)
+            )
             if entity_id is not None:
                 entity = entity_registry.async_get(entity_id)
                 if entity is not None and not entity.disabled_by:

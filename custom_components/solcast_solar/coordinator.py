@@ -72,6 +72,7 @@ from .const import (
     VALUE,
 )
 from .enums import AutoUpdate
+from .instance import shared_unique_id
 from .log import get_logger
 from .solcastapi import SolcastApi
 from .updater import Updater
@@ -184,6 +185,11 @@ class SolcastUpdateCoordinator(DataUpdateCoordinator):
 
         await self._updater.setup()
 
+        if missed := self.solcast.sites_cache.missed_midnight_resets:
+            # Home Assistant was stopped over UTC midnight, so rotate the failure statistics that the midnight task did not.
+            self.solcast.sites_cache.missed_midnight_resets = 0
+            await self.solcast.fetcher.reset_failure_stats(days=missed)
+
         self.tasks[TASK_MIDNIGHT_UPDATE] = async_track_utc_time_change(
             self.hass, self._update_utc_midnight_usage_sensor_data, hour=0, minute=0, second=0
         )
@@ -199,7 +205,7 @@ class SolcastUpdateCoordinator(DataUpdateCoordinator):
         if not await self._updater.check_estimated_actuals_fetch():
             if self.solcast.options.get_actuals:
                 entity_registry = er.async_get(self.hass)
-                entity_id = entity_registry.async_get_entity_id(SENSOR, DOMAIN, ENTITY_ACCURACY)
+                entity_id = entity_registry.async_get_entity_id(SENSOR, DOMAIN, shared_unique_id(self.entry.options, ENTITY_ACCURACY))
                 if entity_id is not None:
                     entity = entity_registry.async_get(entity_id)
                     if entity is not None and not entity.disabled_by:

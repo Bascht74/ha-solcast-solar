@@ -48,7 +48,7 @@ from .const import (
     VALUE_ADAPTIVE_DAMPENING_NO_DELTA,
 )
 from .dates import NoIndentEncoder
-from .util import ordinal
+from .util import ordinal, write_file_atomic
 
 if TYPE_CHECKING:
     from .dampen import Dampening
@@ -227,7 +227,7 @@ class DampeningAdaptive:
         if not self.dampening.auto_factors_history:
             self.dampening.auto_factors_history = {m: {d: [] for d in _DELTA_RANGE_EXTENDED} for m in _MODEL_RANGE}
 
-        if Path(self.dampening.api.filename_dampening_history).is_file():
+        if await self.dampening.api.hass.async_add_executor_job(Path(self.dampening.api.filename_dampening_history).is_file):
             async with aiofiles.open(self.dampening.api.filename_dampening_history) as file:
                 try:
                     raw = json.loads(await file.read(), cls=_JSONDecoder)
@@ -238,16 +238,31 @@ class DampeningAdaptive:
                     valid = False
         else:
             valid = False
-            _LOGGER.warning("No dampening history file found, adaptive dampening configuration has not yet been built")
+            _LOGGER.debug("No dampening history file found, adaptive dampening configuration has not yet been built")
         if valid:
-            # --- Parse and add history ---
-            for model_str, deltas in raw.items():
-                model = int(model_str)
-                for delta_str, entries in deltas.items():
-                    delta = int(delta_str)
-                    for entry in entries:
-                        self._add_history(period_start=entry["period_start"], model=model, delta=delta, factors=entry["factors"])
-                        loaded_count += 1
+            # --- Check the structure, then add history ---
+            history = self.dampening.auto_factors_history
+            try:
+                records = [
+                    (int(model_str), int(delta_str), entry["period_start"], entry["factors"])
+                    for model_str, deltas in raw.items()
+                    for delta_str, entries in deltas.items()
+                    for entry in entries
+                ]
+                structured = all(
+                    model in history and delta in history[model] and isinstance(period_start, dt) and isinstance(factors, list)
+                    for model, delta, period_start, factors in records
+                )
+            except (AttributeError, KeyError, TypeError, ValueError):
+                structured = False
+            if not structured:
+                _LOGGER.warning("Dampening history file has an unexpected structure - adaptive dampening model configuration failed")
+                records = []
+                valid = False
+        if valid:
+            for model, delta, period_start, factors in records:
+                self._add_history(period_start=period_start, model=model, delta=delta, factors=factors)
+                loaded_count += 1
 
             msg = f"Load dampening history loaded {loaded_count} of a maximum of {expected_records} records"
 
@@ -270,7 +285,7 @@ class DampeningAdaptive:
                         msg,
                     )
                 else:
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "%s: Automated dampening adaptive model configuration may be sub-optimal until maximum history of %d days is built",
                         msg,
                         model_days,
@@ -282,96 +297,34 @@ class DampeningAdaptive:
 
         return valid
 
-    async def update_history(self) -> None:
-        """Generate history of dampening factors for all models."""
+    async def update_history(self, include_yesterday: bool = True) -> None:
+        """Generate history of dampening factors for all models.
+
+        Past days missing from a history shorter than the model days are filled first from the cached
+        generation and estimated actuals, so a young history does not take the model days to build.
+        """
 
         if (
             self.dampening.api.options.auto_dampen
             and self.dampening.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_ADAPTIVE_MODEL_CONFIGURATION]
         ):
             start_time = time.time()
+            days_ago = self._days_to_fill()
+            fill = len(days_ago)
+            if include_yesterday:
+                days_ago.append(1)
+            if not days_ago:
+                return
             _LOGGER.debug("Updating automated dampening adaptation history")
 
             if await self.dampening.check_deal_breaker_automated():
                 return
 
-            actuals, ignored_intervals, generation, matching_intervals = await self.dampening.prepare_data()
-
-            yesterday = self.dampening.api.dt_helper.day_start_utc(future=-1)
-
-            # Build undampened pv50 estimates for the previous day
-
-            undampened_interval_pv50: defaultdict[dt, float] = defaultdict(float)
-            for site in self.dampening.api.sites:
-                if site[RESOURCE_ID] in self.dampening.api.options.exclude_sites:
-                    continue
-                for forecast in self.dampening.api.data_undampened[SITE_INFO][site[RESOURCE_ID]][FORECASTS]:
-                    period_start = forecast[PERIOD_START]
-                    if period_start >= yesterday and period_start < self.dampening.api.dt_helper.day_start_utc():
-                        undampened_interval_pv50[period_start] += forecast[ESTIMATE] * 0.5
-
-            for dampening_model in _MODEL_RANGE:
-                dampening = await self.dampening.calculate(
-                    matching_intervals,
-                    generation,
-                    actuals,
-                    ignored_intervals,
-                    dampening_model,
-                    False,
-                    target_day=yesterday,
-                )
-
-                self._add_history(  # Add entry for no delta adjustment
-                    period_start=yesterday,
-                    model=dampening_model,
-                    delta=VALUE_ADAPTIVE_DAMPENING_NO_DELTA,
-                    factors=dampening,
-                )
-
-                _LOGGER.debug(
-                    "Dampening factors on %s for model %d and delta adjustment %d: %s",
-                    yesterday.strftime(DT_DATE_FORMAT_UTC),
-                    dampening_model,
-                    VALUE_ADAPTIVE_DAMPENING_NO_DELTA,
-                    ",".join(f"{factor:.3f}" for factor in dampening),
-                )
-
-                for delta_adjustment in _DELTA_RANGE:
-                    adjusted_dampening = list(dampening)
-                    for period_start, period_value in undampened_interval_pv50.items():
-                        interval = self.dampening.adjusted_interval_dt(period_start)
-                        if (
-                            self.dampening.api.peak_intervals[interval] > 0
-                            and period_value > 0
-                            and dampening[interval] < 1.0
-                            and period_start in actuals
-                        ):
-                            adjusted_dampening[interval] = self.dampening.apply_adjustment(
-                                actuals[period_start], dampening[interval], interval, delta_adjustment
-                            )  # Adjust based on actual vs peak rather than forecast vs peak
-                            adjusted_dampening[interval] = (
-                                1.0
-                                if (
-                                    self.dampening.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR]
-                                    <= adjusted_dampening[interval]
-                                    < 1.0
-                                )
-                                else adjusted_dampening[interval]
-                            )
-
-                    self._add_history(
-                        period_start=yesterday,  # Adding history for the previous day
-                        model=dampening_model,
-                        delta=delta_adjustment,
-                        factors=adjusted_dampening,
-                    )
-                    _LOGGER.debug(
-                        "Dampening factors on %s for model %d and delta adjustment %d: %s",
-                        yesterday.strftime(DT_DATE_FORMAT_UTC),
-                        dampening_model,
-                        delta_adjustment,
-                        ",".join(f"{factor:.3f}" for factor in adjusted_dampening),
-                    )
+            if fill:
+                _LOGGER.debug("Filling %d days of dampening history from cached generation and estimated actuals", fill)
+            for ago in days_ago:  # Oldest first, so peak intervals end up set for the latest window.
+                await self._update_history_day(ago)
+                await asyncio.sleep(0)  # Be nice to HA
 
             # Trim, sort and serialise.
 
@@ -400,10 +353,119 @@ class DampeningAdaptive:
                     ]
 
             payload = json.dumps(serialisable, ensure_ascii=False, indent=2, cls=NoIndentEncoder, above_level=4)
-            async with self.dampening.api.serialise_lock, aiofiles.open(self.dampening.api.filename_dampening_history, "w") as file:
-                await file.write(payload)
+            async with self.dampening.api.serialise_lock:
+                await self.dampening.api.hass.async_add_executor_job(
+                    write_file_atomic, self.dampening.api.filename_dampening_history, payload
+                )
 
             _LOGGER.debug("Task dampening update_history took %.3f seconds", time.time() - start_time)
+
+    async def _update_history_day(self, days_ago: int) -> None:
+        """Add the dampening factors of all models for the day days_ago, from the model days before its end."""
+
+        day_end = self.dampening.api.dt_helper.day_start_utc(future=1 - days_ago)
+        actuals, ignored_intervals, generation, matching_intervals = await self.dampening.prepare_data(until=day_end)
+
+        day = self.dampening.api.dt_helper.day_start_utc(future=-days_ago)
+
+        # Build undampened pv50 estimates for the day
+
+        undampened_interval_pv50: defaultdict[dt, float] = defaultdict(float)
+        for site in self.dampening.api.sites:
+            if site[RESOURCE_ID] in self.dampening.api.options.exclude_sites:
+                continue
+            for forecast in self.dampening.api.data_undampened[SITE_INFO][site[RESOURCE_ID]][FORECASTS]:
+                period_start = forecast[PERIOD_START]
+                if day <= period_start < day_end:
+                    undampened_interval_pv50[period_start] += forecast[ESTIMATE] * 0.5
+
+        for dampening_model in _MODEL_RANGE:
+            dampening = await self.dampening.calculate(
+                matching_intervals,
+                generation,
+                actuals,
+                ignored_intervals,
+                dampening_model,
+                False,
+                target_day=day,
+            )
+
+            self._add_history(  # Add entry for no delta adjustment
+                period_start=day,
+                model=dampening_model,
+                delta=VALUE_ADAPTIVE_DAMPENING_NO_DELTA,
+                factors=dampening,
+            )
+
+            _LOGGER.debug(
+                "Dampening factors on %s for model %d and delta adjustment %d: %s",
+                day.strftime(DT_DATE_FORMAT_UTC),
+                dampening_model,
+                VALUE_ADAPTIVE_DAMPENING_NO_DELTA,
+                ",".join(f"{factor:.3f}" for factor in dampening),
+            )
+
+            for delta_adjustment in _DELTA_RANGE:
+                adjusted_dampening = list(dampening)
+                for period_start, period_value in undampened_interval_pv50.items():
+                    interval = self.dampening.adjusted_interval_dt(period_start)
+                    if (
+                        self.dampening.api.peak_intervals[interval] > 0
+                        and period_value > 0
+                        and dampening[interval] < 1.0
+                        and period_start in actuals
+                    ):
+                        adjusted_dampening[interval] = self.dampening.apply_adjustment(
+                            actuals[period_start], dampening[interval], interval, delta_adjustment
+                        )  # Adjust based on actual vs peak rather than forecast vs peak
+                        adjusted_dampening[interval] = (
+                            1.0
+                            if (
+                                self.dampening.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR]
+                                <= adjusted_dampening[interval]
+                                < 1.0
+                            )
+                            else adjusted_dampening[interval]
+                        )
+
+                self._add_history(
+                    period_start=day,
+                    model=dampening_model,
+                    delta=delta_adjustment,
+                    factors=adjusted_dampening,
+                )
+                _LOGGER.debug(
+                    "Dampening factors on %s for model %d and delta adjustment %d: %s",
+                    day.strftime(DT_DATE_FORMAT_UTC),
+                    dampening_model,
+                    delta_adjustment,
+                    ",".join(f"{factor:.3f}" for factor in adjusted_dampening),
+                )
+
+    def _days_to_fill(self) -> list[int]:
+        """Return days ago (oldest first, before yesterday) missing from a short history with cached generation and actuals.
+
+        A filled day uses the model days before its end as far as the caches reach: generation is kept for 22 days and
+        loaded for 7 days on a new install, so the oldest filled days are built from a shorter window than later days.
+        """
+
+        api = self.dampening.api
+        model_days: int = api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_MODEL_DAYS]
+        history = self.dampening.auto_factors_history.get(_MODEL_RANGE[0], {}).get(_DELTA_RANGE_EXTENDED[0])
+        if history is None or len(history) >= model_days:  # History not loaded, or complete
+            return []
+        have = {entry["period_start"] for entry in history}
+        generated = {api.dt_helper.day_start(gen[PERIOD_START]) for gen in self.dampening.data_generation[GENERATION]}
+        estimated = {
+            api.dt_helper.day_start(actual[PERIOD_START])
+            for site in api.sites
+            for actual in (api.data_actuals[SITE_INFO].get(site[RESOURCE_ID]) or {}).get(FORECASTS, [])
+        }
+        return [
+            ago
+            for ago in range(model_days, 1, -1)
+            if (day := api.dt_helper.day_start_utc(future=-ago)) not in have and day in generated and day in estimated
+        ]
 
     def _add_history(self, period_start: dt, model: int, delta: int, factors: list[float]) -> None:
         """Adds a dampening history record to auto_factors_history."""

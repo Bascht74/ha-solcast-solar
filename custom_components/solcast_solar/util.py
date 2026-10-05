@@ -1,11 +1,27 @@
 """Solcast utilities."""
 
 import math
+import os
+from pathlib import Path
 from typing import Any
 
 from .log import get_logger
 
 _LOGGER = get_logger(__name__)
+
+
+def write_file_atomic(filename: str, payload: str) -> None:
+    """Write a file through a temporary file and an atomic rename, so a crash never leaves a truncated file."""
+
+    path = Path(filename)
+    temporary = path.with_name(f"{path.name}.tmp")
+    try:
+        with open(temporary, "w", encoding="utf-8") as file:
+            file.write(payload)
+        os.replace(temporary, path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def split_and_strip(value: str) -> list[str]:

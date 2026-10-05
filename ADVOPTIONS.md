@@ -199,6 +199,8 @@ Setting this option to `true` will (in time) choose the combination of dampening
 
 At the end of each day the integration calculates dampening factors for all possible dampening model and delta adjustment combinations and records the results to `solcast-dampening-history.json`.  After updated estimated actuals are retrieved from Solcast the error between generation and dampened estimated actuals is calculated for every allowed combination of dampening model and delta adjustment, as well as for each model with no delta adjustment applied. The most consistently "accurate" configuration of dampening model and delta adjustment is then selected.  "Accurate" here means the lowest error rather than a precise match.
 
+While the history is shorter than `automated_dampening_model_days`, missing past days are filled at start-up from the cached generation and estimated actuals. Each filled day is calculated from the days before it as far as these caches reach (generation is kept for 22 days, and `automated_dampening_generation_history_load_days` are loaded on a new install), so the oldest filled days use a shorter window than the days recorded at the end of each day.
+
 This selected dampening configuration is then applied to the forecast and the settings for `automated_dampening_model` and `automated_dampening_delta_adjustment_model` are updated in `solcast-advanced.json`.  No other values in `solcast-advanced.json` are affected, and entries for `automated_dampening_model` and `automated_dampening_delta_adjustment_model` will be added if they are not already defined in this file.  When first enabling this option you do not need to amend your current settings for `automated_dampening_model` and `automated_dampening_delta_adjustment_model`.
 
 When `automated_dampening_no_delta_adjustment` is true, the algorithm selects the most consistently accurate dampening model from the configurations that do not use delta adjustment.  When it is false, the algorithm selects the combination of dampening model and delta adjustment option that are most consistently accurate.
@@ -293,6 +295,8 @@ Fetching estimated actuals is required.
 
 The adjustment will only apply to `ALL` factors, and not individual per-site dampening, which is in line with how automated dampening operates.
 
+Manually set half-hourly `ALL` factors are always indexed by local time, with or without this option: the first factor is 00:00 local time, also during daylight saving time. Factors written by automated dampening are indexed by standard time.
+
 ## General
 
 **Key: "api_raise_issues"**
@@ -302,6 +306,14 @@ Possible values: boolean `true`/`false` (default `true`)
 If repeated `429 / Try again later` errors are received from Solcast that exhaust ten consecutive retries then the integration will raise an ignorable issue to alert that there has been an update failure. (You may hear this situation referred to as a '429 storm', as subsequent updates will also likely fail until Solcast staff intervene.)
 
 This behaviour may be suppressed by setting this option to `false`.
+
+**Key: "dns_timeout_retries"**
+
+Possible values: integer `0`..`20` (default `5`)
+
+The number of Domain Name System (DNS) resolution timeout retries to attempt during an API fetch event.
+
+If one is using a local recursive resolver then the time taken to achieve name resolution may exceed the Home Assistant aggressive timeout. By adding retries the resolution can eventually succeed by fetching a (likely) cached value from the resolver, or hard-fail the fetch if all retries fail.
 
 **Key: "entity_logging"**
 
