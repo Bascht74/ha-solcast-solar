@@ -33,6 +33,7 @@ from homeassistant.components.solcast_solar.const import (
     LAST_24H,
     LAST_ATTEMPT,
     LAST_UPDATED,
+    PERIOD_START,
     RESOURCE_ID,
     SERVICE_DIAGNOSTIC,
     SERVICE_SET_HARD_LIMIT,
@@ -112,6 +113,8 @@ async def test_diagnostics(
         for site, data in diagnostics["data"][SITE_INFO].items():  # type: ignore[call-overload, index, union-attr] # pyright: ignore[reportArgumentType, reportIndexIssue, reportOptionalSubscript, reportUnknownMemberType]
             assert site in ["1111-1111-1111-1111", "2222-2222-2222-2222"], f"Unexpected site ID: {site}"
             assert len(data[FORECASTS]) > 300, f"Site {site}: expected > 300 forecasts, got {len(data[FORECASTS])}"  # type: ignore[arg-type, call-overload, index] # pyright: ignore[reportArgumentType, reportIndexIssue, reportOptionalSubscript, reportUnknownMemberType]
+            day_start = solcast.dt_helper.day_start_utc().isoformat()
+            assert all(forecast[PERIOD_START] >= day_start for forecast in data[FORECASTS]), "History before today is left out"  # type: ignore[union-attr, index] # pyright: ignore[reportArgumentType, reportIndexIssue, reportOptionalSubscript, reportUnknownMemberType, reportUnknownVariableType, reportAttributeAccessIssue, reportOptionalIterable, reportGeneralTypeIssues]
         assert diagnostics["energy_forecasts_graph"][solcast.dt_helper.now_utc().replace(hour=2, minute=0, second=0).isoformat()] == 3600.0  # type: ignore[call-overload, index]
 
         await hass.services.async_call(DOMAIN, SERVICE_SET_HARD_LIMIT, {HARD_LIMIT: "5.0"}, blocking=True)

@@ -113,7 +113,8 @@ async def test_integration_runtime_and_dampening_flow(
         solcast.options.auto_update = AutoUpdate.NONE
         await _exec_update(hass, solcast, caplog, "update_forecasts", last_update_delta=20)
         assert "seconds before retry" in caplog.text
-        await _wait_for(caplog, "Forecast has not been updated")
+        assert "Fetch cancelled" in caplog.text  # The cancelled fetch ends the update instead of reporting a failure.
+        assert "Forecast has not been updated" not in caplog.text
         session_clear(MOCK_BUSY)
 
         # Simulate exceed API limit and beyond

@@ -10,6 +10,7 @@ import pytest
 from homeassistant.components.recorder import Recorder
 from homeassistant.components.solcast_solar.const import (
     ADVANCED_ENTITY_LOGGING,
+    API_LIMIT,
     DEFAULT_FORECAST_DAYS,
     FAILURE,
     LAST_7D,
@@ -69,7 +70,8 @@ async def test_midnight(
 
         write_advanced_options(hass.config.config_dir, {ADVANCED_ENTITY_LOGGING: True})
 
-        entry = await async_init_integration(hass, DEFAULT_INPUT1)
+        # Ten updates a day, one of them at 00:00:09 UTC; two calls of the 22 stay free for estimated actuals.
+        entry = await async_init_integration(hass, DEFAULT_INPUT1 | {API_LIMIT: "22"})
         coordinator: SolcastUpdateCoordinator = entry.runtime_data.coordinator
         coordinator.solcast.data[FAILURE][LAST_24H] = 2
         coordinator.solcast.data[FAILURE][LAST_7D][0] = 2

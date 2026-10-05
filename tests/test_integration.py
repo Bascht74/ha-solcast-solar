@@ -86,6 +86,7 @@ from homeassistant.components.solcast_solar.const import (
     LAST_UPDATED,
     MODEL_PERIOD_DAYS,
     PERIOD_START,
+    RESOURCE_ID,
     SERVICE_CLEAR_DATA,
     SERVICE_DIAGNOSTIC,
     SERVICE_FORCE_UPDATE_ESTIMATES,
@@ -254,7 +255,7 @@ async def _exec_update(
         # is not HA-tracked, so hass.async_block_till_done() won't wait for it.  Under
         # coverage the task can be slow enough to log "Completed task update" *after* the
         # next iteration's caplog.clear(), making _wait_for_update exit on stale content.
-        # Wait here until the outer task logs its completion before proceeding.
+        # Wait here until the outer task logs its completion, or the cancelled fetch ends it, before proceeding.
         if "pausing" in caplog.text:
             last_record = len(caplog.records)
             async with asyncio.timeout(30):
@@ -262,7 +263,8 @@ async def _exec_update(
                     records = caplog.records
                     for r in records[last_record:]:
                         msg = r.getMessage()
-                        if "Completed task update" in msg or "Completed task force_update" in msg:
+                        if "Completed task update" in msg or "Completed task force_update" in msg or "Fetch cancelled" in msg:
+                            await hass.async_block_till_done()
                             return
                     last_record = len(records)
                     await asyncio.sleep(_TEST_POLL_INTERVAL)
@@ -584,6 +586,11 @@ async def test_api_failure(
         await too_busy(assertions2_busy)
         # Test exceptions during get sites with the cache present
         await exceptions(assertions2_except)
+
+        # Entries loaded from cache above would make an untargeted action ambiguous.
+        for loaded in hass.config_entries.async_entries(DOMAIN):
+            if loaded.state is ConfigEntryState.LOADED:
+                assert await hass.config_entries.async_unload(loaded.entry_id)
 
         # Test forecast update exceptions
         await exceptions_update()
@@ -1269,6 +1276,17 @@ async def test_remaining_actions(
         assert entry.options[USE_ACTUALS] == 1
 
         _LOGGER.debug("Test set_options generation entities and exclude sites")
+        hass.states.async_set("sensor.pv1", "1", {"device_class": "power"})
+        hass.states.async_set("sensor.pv2", "1", {"device_class": "power"})
+        hass.states.async_set("sensor.pv3", "1", {"device_class": "energy"})
+        for generation, error in (
+            ("sensor.pv1, sensor.missing", "generation_not_sensor"),
+            ("sensor.pv1, sensor.pv3", "generation_mixed_types"),
+        ):
+            with pytest.raises(ServiceValidationError) as raised:
+                await hass.services.async_call(DOMAIN, SERVICE_SET_OPTIONS, {GENERATION_ENTITIES: generation}, blocking=True)
+            assert raised.value.translation_key == error
+        assert entry.options[GENERATION_ENTITIES] == []
         await hass.services.async_call(
             DOMAIN,
             SERVICE_SET_OPTIONS,
@@ -1398,7 +1416,7 @@ async def test_remaining_actions(
                 "query": {
                     EVENT_START_DATETIME: (solcast.dt_helper.day_start_utc(future=-1) + timedelta(hours=3)).isoformat(),
                     EVENT_END_DATETIME: solcast.dt_helper.day_start_utc().isoformat(),
-                    SITE: "1111-1111-1111-1111",
+                    SITE: "2222-2222-2222-2222",  # The first site was excluded above, so its history starts today.
                 },
                 "expect": 42,
             },
@@ -1564,6 +1582,7 @@ async def test_usage_typical_forecast_updates_default(
             cast(bool, DEFAULT_INPUT1[AUTO_DAMPEN]),
         )
         solcast = SolcastApi(session, connection_options, hass)
+        await solcast.async_migrate_config_files()
         usage_file = Path(solcast.sites_cache._get_usage_cache_filename(api_key))
         usage_file.write_text(
             json.dumps(
@@ -1656,6 +1675,7 @@ async def test_scenarios(
         caplog.clear()
 
         # Test start with stale data
+        auto_divisions = coordinator.divisions
         data_file = Path(f"{config_dir}/solcast.json")
         data_file_undampened = Path(f"{config_dir}/solcast-undampened.json")
         original_data = json.loads(data_file.read_text(encoding="utf-8"))
@@ -1668,7 +1688,7 @@ async def test_scenarios(
             data = json.loads(data_file.read_text(encoding="utf-8"))
             data[LAST_UPDATED] = (dt.now(datetime.UTC) - timedelta(days=5)).isoformat()
             data[LAST_ATTEMPT] = data[LAST_UPDATED]
-            data[AUTO_UPDATED] = 10
+            data[AUTO_UPDATED] = auto_divisions
             # Remove forecasts today up to "now"
             for site in data[SITE_INFO].values():
                 site[FORECASTS] = [f for f in site[FORECASTS] if f[PERIOD_START] > dt.now(datetime.UTC).isoformat()]
@@ -1680,7 +1700,7 @@ async def test_scenarios(
                 data = json.loads(d_file.read_text(encoding="utf-8"))
                 data[LAST_UPDATED] = (dt.now(datetime.UTC) - timedelta(days=DEFAULT_FORECAST_DAYS + 1)).isoformat()
                 data[LAST_ATTEMPT] = data[LAST_UPDATED]
-                data[AUTO_UPDATED] = 10
+                data[AUTO_UPDATED] = auto_divisions
                 # Shift all forecast intervals back nine days
                 for site in data[SITE_INFO].values():
                     site[FORECASTS] = [
@@ -1699,7 +1719,7 @@ async def test_scenarios(
             data = json.loads(data_file.read_text(encoding="utf-8"))
             data[LAST_UPDATED] = last_update
             data[LAST_ATTEMPT] = data[LAST_UPDATED]
-            data[AUTO_UPDATED] = 10
+            data[AUTO_UPDATED] = auto_divisions
             data_file.write_text(json.dumps(data), encoding="utf-8")
 
         def restore_data():
@@ -1826,8 +1846,9 @@ async def test_scenarios(
         opt[EXCLUDE_SITES] = ["2222-2222-2222-2222"]
         hass.config_entries.async_update_entry(entry, options=opt)
         await hass.async_block_till_done()
-        assert "Recalculate forecasts and refresh sensors" in caplog.text
-        assert hass.states.get("sensor.solcast_pv_forecast_forecast_today").state == "24.93"  # type: ignore[union-attr]
+        assert "Options updated, action: The integration will reload" in caplog.text
+        # The excluded site no longer takes a share of the 6 kW hard limit, so the first site keeps more than 24.93.
+        assert hass.states.get("sensor.solcast_pv_forecast_forecast_today").state == "26.595"  # type: ignore[union-attr]
 
         # Test simple API key change
         caplog.clear()
@@ -1865,7 +1886,7 @@ async def test_scenarios(
         assert "Reset API usage" in caplog.text
         assert "New site(s) have been added" in caplog.text
         assert "Site resource id 1111-1111-1111-1111 is no longer configured" in caplog.text
-        assert "Site resource id 2222-2222-2222-2222 is no longer configured" in caplog.text
+        assert "Site resource id 2222-2222-2222-2222" not in caplog.text  # Its data went when it was excluded
         no_error_or_exception(caplog)
         caplog.clear()
 
@@ -1951,11 +1972,17 @@ async def test_scenarios(
             {DAILY_LIMIT: "10", DAILY_LIMIT_CONSUMED: 8, "reset": "2025-01-05T00:00:00+00:00"},
             {DAILY_LIMIT: 10, DAILY_LIMIT_CONSUMED: "8", "reset": "2025-01-05T00:00:00+00:00"},
             {DAILY_LIMIT: 10, DAILY_LIMIT_CONSUMED: 8, "reset": "notadate"},
+            {DAILY_LIMIT: 10, DAILY_LIMIT_CONSUMED: 8, "reset": "2025-01-05T00:00:00"},
+            {DAILY_LIMIT: 10, DAILY_LIMIT_CONSUMED: 8, DAILY_TYPICAL_FORECAST_UPDATES: "8", "reset": "2025-01-05T00:00:00+00:00"},
+            [10, 8],
         ]
         for test in usage_corruption:
             _LOGGER.debug("Testing usage corruption: %s", test)
+            caplog.clear()
             usage_file.write_text(json.dumps(test), encoding="utf-8")
             await _reload(hass, entry)
+            assert "is corrupt, invalid" in caplog.text
+            assert "Exception in _sites_usage()" not in caplog.text
             assert entry.state is ConfigEntryState.SETUP_ERROR, f"Expected entry state ConfigEntryState.SETUP_ERROR, got {entry.state}"
             assert entry.state is not ConfigEntryState.LOADED, "Integration should be presumed dead after corruption"
             await clear_state(hass, entry)  # Clear presumption of death
@@ -2168,3 +2195,40 @@ def test_get_rooftop_site_extra_data_unknown_site() -> None:
     api.sites = []
     query = ForecastQuery(api)
     assert query.get_rooftop_site_extra_data("unknown-site-id") is None
+
+
+async def test_hard_limit_rebuild_keeps_past_and_reaches_latest_site(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+) -> None:
+    """Test a rebuild keeps the hard limit on past periods, and the limit reaches the latest period of any site."""
+
+    limit = 1.0
+    try:
+        options = copy.deepcopy(DEFAULT_INPUT1)
+        options[HARD_LIMIT_API] = f"{limit}"
+        entry = await async_init_integration(hass, options)
+        solcast = entry.runtime_data.coordinator.solcast
+        today = solcast.dt_helper.day_start_utc()
+
+        def peak(start: dt, end: dt) -> float:
+            values = [forecast[ESTIMATE] for forecast in solcast.data_forecasts if start <= forecast[PERIOD_START] < end]
+            assert values
+            return max(values)
+
+        await solcast.build_forecast_data()
+        await solcast.build_forecast_data()  # A rebuild only re-calculates the limit from today onwards
+        assert peak(today - timedelta(days=3), today) <= limit
+        assert peak(today, today + timedelta(days=3)) <= limit
+
+        # The site built last ends two days earlier than the others, which must stay limited to their end.
+        sites = [site[RESOURCE_ID] for site in solcast.sites if solcast.data[SITE_INFO].get(site[RESOURCE_ID])]
+        assert len(sites) > 1
+        solcast.data[SITE_INFO][sites[-1]][FORECASTS] = solcast.data[SITE_INFO][sites[-1]][FORECASTS][:-96]
+        solcast._sites_hard_limit.clear()
+        await solcast.build_forecast_data()
+        shortened_end = solcast.data[SITE_INFO][sites[-1]][FORECASTS][-1][PERIOD_START]
+        assert peak(shortened_end, shortened_end + timedelta(days=2)) <= limit
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

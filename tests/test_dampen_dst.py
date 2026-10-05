@@ -55,8 +55,9 @@ def _make_mock_api(tz: ZoneInfo) -> MagicMock:
         ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR: 0.95,
     }
     # Use temporary files for test file paths
-    api.filename_generation = tempfile.NamedTemporaryFile(delete=False).name
-    api.filename_dampening = tempfile.NamedTemporaryFile(delete=False).name
+    for attribute in ("filename_generation", "filename_dampening"):
+        with tempfile.NamedTemporaryFile(delete=False) as handle:
+            setattr(api, attribute, handle.name)
     return api
 
 

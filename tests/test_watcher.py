@@ -23,6 +23,7 @@ async def test_watch_dampening_file_missing() -> None:
     coordinator.solcast.dampening.apply_forward = unittest.mock.AsyncMock()
     coordinator.solcast.build_forecast_data = unittest.mock.AsyncMock()
     coordinator.update_integration_listeners = unittest.mock.AsyncMock()
+    coordinator.hass.async_add_executor_job = unittest.mock.AsyncMock(side_effect=lambda func, *args: func(*args))
 
     watcher = FileWatcher(coordinator)
 
@@ -33,7 +34,7 @@ async def test_watch_dampening_file_missing() -> None:
 
     with (
         unittest.mock.patch("homeassistant.components.solcast_solar.watch.awatch", mock_awatch),
-        unittest.mock.patch("homeassistant.components.solcast_solar.watch.Path.stat", side_effect=FileNotFoundError),
+        unittest.mock.patch("homeassistant.components.solcast_solar.watch.os.path.getmtime", side_effect=FileNotFoundError),
     ):
         await watcher.watch_dampening_file()
 
