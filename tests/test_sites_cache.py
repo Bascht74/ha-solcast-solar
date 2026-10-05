@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from datetime import UTC, datetime as dt, timedelta
 import json
@@ -10,9 +11,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from aiohttp import ClientResponseError, RequestInfo
+from multidict import CIMultiDict, CIMultiDictProxy
 import pytest
+from yarl import URL
 
 from homeassistant.components.solcast_solar.const import (
+    ADVANCED_SOLCAST_PORT,
+    ADVANCED_SOLCAST_URL,
     API_KEY,
     FORECASTS,
     RESOURCE_ID,
@@ -24,6 +30,8 @@ from homeassistant.components.solcast_solar.const import (
 )
 from homeassistant.components.solcast_solar.enums import SitesStatus
 from homeassistant.components.solcast_solar.sites_cache import SitesCache
+from homeassistant.components.solcast_solar.util import write_file_atomic
+from homeassistant.util import dt as dt_util
 
 
 class _ExecutorHass:
@@ -42,7 +50,7 @@ class _ExecutorHass:
 
 def _make_sites_cache(tmp_path: Path, fail_copy: bool = False) -> SitesCache:
     """Create SitesCache with a minimal fake API object."""
-    api = SimpleNamespace(config_dir=str(tmp_path), hass=_ExecutorHass(fail_copy=fail_copy))
+    api = SimpleNamespace(config_dir=str(tmp_path), filename=str(tmp_path / "solcast.json"), hass=_ExecutorHass(fail_copy=fail_copy))
     return SitesCache(api)  # pyright: ignore[reportArgumentType]
 
 
@@ -160,6 +168,32 @@ async def test_backup_caches_prunes_old_creates_current(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_backup_caches_only_own_entry(tmp_path: Path) -> None:
+    """The original entry and a named entry back up only their own cache files."""
+
+    for name in (
+        "solcast.json",
+        "solcast-sites.json",
+        "solcast-usage-abc.json",
+        "solcast-west.json",
+        "solcast-west-sites.json",
+        "solcastx.json",
+    ):
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+    today = dt_util.utcnow().strftime("%y%m%d")
+
+    await _make_sites_cache(tmp_path)._backup_json_caches()
+    backups = sorted(path.name for path in tmp_path.glob("*.bak"))
+    assert backups == [f"solcast-{today}.json.bak", f"solcast-sites-{today}.json.bak", f"solcast-usage-abc-{today}.json.bak"]
+
+    named = SitesCache(SimpleNamespace(config_dir=str(tmp_path), filename=str(tmp_path / "solcast-west.json"), hass=_ExecutorHass()))  # pyright: ignore[reportArgumentType]
+    await named._backup_json_caches()
+    assert sorted(path.name for path in tmp_path.glob("*.bak")) == sorted(
+        [*backups, f"solcast-west-{today}.json.bak", f"solcast-west-sites-{today}.json.bak"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_backup_caches_handles_errors(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """Backup helper should tolerate copy failures and log a warning."""
     sites_cache = _make_sites_cache(tmp_path, fail_copy=True)
@@ -179,7 +213,9 @@ async def test_sites_data_uses_combined_extant_match_for_key_collapse(tmp_path: 
 
     api = SimpleNamespace(
         config_dir=str(tmp_path),
+        filename=str(tmp_path / "solcast.json"),
         options=SimpleNamespace(api_key="newkey"),
+        hass=_ExecutorHass(),
         sites_status=SitesStatus.OK,
         sites=[],
         http_status_translate=lambda status: f"{status}",
@@ -249,3 +285,119 @@ async def test_sites_data_uses_combined_extant_match_for_key_collapse(tmp_path: 
         "2222-2222-2222-2222",
         "3333-3333-3333-3333",
     ]
+
+
+class _DeniedHass:
+    """Minimal hass-like object whose copy fails with the path in the error, as the operating system reports it."""
+
+    async def async_add_executor_job(self, func: Any, *args: Any) -> Any:
+        """Run an executor job inline, refusing copies."""
+        if getattr(func, "__name__", "") == "copy2":
+            raise PermissionError(13, "Permission denied", str(args[0]))
+        return func(*args)
+
+
+@pytest.mark.asyncio
+async def test_backup_error_does_not_log_api_key(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A failed backup of a key-named cache, in a hyphenated config path and for a named entry, does not log the key."""
+    api_key = "SECRETKEY1234567890"
+    config_dir = tmp_path / "home-assistant"
+    config_dir.mkdir()
+    (config_dir / "solcast-west.json").write_text("{}", encoding="utf-8")
+    (config_dir / f"solcast-west-sites-{api_key}.json").write_text("{}", encoding="utf-8")
+    sites_cache = SitesCache(
+        SimpleNamespace(config_dir=str(config_dir), filename=str(config_dir / "solcast-west.json"), hass=_DeniedHass())
+    )  # pyright: ignore[reportArgumentType]
+    caplog.set_level(logging.WARNING)
+
+    await sites_cache._backup_json_caches()
+
+    assert "Could not create backup" in caplog.text
+    assert "solcast-west-sites-******567890" in caplog.text
+    assert api_key not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_sites_client_error_does_not_log_api_key(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A client error from the sites request quotes the request URL, which must not carry the key into the log."""
+    api_key = "SECRETKEY1234567890"
+
+    async def client_error(url: str, params: dict[str, Any], **_kwargs: Any) -> None:
+        request = RequestInfo(URL(url).with_query(params), "GET", CIMultiDictProxy(CIMultiDict()))
+        raise ClientResponseError(request, (), status=502, message="Bad Gateway")
+
+    api = SimpleNamespace(
+        config_dir=str(tmp_path),
+        filename=str(tmp_path / "solcast.json"),
+        options=SimpleNamespace(api_key=api_key),
+        entry_options={API_KEY: api_key},
+        advanced_options={ADVANCED_SOLCAST_URL: "https://api.solcast.com.au", ADVANCED_SOLCAST_PORT: 443},
+        get_solcast_base_url=lambda url, _port: url,
+        aiohttp_session=SimpleNamespace(get=client_error),
+        headers={},
+        sites_status=SitesStatus.OK,
+        sites=[],
+        http_status_translate=lambda status: f"{status}",
+        entry=None,
+        hass=_ExecutorHass(),
+    )
+    sites_cache = SitesCache(api)  # pyright: ignore[reportArgumentType]
+    caplog.set_level(logging.ERROR)
+
+    status, _, _ = await sites_cache._sites_data(prior_crash=False, use_cache=False)
+
+    assert status == 999
+    assert api.sites_status is SitesStatus.ERROR
+    assert "Connection error: 502" in caplog.text
+    assert api_key not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_sites_request_times_out(tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A sites request that never answers fails after the time limit, so set-up does not hang."""
+
+    async def hang(*_args: Any, **_kwargs: Any) -> None:
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr("homeassistant.components.solcast_solar.sites_cache.SITES_TIMEOUT", 0)
+    api = SimpleNamespace(
+        config_dir=str(tmp_path),
+        filename=str(tmp_path / "solcast.json"),
+        options=SimpleNamespace(api_key="key"),
+        entry_options={API_KEY: "key"},
+        advanced_options={ADVANCED_SOLCAST_URL: "https://api.solcast.com.au", ADVANCED_SOLCAST_PORT: 443},
+        get_solcast_base_url=lambda url, _port: url,
+        aiohttp_session=SimpleNamespace(get=hang),
+        headers={},
+        sites_status=SitesStatus.OK,
+        sites=[],
+        http_status_translate=lambda status: f"{status}",
+        entry=None,
+        hass=_ExecutorHass(),
+    )
+    sites_cache = SitesCache(api)  # pyright: ignore[reportArgumentType]
+
+    status, _, _ = await sites_cache._sites_data(prior_crash=False, use_cache=False)
+
+    assert status == 999
+    assert api.sites_status is SitesStatus.ERROR
+    assert "Error retrieving sites" in caplog.text
+
+
+def test_write_file_atomic_keeps_old_file_on_failure(tmp_path: Path) -> None:
+    """A failed write leaves the previous file whole and no temporary file behind."""
+
+    target = tmp_path / "solcast.json"
+    write_file_atomic(str(target), '{"old": true}')
+    assert json.loads(target.read_text(encoding="utf-8")) == {"old": True}
+
+    blocked = tmp_path / "blocked.json"
+    blocked.mkdir()
+    with pytest.raises(OSError):
+        write_file_atomic(str(blocked), '{"new": true}')
+    assert blocked.is_dir()
+    assert not (tmp_path / "blocked.json.tmp").exists()
+
+    write_file_atomic(str(target), '{"new": true}')
+    assert json.loads(target.read_text(encoding="utf-8")) == {"new": True}
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["blocked.json", "solcast.json"]

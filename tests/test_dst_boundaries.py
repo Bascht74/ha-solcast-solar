@@ -68,8 +68,9 @@ def _make_mock_api(tz: ZoneInfo) -> MagicMock:
         ADVANCED_AUTOMATED_DAMPENING_MINIMUM_MATCHING_GENERATION: 2,
         ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR: 0.95,
     }
-    api.filename_generation = tempfile.NamedTemporaryFile(delete=False).name
-    api.filename_dampening = tempfile.NamedTemporaryFile(delete=False).name
+    for attribute in ("filename_generation", "filename_dampening"):
+        with tempfile.NamedTemporaryFile(delete=False) as handle:
+            setattr(api, attribute, handle.name)
     return api
 
 
@@ -326,6 +327,39 @@ async def test_transition_detection(
             assert f"Transitioning from {expected_msg} time" in caplog.text, f"Expected transition message for {timezone} on {freeze_date}"
         else:
             assert "Transitioning from" not in caplog.text, f"Unexpected transition detected for {timezone} on {freeze_date}"
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+@pytest.mark.parametrize(
+    ("timezone", "freeze_date", "expected_msg"),
+    [
+        # Africa/Cairo: summer time ends at 24:00 on 2025-10-30, so that day has 50 intervals, all after the first four hours.
+        ("Africa/Cairo", "2025-10-29T12:00:00+03:00", "summer to standard"),
+        # America/Santiago: summer time starts at 24:00 on 2025-09-06, so 2025-09-07 starts at 01:00 and has 46 intervals.
+        ("America/Santiago", "2025-09-06T12:00:00-04:00", "standard to summer"),
+        # Australia/Lord_Howe: the clocks move by half an hour, so 2025-10-05 has 47 intervals.
+        ("Australia/Lord_Howe", "2025-10-04T12:00:00+10:30", "standard to summer"),
+    ],
+)
+async def test_transition_without_missing_data_warning(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+    timezone: str,
+    freeze_date: str,
+    expected_msg: str,
+) -> None:
+    """Test that a transition at midnight or by half an hour is expected, and not reported as missing forecast data."""
+
+    try:
+        freezer.move_to(freeze_date)
+        await async_init_integration(hass, DEFAULT_INPUT1, timezone=timezone)
+
+        assert f"Transitioning from {expected_msg} time" in caplog.text
+        assert "so is missing forecast data" not in caplog.text
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

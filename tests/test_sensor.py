@@ -5,6 +5,7 @@ import contextlib
 import copy
 from datetime import datetime as dt, timedelta
 import logging
+from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -13,6 +14,7 @@ import pytest
 
 from homeassistant.components.recorder import Recorder
 from homeassistant.components.sensor import SensorStateClass
+from homeassistant.components.solcast_solar import sensor as sensor_module
 from homeassistant.components.solcast_solar.const import (
     ADVANCED_ENTITY_LOGGING,
     ANALYSIS,
@@ -31,6 +33,7 @@ from homeassistant.components.solcast_solar.const import (
     DEFAULT_FORECAST_DAYS,
     DETAILED_FORECAST,
     DETAILED_HOURLY,
+    DOMAIN,
     DT_TIME_FORMAT,
     ENTITY_FORECAST_NEXT_HOUR,
     ENTITY_FORECAST_REMAINING_TODAY,
@@ -39,7 +42,9 @@ from homeassistant.components.solcast_solar.const import (
     ESTIMATE,
     ESTIMATE10,
     ESTIMATE90,
+    EXCLUDE_SITES,
     FORECASTS,
+    NAME,
     PERIOD_START,
     RESOURCE_ID,
     SITE_ATTRIBUTE_AZIMUTH,
@@ -61,6 +66,7 @@ from homeassistant.components.solcast_solar.const import (
 from homeassistant.components.solcast_solar.coordinator import SolcastUpdateCoordinator
 from homeassistant.components.solcast_solar.forecast import ForecastQuery
 from homeassistant.components.solcast_solar.solcastapi import SolcastApi
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import (
     CONF_API_KEY,
     STATE_UNAVAILABLE,
@@ -82,7 +88,7 @@ from . import (
 )
 from .simulator import API_KEY_SITES
 
-from tests.common import async_fire_time_changed
+from tests.common import MockConfigEntry, async_fire_time_changed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1171,3 +1177,55 @@ async def test_rooftop_unique_id_mig_removes_orphaned_stale_resource_id(
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_rooftop_unique_id_migrations_leave_conflicts_alone(entity_registry: er.EntityRegistry) -> None:
+    """Test rooftop unique ID migrations skip a missing or unchanged entity, and one whose new unique ID is taken."""
+
+    unique_ids = (
+        "solcast_solcast_api_old-site",
+        "solcast_solcast_api_new-site",
+        "solcast_solcast_api_same-site",
+        "solcast_solcast_api_Legacy Site",
+    )
+    entities = {unique_id: entity_registry.async_get_or_create("sensor", DOMAIN, unique_id) for unique_id in unique_ids}
+    coordinator = SimpleNamespace(
+        solcast=SimpleNamespace(
+            site_transfers={"missing-site": "other-site", "same-site": "same-site", "old-site": "new-site"},
+            sites=[{NAME: "Legacy Site", RESOURCE_ID: "new-site"}],
+        )
+    )
+
+    sensor_module._migrate_transferred_rooftop_unique_ids(entity_registry, coordinator)  # type: ignore[arg-type]
+    sensor_module._migrate_legacy_rooftop_unique_ids(entity_registry, coordinator)  # type: ignore[arg-type]
+
+    for unique_id, entity in entities.items():
+        registered = entity_registry.async_get(entity.entity_id)
+        assert registered is not None
+        assert registered.unique_id == unique_id
+    assert entity_registry.async_get_entity_id("sensor", DOMAIN, "solcast_solcast_api_other-site") is None
+
+
+async def test_duplicate_rooftop_warning_skips_unusable_entries(hass: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Test the shared rooftop warning names an entry counting the rooftop, and skips entries it cannot read."""
+
+    def entry(title: str, excluded: list[str], runtime_data: Any = None) -> MockConfigEntry:
+        mock = MockConfigEntry(domain=DOMAIN, title=title, options={EXCLUDE_SITES: excluded}, state=ConfigEntryState.LOADED)
+        mock.add_to_hass(hass)
+        mock.runtime_data = runtime_data
+        return mock
+
+    sites = [{RESOURCE_ID: "1111-1111-1111-1111"}]
+    own = entry("Own", [])
+    entry("No runtime", [])
+    entry("No coordinator", [], SimpleNamespace(coordinator=SimpleNamespace()))
+    entry("Counting", [], SimpleNamespace(coordinator=SimpleNamespace(solcast=SimpleNamespace(sites=sites))))
+
+    sensor_module._warn_duplicate_rooftops(hass, own, sites)
+    assert [record.getMessage() for record in caplog.records if "also counted by" in record.getMessage()] == [
+        "Rooftop 1111-1111-1111-1111 is also counted by Solcast entry Counting; exclude it in one of the two entries"
+    ]
+
+    caplog.clear()
+    sensor_module._warn_duplicate_rooftops(hass, entry("Excluding", ["1111-1111-1111-1111"]), sites)
+    assert "also counted by" not in caplog.text

@@ -5,6 +5,7 @@ from collections import OrderedDict
 import copy
 import datetime
 from datetime import datetime as dt, timedelta
+import json
 import logging
 import math
 from pathlib import Path
@@ -37,17 +38,24 @@ from homeassistant.components.solcast_solar.const import (
     ADVANCED_AUTOMATED_DAMPENING_NO_LIMITING_CONSISTENCY,
     ADVANCED_AUTOMATED_DAMPENING_PRESERVE_UNMATCHED_FACTORS,
     ADVANCED_ESTIMATED_ACTUALS_FETCH_DELAY,
+    ADVANCED_ESTIMATED_ACTUALS_LOG_APE_PERCENTILES,
     ADVANCED_ESTIMATED_ACTUALS_LOG_MAPE_BREAKDOWN,
     ADVANCED_HISTORY_MAX_DAYS,
+    ALL,
     AUTO_DAMPEN,
     AUTO_UPDATE,
+    BRK_SITE,
     DAMP_FACTOR,
     DOMAIN,
     ENTITY_ACCURACY,
     ESTIMATE,
+    EXCEPTION_DAMP_COUNT_MIXED,
+    EXCEPTION_DAMP_OUTSIDE_RANGE,
     EXCEPTION_GENERATION_MIXED_TYPES,
     EXCLUDE_SITES,
+    EXPORT_LIMITING,
     FORECASTS,
+    GENERATION,
     GENERATION_ENTITIES,
     GET_ACTUALS,
     INTEGRATION,
@@ -55,8 +63,10 @@ from homeassistant.components.solcast_solar.const import (
     RESOURCE_ID,
     SERVICE_FORCE_UPDATE_ESTIMATES,
     SERVICE_SET_DAMPENING,
+    SITE,
     SITE_ATTRIBUTE_AZIMUTH,
     SITE_ATTRIBUTE_TILT,
+    SITE_DAMP,
     SITE_EXPORT_ENTITY,
     SITE_EXPORT_LIMIT,
     SITE_INFO,
@@ -71,7 +81,7 @@ from homeassistant.components.solcast_solar.dates import DateTimeHelper
 from homeassistant.components.solcast_solar.enums import SolcastApiStatus
 from homeassistant.components.solcast_solar.solcastapi import SolcastApi
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_registry import RegistryEntryDisabler
@@ -238,11 +248,13 @@ async def test_auto_dampen(
         )
         assert "Auto-dampen factor for 08:30 is 0.830" in caplog.text
 
+        # The rolled-over day has no generation readings, so it is a gap and not a day of zero generation that
+        # would pull the average (2) and minimum (3) models down. One matched pair remains, so all models agree.
         ADVANCED_CHECKS = {
             0: {"base": 0.830, "adjusted": [0.858, 0.834]},
             1: {"base": 0.830, "adjusted": [0.858, 0.834]},
-            2: {"base": 0.652, "adjusted": [0.709, 0.660]},
-            3: {"base": 0.296, "adjusted": [0.410, 0.312]},
+            2: {"base": 0.830, "adjusted": [0.858, 0.834]},
+            3: {"base": 0.830, "adjusted": [0.858, 0.834]},
         }
         for preseve in (False, True):
             solcast.advanced_options[ADVANCED_AUTOMATED_DAMPENING_PRESERVE_UNMATCHED_FACTORS] = preseve
@@ -415,10 +427,8 @@ async def test_auto_dampen_issues(
                 assert f"Generation entity {options[GENERATION_ENTITIES][0]} is disabled, please enable it" in caplog.text  # type: ignore[reportGeneralTypeIssues]
             case ExtraSensors.DODGY:
                 assert "has an unsupported unit_of_measurement 'MJ'" in caplog.text  # A dodgy unit should be logged
-                assert f"Site export entity {options[SITE_EXPORT_ENTITY]} is not a valid entity" in caplog.text
-                assert "Interval 11:00 max generation: 0.000, []" in caplog.text  # A jump in generation should not be seen as a peak
-                assert "Interval 12:30 max generation: 3.900" in caplog.text  # Dodgy generation filtered but some valid data remains
-                assert "Auto-dampen factor for 10:00 is 0.940" in caplog.text  # A valid interval still considered
+                assert "has a gap in daylight readings" in caplog.text  # Gaps with catch-up jumps exclude the day
+                assert solcast.dampening.data_generation[GENERATION] == []  # Every day has a gap or a missing entity
                 assert "Ignoring excessive PV generation jump at" in caplog.text  # Dodgy generation should be logged
             case ExtraSensors.YES_POWER:
                 # Power entity path: site 1111 has insufficient readings, site 2222 has full history.
@@ -426,6 +436,52 @@ async def test_auto_dampen_issues(
                 assert "Retrieved day -1 PV generation data from entity: sensor.solar_export_sensor_2222_2222_2222_2222" in caplog.text
             case _:
                 pytest.fail("Assertions missing for extra_sensors value")
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_generation_gap_day_excluded(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test a day with an unknown stretch of generation readings is left out of the generation history."""
+
+    entity = "sensor.solar_export_sensor_1111_1111_1111_1111"
+    options = copy.deepcopy(DEFAULT_INPUT2)
+    options[GET_ACTUALS] = True
+    options[USE_ACTUALS] = 1
+    options[AUTO_DAMPEN] = True
+    options[GENERATION_ENTITIES] = [entity]
+
+    try:
+        entry = await async_init_integration(hass, options, extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        yesterday = solcast.dt_helper.day_start_utc(future=-1)
+
+        for unknown in (False, True):
+
+            async def history(_recorder: Any, start: dt, *_args: Any, unknown: bool = unknown) -> dict[str, list[State]]:
+                return {  # A reading every ten minutes, unknown from 09:00 to 21:00 when asked
+                    entity: [
+                        State(
+                            entity,
+                            "unknown" if unknown and 540 <= m < 1260 else f"{m / 100:.1f}",
+                            {"unit_of_measurement": "kWh"},
+                            last_updated=start + timedelta(minutes=m),
+                        )
+                        for m in range(0, 1440, 10)
+                    ]
+                }
+
+            monkeypatch.setattr(solcast.dampening, "_get_entity_history", history)
+            solcast.dampening.data_generation[GENERATION] = []
+            caplog.clear()
+            await solcast.dampening.get_pv_generation()
+            assert (yesterday in {gen[PERIOD_START] for gen in solcast.dampening.data_generation[GENERATION]}) is not unknown
+            assert ("has a gap in daylight readings" in caplog.text) is unknown
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
@@ -868,6 +924,7 @@ async def test_config_flow_mixed_generation_registry_and_state_entity_types(
 def test_target_timestamp_shifts_to_target_day() -> None:
     """_target_timestamp should preserve the UTC time-of-day on the target day."""
     dampening = Dampening.__new__(Dampening)
+    dampening.api = SimpleNamespace(tz=datetime.UTC)  # pyright: ignore[reportAttributeAccessIssue]
     past_ts = dt(2025, 1, 10, 13, 30, tzinfo=datetime.UTC)
     target_day = dt(2025, 1, 25, 0, 0, tzinfo=datetime.UTC)
     result = dampening._target_timestamp(past_ts, target_day)  # type: ignore[attr-defined]
@@ -947,8 +1004,9 @@ def test_elevation_adjustment_ratio_uses_site_geometry(monkeypatch: pytest.Monke
         hass=SimpleNamespace(),
         options=SimpleNamespace(exclude_sites=[]),
         sites=[
-            {RESOURCE_ID: "east", SITE_ATTRIBUTE_TILT: 30.0, SITE_ATTRIBUTE_AZIMUTH: 90.0},
-            {RESOURCE_ID: "west", SITE_ATTRIBUTE_TILT: 30.0, SITE_ATTRIBUTE_AZIMUTH: 270.0},
+            # Solcast azimuth convention: E=-90, W=+90 (compass 90 and 270).
+            {RESOURCE_ID: "east", SITE_ATTRIBUTE_TILT: 30.0, SITE_ATTRIBUTE_AZIMUTH: -90.0},
+            {RESOURCE_ID: "west", SITE_ATTRIBUTE_TILT: 30.0, SITE_ATTRIBUTE_AZIMUTH: 90.0},
         ],
     )  # type: ignore[attr-defined]
 
@@ -960,17 +1018,56 @@ def test_elevation_adjustment_ratio_uses_site_geometry(monkeypatch: pytest.Monke
     ratio = dampening.elevation_adjustment_ratio(past_ts, target_ts)
 
     # Computed geometry ratios per site:
-    #   east (panel_azimuth=90):
+    #   east (Solcast -90, compass panel_azimuth=90):
     #     past_gain  = sin(35) x cos(30) + cos(35) x sin(30) x cos(90-90)   ≈ 0.9063
     #     target_gain= sin(55) x cos(30) + cos(55) x sin(30) x cos(240-90)  ≈ 0.4610
     #     ratio_east ≈ 0.509
-    #   west (panel_azimuth=270):
+    #   west (Solcast 90, compass panel_azimuth=270):
     #     past_gain  = sin(35) x cos(30) + cos(35) x sin(30) x cos(90-270)  ≈ 0.0872
     #     target_gain= sin(55) x cos(30) + cos(55) x sin(30) x cos(240-270) ≈ 0.9578
     #     ratio_west ≈ 10.99
     #   average ~= 5.75, clamped to 2.0
     assert ratio == pytest.approx(2.0)
     assert ratio > base_ratio
+
+
+def test_elevation_adjustment_ratio_east_site_in_morning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An east-facing site (Solcast azimuth -90) sees the morning sun, so its adjustment is the smaller one."""
+
+    class _Loc:
+        def solar_elevation(self, when: dt) -> float:
+            return 30.0 if when.day == 1 else 40.0
+
+        def solar_azimuth(self, when: dt) -> float:
+            return 100.0 if when.day == 1 else 110.0  # Morning, sun in the east.
+
+    past_ts = dt(2025, 6, 1, 8, 0, tzinfo=datetime.UTC)
+    target_ts = dt(2025, 6, 2, 8, 0, tzinfo=datetime.UTC)
+    _patch_astral_location_provider(monkeypatch, _Loc())
+
+    def _ratio(azimuth: float | None) -> float:
+        dampening = Dampening.__new__(Dampening)
+        dampening.api = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+            hass=SimpleNamespace(),
+            options=SimpleNamespace(exclude_sites=[]),
+            # A site without a usable azimuth is skipped.
+            sites=[
+                {RESOURCE_ID: "site", SITE_ATTRIBUTE_TILT: 30.0, SITE_ATTRIBUTE_AZIMUTH: azimuth},
+                {RESOURCE_ID: "bad", SITE_ATTRIBUTE_TILT: 30.0, SITE_ATTRIBUTE_AZIMUTH: None},
+            ],
+        )  # type: ignore[attr-defined]
+        return dampening.elevation_adjustment_ratio(past_ts, target_ts)
+
+    def _gain(elevation: float, sun_azimuth: float, panel_azimuth: float) -> float:
+        return math.sin(math.radians(elevation)) * math.cos(math.radians(30.0)) + math.cos(math.radians(elevation)) * math.sin(
+            math.radians(30.0)
+        ) * math.cos(math.radians(sun_azimuth - panel_azimuth))
+
+    east = _ratio(-90.0)
+    west = _ratio(90.0)
+    assert east == pytest.approx(_gain(40.0, 110.0, 90.0) / _gain(30.0, 100.0, 90.0))  # About 1.067.
+    assert west == pytest.approx(2.0)  # Barely lit in the past, so the ratio is clamped.
+    assert east < west
 
 
 def test_elevation_adjustment_ratio_falls_back_when_all_sites_face_away(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -987,11 +1084,11 @@ def test_elevation_adjustment_ratio_falls_back_when_all_sites_face_away(monkeypa
     target_ts = dt(2025, 6, 2, 12, 0, tzinfo=datetime.UTC)
 
     dampening = Dampening.__new__(Dampening)
-    # Tilt=90, panel faces directly away from sun (azimuth delta=180°), so gain <= 0 for both timestamps.
+    # Tilt=90, west-facing panel (Solcast azimuth 90) faces directly away from the eastern sun, so gain <= 0 for both timestamps.
     dampening.api = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         hass=SimpleNamespace(),
         options=SimpleNamespace(exclude_sites=[]),
-        sites=[{RESOURCE_ID: "a", SITE_ATTRIBUTE_TILT: 90, SITE_ATTRIBUTE_AZIMUTH: 270}],
+        sites=[{RESOURCE_ID: "a", SITE_ATTRIBUTE_TILT: 90, SITE_ATTRIBUTE_AZIMUTH: 90}],
     )  # type: ignore[attr-defined]
 
     _patch_astral_location_provider(monkeypatch, _Loc())
@@ -1051,8 +1148,9 @@ async def test_calculate_elevation_adjustment_applied(monkeypatch: pytest.Monkey
         ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR: 0.95,
         ADVANCED_AUTOMATED_DAMPENING_ELEVATION_ADJUSTMENT: True,
     }
-    api.filename_generation = tempfile.NamedTemporaryFile(delete=False).name
-    api.filename_dampening = tempfile.NamedTemporaryFile(delete=False).name
+    for attribute in ("filename_generation", "filename_dampening"):
+        with tempfile.NamedTemporaryFile(delete=False) as handle:
+            setattr(api, attribute, handle.name)
 
     dampening = Dampening(api)
 
@@ -1084,3 +1182,268 @@ async def test_calculate_elevation_adjustment_applied(monkeypatch: pytest.Monkey
 
     assert len(result) == 48
     assert result[interval] <= 1.0
+
+
+_GENERATION_ENTITIES = [
+    "sensor.solar_export_sensor_1111_1111_1111_1111",
+    "sensor.solar_export_sensor_2222_2222_2222_2222",
+]
+
+
+def _auto_dampen_options() -> dict[str, Any]:
+    """Options for automated dampening from the two extra generation sensors."""
+    options = copy.deepcopy(DEFAULT_INPUT2)
+    options[GET_ACTUALS] = True
+    options[USE_ACTUALS] = 1
+    options[AUTO_DAMPEN] = True
+    options[GENERATION_ENTITIES] = list(_GENERATION_ENTITIES)
+    return options
+
+
+def _energy_readings(entity: str, start: dt, jump_at: int | None = None) -> list[State]:
+    """A kWh reading every ten minutes, 0.1 kWh apart, with an optional catch-up jump at a minute of the day."""
+    states: list[State] = []
+    value = 0.0
+    for minute in range(0, 1440, 10):
+        value += 0.1 + (5.0 if minute == jump_at else 0.0)
+        states.append(State(entity, f"{value:.1f}", {"unit_of_measurement": "kWh"}, last_updated=start + timedelta(minutes=minute)))
+    return states
+
+
+async def test_generation_ignored_jump_keeps_other_entities(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test generation of two entities adds up, and a catch-up jump ignored for one entity zeroes only that entity."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        yesterday = solcast.dt_helper.day_start_utc(future=-1)
+
+        async def history(_recorder: Any, start: dt, _end: dt, entity: str, *_args: Any) -> dict[str, list[State]]:
+            return {entity: _energy_readings(entity, start, jump_at=120 if entity == _GENERATION_ENTITIES[1] else None)}
+
+        monkeypatch.setattr(solcast.dampening, "_get_entity_history", history)
+        solcast.dampening.data_generation[GENERATION] = []
+        await solcast.dampening.get_pv_generation()
+        generation = {gen[PERIOD_START]: gen[GENERATION] for gen in solcast.dampening.data_generation[GENERATION]}
+
+        assert generation[yesterday + timedelta(hours=12)] == pytest.approx(0.6)  # Both entities, 0.3 kWh each
+        # The jump at 02:00 is ignored for the second entity in its interval and the one before; the first entity still counts.
+        assert generation[yesterday + timedelta(hours=2)] == pytest.approx(0.3)
+        assert generation[yesterday + timedelta(hours=1, minutes=30)] == pytest.approx(0.3)
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_generation_entity_without_history_is_a_gap(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test a day on which one of two generation entities has no readings is left out, not counted as partial generation."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        yesterday = solcast.dt_helper.day_start_utc(future=-1)
+
+        for silent in (False, True):
+
+            async def history(
+                _recorder: Any, start: dt, _end: dt, entity: str, *_args: Any, silent: bool = silent
+            ) -> dict[str, list[State]]:
+                return {} if silent and entity == _GENERATION_ENTITIES[1] else {entity: _energy_readings(entity, start)}
+
+            monkeypatch.setattr(solcast.dampening, "_get_entity_history", history)
+            solcast.dampening.data_generation[GENERATION] = []
+            await solcast.dampening.get_pv_generation()
+            generation = {gen[PERIOD_START]: gen[GENERATION] for gen in solcast.dampening.data_generation[GENERATION]}
+            if silent:
+                assert generation == {}
+            else:
+                assert generation[yesterday + timedelta(hours=12)] == pytest.approx(0.6)
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_generation_quarter_hour_time_zone(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test generation in a time zone offset by 45 minutes lands on the UTC half hours of the estimated actuals."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), timezone="Asia/Kathmandu", extra_sensors=ExtraSensors.YES)
+        assert entry.state is ConfigEntryState.LOADED
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+
+        async def history(_recorder: Any, start: dt, _end: dt, entity: str, *_args: Any) -> dict[str, list[State]]:
+            return {entity: _energy_readings(entity, start)}
+
+        monkeypatch.setattr(solcast.dampening, "_get_entity_history", history)
+        solcast.dampening.data_generation[GENERATION] = []
+        await solcast.dampening.get_pv_generation()
+
+        periods = {gen[PERIOD_START] for gen in solcast.dampening.data_generation[GENERATION]}
+        assert periods
+        assert {period.minute for period in periods} == {0, 30}
+        actuals = {actual[PERIOD_START] for actual in solcast.data_actuals[SITE_INFO]["1111-1111-1111-1111"][FORECASTS]}
+        assert periods & actuals  # Generation can be matched with estimated actuals
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_accuracy_percentiles_exclude_gap_and_zero_days(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+) -> None:
+    """Test accuracy percentiles leave out a day excluded for a gap, and an infinite error of a day without generation."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        coordinator = entry.runtime_data.coordinator
+        solcast: SolcastApi = coordinator.solcast
+        solcast.advanced_options[ADVANCED_ESTIMATED_ACTUALS_LOG_APE_PERCENTILES] = [50, 90]
+
+        def generation_for(days: dict[int, float]) -> list[dict[str, Any]]:
+            return [
+                {
+                    PERIOD_START: solcast.dt_helper.day_start_utc(future=-ago) + timedelta(minutes=30 * interval),
+                    GENERATION: generated,
+                    EXPORT_LIMITING: False,
+                }
+                for ago, generated in sorted(days.items(), reverse=True)
+                for interval in range(48)
+            ]
+
+        def accuracy() -> dict[str, Any]:
+            attributes = coordinator.get_sensor_extra_attributes(ENTITY_ACCURACY)
+            assert attributes is not None
+            return attributes
+
+        # The day three days ago is a gap day, so it has no generation at all.
+        solcast.dampening.data_generation[GENERATION] = generation_for({2: 0.5, 1: 0.5})
+        await solcast.build_actual_data()  # Estimated actuals to compare with
+        await coordinator._updater.calculate_accuracy_metrics()
+        attributes = accuracy()
+        assert attributes["infinity_excluded"] is False
+        assert len(attributes["undampened_ape_breakdown"]) == 2
+        assert math.isfinite(attributes["undampened_p50_ape"])
+        assert math.isfinite(attributes["undampened_p90_ape"])
+
+        # A day with generation entries that add up to nothing has an infinite error, which is left out.
+        solcast.dampening.data_generation[GENERATION] = generation_for({3: 0.0, 2: 0.5, 1: 0.5})
+        await coordinator._updater.calculate_accuracy_metrics()
+        attributes = accuracy()
+        assert attributes["infinity_excluded"] is True
+        assert len(attributes["undampened_ape_breakdown"]) == 2
+        assert math.isfinite(attributes["undampened_p50_ape"])
+        assert math.isfinite(attributes["undampened_p90_ape"])
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+@pytest.mark.parametrize(
+    ("content", "valid"),
+    [
+        (json.dumps({ALL: [0.5] * 48}), True),
+        (json.dumps({"1111-1111-1111-1111": [0.5] * 24}), True),
+        (json.dumps({ALL: 5}), False),
+        ("[1, 2]", False),
+        ("null", False),
+        (json.dumps({ALL: [1.5] * 48}), False),
+        (json.dumps({ALL: [-0.1] * 48}), False),
+        (json.dumps({ALL: ["0.5"] * 48}), False),
+        (json.dumps({ALL: [math.nan] * 48}), False),
+        (json.dumps({"9999-9999-9999-9999": [0.5] * 24}), False),
+    ],
+)
+async def test_granular_dampening_file_validated(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    content: str,
+    valid: bool,
+) -> None:
+    """Test a granular dampening file is only used with known sites and factors between 0.0 and 1.0, and is otherwise ignored."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT2))
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        Path(solcast.dampening.get_filename()).write_text(content, encoding="utf-8")
+
+        assert await solcast.dampening.granular_data() is valid
+        await hass.async_block_till_done()
+        assert entry.options[SITE_DAMP] is valid
+        assert solcast.dampening.factors == (json.loads(content) if valid else {})
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_set_dampening_rejects_non_finite_and_mixed_counts(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+) -> None:
+    """Test the set dampening action refuses factors that are not finite, and a factor count other sites do not use."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT2))
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+
+        for factor in ("nan", "inf", "-inf"):
+            with pytest.raises(ServiceValidationError) as exc_info:
+                await hass.services.async_call(DOMAIN, SERVICE_SET_DAMPENING, {DAMP_FACTOR: ",".join([factor] * 24)}, blocking=True)
+            assert exc_info.value.translation_key == EXCEPTION_DAMP_OUTSIDE_RANGE
+
+        site_1 = {SITE: "1111-1111-1111-1111", DAMP_FACTOR: ",".join(["0.5"] * 24)}
+        await hass.services.async_call(DOMAIN, SERVICE_SET_DAMPENING, site_1, blocking=True)
+        await hass.async_block_till_done()
+        with pytest.raises(ServiceValidationError) as exc_info:
+            await hass.services.async_call(
+                DOMAIN, SERVICE_SET_DAMPENING, {SITE: "2222-2222-2222-2222", DAMP_FACTOR: ",".join(["0.5"] * 48)}, blocking=True
+            )
+        assert exc_info.value.translation_key == EXCEPTION_DAMP_COUNT_MIXED
+        assert json.loads(Path(solcast.dampening.get_filename()).read_text(encoding="utf-8")) == {"1111-1111-1111-1111": [0.5] * 24}
+
+        # Replacing the factors of the only site with another count is fine.
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SET_DAMPENING, {SITE: "1111-1111-1111-1111", DAMP_FACTOR: ",".join(["0.6"] * 48)}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert solcast.dampening.factors == {"1111-1111-1111-1111": [0.6] * 48}
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_options_change_keeps_automated_dampening_file(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+) -> None:
+    """Test an option change without reload keeps the automated dampening factors, and turning automated dampening off removes them."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        path = Path(solcast.dampening.get_filename())
+        path.write_text(json.dumps({ALL: [0.8] * 48}), encoding="utf-8")
+
+        hass.config_entries.async_update_entry(entry, options={**entry.options, BRK_SITE: not entry.options[BRK_SITE]})
+        await hass.async_block_till_done()
+        assert entry.runtime_data.coordinator.solcast is solcast  # Not reloaded
+        assert path.is_file()
+
+        hass.config_entries.async_update_entry(entry, options={**entry.options, AUTO_DAMPEN: False})
+        await hass.async_block_till_done()
+        assert not path.is_file()
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
