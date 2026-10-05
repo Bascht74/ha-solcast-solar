@@ -2,6 +2,7 @@
   "config": {
     "abort": {
       "internal_error": "Er is een onverwachte fout opgetreden. Controleer de logboeken voor meer informatie.",
+      "already_in_progress": "Een vermelding met deze naam wordt al ingesteld.",
       "reauth_successful": "Nieuwe API-sleutel succesvol toegepast",
       "reconfigured": "Nieuwe configuratie succesvol toegepast",
       "unchanged": "Configuratie ongewijzigd"
@@ -15,7 +16,13 @@
       "limit_not_number": "API-limiet is geen getal",
       "limit_one_or_greater": "De API-limiet moet één of hoger zijn",
       "limit_too_many": "Er zijn meer API-limietwaarden ingevoerd dan sleutels",
-      "limit_exceeds_maximum": "De API-limiet mag niet hoger zijn dan 50 (en zou waarschijnlijk 10 of minder moeten zijn)."
+      "limit_exceeds_maximum": "De API-limiet mag niet hoger zijn dan 50 (en zou waarschijnlijk 10 of minder moeten zijn).",
+      "instance_name_required": "Een volgende vermelding heeft een naam nodig.",
+      "instance_name_invalid": "De naam moet een letter of een cijfer bevatten.",
+      "instance_name_duplicate": "Die naam is al in gebruik.",
+      "instance_name_reserved": "Die naam is gereserveerd voor de bestanden van de eerste vermelding. Kies een andere naam.",
+      "rooftop_in_use": "Site {rooftops} wordt al geteld door {entries}. Sluit hem uit in een van beide vermeldingen.",
+      "all_sites_excluded": "Alle sites zijn uitgesloten. Behoud ten minste één site."
     },
     "step": {
       "reauth_confirm": {
@@ -24,7 +31,7 @@
         },
         "description": "Solcast-account API-sleutel",
         "data_description": {
-          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's"
+          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's. Een andere vermelding mag dezelfde sleutel gebruiken; de sites die die vermelding ophaalt, worden hier dan uitgesloten"
         }
       },
       "reconfigure_confirm": {
@@ -35,8 +42,8 @@
         },
         "description": "Solcast accountgegevens\n\n(Als u geen automatische updates gebruikt, is automatisering vereist - zie de integratiedocumentatie)",
         "data_description": {
-          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's",
-          "api_limit": "Voer een dagelijkse limiet voor voorspellingsupdates in, komma-gescheiden bij gebruik van meerdere sleutels",
+          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's. Een andere vermelding mag dezelfde sleutel gebruiken; de sites die die vermelding ophaalt, worden hier dan uitgesloten",
+          "api_limit": "Voer de dagelijkse limiet voor API-aanroepen in, geschatte werkelijke waarden inbegrepen, komma-gescheiden bij gebruik van meerdere sleutels. Solcast telt de aanroepen per API-sleutel: de limieten van alle vermeldingen met dezelfde sleutel mogen samen niet hoger zijn dan het dagelijkse quotum van het account",
           "auto_update": "Als u geen automatische update gebruikt, maak dan een automatisering die de actie \"solcast_solar.update_forecasts\" periodiek aanroept, en houd u daarbij aan de door Solcast geadviseerde maximale totale limiet (meestal in totaal tien keer per dag voor één daksite, of bij twee sites vijf keer per dag)"
         }
       },
@@ -44,13 +51,15 @@
         "data": {
           "api_key": "API-sleutel",
           "api_limit": "API-limiet",
-          "auto_update": "Auto-update"
+          "auto_update": "Auto-update",
+          "instance_name": "Naam"
         },
         "description": "Solcast accountgegevens\n\n(Als u geen automatische updates gebruikt, is automatisering vereist - zie de integratiedocumentatie)\n\nDe Solcast API moet beschikbaar zijn om deze integratie in eerste instantie te configureren. Als u de statusmelding '429 / Probeer het later opnieuw' ontvangt, is de API niet beschikbaar en kan de configuratie niet worden voltooid. U moet wachten. Houd er rekening mee dat de API-statuspagina op status.solcast.com vrijwel zeker geen API-problemen zal tonen. De meest waarschijnlijke oorzaak is een slechte API-gebruiker die de beschikbaarheid voor alle hobbyisten beïnvloedt.",
         "data_description": {
-          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's",
-          "api_limit": "Voer een dagelijkse limiet voor voorspellingsupdates in, komma-gescheiden bij gebruik van meerdere sleutels",
-          "auto_update": "Als u geen automatische update gebruikt, maak dan een automatisering die de actie \"solcast_solar.update_forecasts\" periodiek aanroept, en houd u daarbij aan de door Solcast geadviseerde maximale totale limiet (meestal in totaal tien keer per dag voor één daksite, of bij twee sites vijf keer per dag)"
+          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's. Een andere vermelding mag dezelfde sleutel gebruiken; de sites die die vermelding ophaalt, worden hier dan uitgesloten",
+          "api_limit": "Voer de dagelijkse limiet voor API-aanroepen in, geschatte werkelijke waarden inbegrepen, komma-gescheiden bij gebruik van meerdere sleutels. Solcast telt de aanroepen per API-sleutel: de limieten van alle vermeldingen met dezelfde sleutel mogen samen niet hoger zijn dan het dagelijkse quotum van het account",
+          "auto_update": "Als u geen automatische update gebruikt, maak dan een automatisering die de actie \"solcast_solar.update_forecasts\" periodiek aanroept, en houd u daarbij aan de door Solcast geadviseerde maximale totale limiet (meestal in totaal tien keer per dag voor één daksite, of bij twee sites vijf keer per dag)",
+          "instance_name": "Naam van deze installatie, bijvoorbeeld West. Laat alleen bij de eerste vermelding leeg. Volgende vermeldingen hebben een naam nodig zodat hun bestanden en sensoren gescheiden blijven."
         }
       }
     }
@@ -167,8 +176,14 @@
     "actuals_without_get": {
       "message": "Geschatte werkelijke waarden kunnen niet worden gebruikt zonder ze op te halen."
     },
+    "all_sites_excluded": {
+      "message": "Alle sites van deze vermelding zijn uitgesloten. Behoud ten minste één site."
+    },
     "api_duplicate": {
       "message": "Dubbele API-sleutel opgegeven."
+    },
+    "api_error": {
+      "message": "Solcast API-fout: {error_detail}"
     },
     "api_key_empty": {
       "message": "API-sleutel mag niet leeg zijn."
@@ -190,6 +205,9 @@
     },
     "damp_auto_enabled": {
       "message": "Automatische demping is ingeschakeld, handmatige dempingsfactoren zijn niet ingesteld."
+    },
+    "damp_count_mixed": {
+      "message": "Het aantal dempingsfactoren moet overeenkomen met de factoren die al voor de andere locaties zijn ingesteld."
     },
     "damp_count_not_correct": {
       "message": "Er zijn geen 24 of 48 door komma's gescheiden getallen tussen 0.0 en 1.0."
@@ -226,6 +244,12 @@
     },
     "export_no_limit": {
       "message": "Een site-exportlimiet moet worden opgegeven als een site-exportentiteit is ingesteld."
+    },
+    "generation_mixed_types": {
+      "message": "PV-opwekkingsentiteiten moeten allemaal van hetzelfde type zijn (allemaal energie of allemaal vermogen, geen mix)"
+    },
+    "generation_not_sensor": {
+      "message": "{entity} is geen bestaande energie- of vermogenssensor."
     },
     "hard_empty": {
       "message": "Lege harde grenswaarde."
@@ -296,45 +320,50 @@
     "remove_cache_failed": {
       "message": "Alle Solcast gegevens wissen mislukt."
     },
+    "rooftop_in_use": {
+      "message": "Site {rooftops} wordt al geteld door {entries}. Sluit hem uit in een van beide vermeldingen."
+    },
     "set_options_empty": {
       "message": "Er moet minimaal één optie worden opgegeven."
     },
     "limit_exceeds_maximum": {
       "message": "De API-limiet mag niet hoger zijn dan 50 (en zou waarschijnlijk 10 of minder moeten zijn)."
+    },
+    "instance_required": {
+      "message": "Er is meer dan één Solcast-vermelding geladen of gekozen. Kies één Solcast-vermelding."
+    },
+    "instance_unknown": {
+      "message": "De gekozen vermelding of het doel hoort niet bij een geladen Solcast-vermelding."
     }
   },
   "issues": {
     "action_deprecated": {
       "description": "De actie `{deprecated_action}` is verouderd en wordt verwijderd in een toekomstige versie. Gebruik in plaats daarvan de actie `{new_action}`.",
-      "title": "Verouderde actie"
-    },
-    "actuals_api_limit": {
-      "description": "Automatische update en geschatte werkelijke waarden zijn ingeschakeld terwijl de API-limiet is ingesteld op de maximale hobbyistwaarde (`{configured_value}`). Geschatte werkelijke waarden worden verzameld direct na middernacht en verbruiken één API-aanroep per daklocatie voor elke geconfigureerde API-sleutel. Verlaag uw API-limiet naar `{suggested_value}` om aanroepen te reserveren voor geschatte werkelijke waarden.",
-      "title": "Pas de API-limiet aan voor geschatte werkelijke waarden"
+      "title": "Verouderde actie{instance}"
     },
     "actuals_quota_today": {
-      "title": "Ophalen van geschatte werkelijke waarden kan het dagelijkse API-quotum overschrijden",
+      "title": "Ophalen van geschatte werkelijke waarden kan het dagelijkse API-quotum overschrijden{instance}",
       "description": "Het ophalen van geschatte werkelijke waarden is ingeschakeld. Op basis van het typische dagelijkse API-gebruik voor prognose-updates ({api_used} aanroepen) en het afgeleid accountquotum van {api_limit} aanroepen, zou het toevoegen van de {actuals_cost} aanroep(en) voor het ophalen van geschatte werkelijke waarden het quotum op een gemiddelde dag overschrijden. Het ophalen wordt toch geprobeerd direct na middernacht, maar dit (of een volgende prognose-update) kan mislukken met een `429 Too Many Requests`-respons.\n\nDeze waarschuwing kan verschijnen terwijl de typische gebruiksteller nog gevoed wordt met echte gegevens. Het typische aantal weerspiegelt alleen automatische updates/automatisering-updates en geforceerde prognose-aanroepen. Controleer uw geconfigureerde API-limiet en eventuele automatiseringen voor geforceerde updates als u geschatte werkelijke waarden wilt gebruiken."
     },
     "advanced_deprecated": {
       "description": "Geavanceerde configuratieoptie(s) `{option}` gewijzigd in `{new_option}`. Werk uw geavanceerde configuratieopties bij om de nieuwe optienaam te gebruiken.{stops_working}",
-      "title": "Geavanceerde optie verouderd"
+      "title": "Geavanceerde optie verouderd{instance}"
     },
     "advanced_problem": {
       "description": "Het geavanceerde configuratiebestand bevat fouten.\n{problems}\n\nLos deze op aan de hand van de integratiedocumentatie via de link ‘Meer informatie’.",
-      "title": "Probleem met geavanceerde optie"
+      "title": "Probleem met geavanceerde optie{instance}"
     },
     "api_unavailable": {
       "description": "De Solcast API heeft tijdens een update herhaaldelijk de status `429 / Probeer het later opnieuw` gemeld.\n\n* Probeer deze situatie niet op te lossen.\n* Wijzig uw API-sleutel niet.\n* Start de integratie niet opnieuw op\n* Dit is geen integratieprobleem en lost zichzelf op. Wijzig niets.\n\n(Om dit probleem te onderdrukken, maakt u een geavanceerde configuratieoptie api_raise_issue aan en stelt u deze in op false.)",
-      "title": "Solcast API tijdelijk niet beschikbaar"
+      "title": "Solcast API tijdelijk niet beschikbaar{instance}"
     },
     "corrupt_file": {
       "description": "Het/de cachegegevensbestand(en) `{files}` is/zijn beschadigd. De integratie zal proberen te herstellen door het/de bestand(en) te verwijderen en de gegevens opnieuw op te halen uit Solcast. Houd rekening met een verhoogd API-gebruik en mogelijke API-storingen, en verlies van voorspellingsgeschiedenis als gevolg van deze situatie. Mogelijk kunnen de bestanden worden hersteld vanuit de back-up, maar houd toch rekening met API-storingen.",
-      "title": "Beschadigde cachegegevens"
+      "title": "Beschadigde cachegegevens{instance}"
     },
     "records_missing": {
       "description": "Er ontbreken toekomstige voorspelling gegevens, wat onverwacht is omdat automatische updates zijn ingeschakeld. Onderzoek de oorzaak door het logboek van Home Assistant te bekijken. Lees de veelgestelde vragen over probleemoplossing voordat u een integratieprobleem meldt.",
-      "title": "Toekomstprognoses ontbreken"
+      "title": "Toekomstprognoses ontbreken{instance}"
     },
     "records_missing_fixable": {
       "fix_flow": {
@@ -353,23 +382,27 @@
           }
         }
       },
-      "title": "Toekomstprognoses ontbreken"
+      "title": "Toekomstprognoses ontbreken{instance}"
     },
     "records_missing_initial": {
       "description": "De voorspelde en/of geschatte werkelijke gegevens ontbreken, waarschijnlijk omdat de eerste voorspellingsupdate niet heeft plaatsgevonden. Dit komt waarschijnlijk doordat de limiet voor API-aanroepen is bereikt. U zult problemen met sensoren krijgen en het energiedashboard zal waarschijnlijk onvolledige gegevens bevatten. Dit lost zichzelf op.",
-      "title": "Toekomstvoorspellingen ontbreken"
+      "title": "Toekomstvoorspellingen ontbreken{instance}"
     },
     "records_missing_unfixable": {
       "description": "De toekomstvoorspellingen ontbreken, wat onverwacht is. Controleer de logboeken.",
-      "title": "Toekomstvoorspellingen ontbreken"
+      "title": "Toekomstvoorspellingen ontbreken{instance}"
+    },
+    "shared_api_limit": {
+      "description": "De vermeldingen {entries} gebruiken de Solcast API-sleutel {api_key}, en hun API-limieten (tussen haakjes) komen samen op {total} aanroepen per dag. Solcast telt de aanroepen van alle vermeldingen per API-sleutel, en een hobbyaccount staat {quota} aanroepen per dag toe, dus updates kunnen vóór het einde van de dag worden geweigerd. Verlaag de API-limieten van deze vermeldingen zodat ze samen {quota} of minder zijn. Negeer deze reparatie als uw Solcast-account meer aanroepen toestaat.",
+      "title": "API-limieten van een gedeelde Solcast API-sleutel overschrijden het dagelijkse quotum"
     },
     "unusual_azimuth_northern": {
       "description": "De azimut voor locatie {site} is ongebruikelijk voor de breedtegraad van dit dak op het noordelijk halfrond. Moet dit {proposal} zijn in plaats van {extant}? (Negeer dit probleem als de locatie naar het noorden is gericht.)",
-      "title": "Ongebruikelijke azimut"
+      "title": "Ongebruikelijke azimut{instance}"
     },
     "unusual_azimuth_southern": {
       "description": "De azimut voor locatie {site} is ongebruikelijk voor de breedtegraad van dit dak op het zuidelijk halfrond. Moet dit {proposal} zijn in plaats van {extant}? (Negeer dit probleem als de locatie naar het zuiden is gericht.)",
-      "title": "Ongebruikelijke azimut"
+      "title": "Ongebruikelijke azimut{instance}"
     }
   },
   "options": {
@@ -392,13 +425,16 @@
       "export_no_entity": "De site exportentiteit moet worden opgegeven als er een site exportlimiet is ingesteld",
       "export_no_limit": "Er moet een site-exportlimiet worden opgegeven als er een site-exportentiteit is ingesteld",
       "generation_mixed_types": "PV-opwekkingsentiteiten moeten allemaal van hetzelfde type zijn (allemaal energie of allemaal vermogen, geen mix)",
+      "generation_not_sensor": "{entity} is geen bestaande energie- of vermogenssensor.",
       "hard_not_positive_number": "Hard limit is geen positief getal",
       "hard_too_many": "Er zijn meer harde limieten ingevoerd dan API-sleutels",
       "internal_error": "Er is een onverwachte fout opgetreden. Controleer de logboeken voor meer informatie.",
       "limit_not_number": "API-limiet is geen getal",
       "limit_one_or_greater": "API-limiet moet één of meer zijn",
       "limit_too_many": "Er zijn meer API-limietwaarden ingevoerd dan API-sleutels",
-      "limit_exceeds_maximum": "De API-limiet mag niet hoger zijn dan 50 (en zou waarschijnlijk 10 of minder moeten zijn)."
+      "limit_exceeds_maximum": "De API-limiet mag niet hoger zijn dan 50 (en zou waarschijnlijk 10 of minder moeten zijn).",
+      "rooftop_in_use": "Site {rooftops} wordt al geteld door {entries}. Sluit hem uit in een van beide vermeldingen.",
+      "all_sites_excluded": "Alle sites zijn uitgesloten. Behoud ten minste één site."
     },
     "step": {
       "dampen": {
@@ -465,7 +501,7 @@
           "auto_update": "Automatische update (als er geen automatische update is, moet in plaats daarvan een automatisering worden gebruikt)",
           "config_damp": "Dempingsfactoren per uur wijzigen",
           "custom_hours": "Aangepaste sensor voor de komende X uur",
-          "exclude_sites": "Locatie(s) die moeten worden uitgesloten van het energiedashboard en de sensortotalen",
+          "exclude_sites": "Uit te sluiten site(s)",
           "generation_entities": "PV-productie-entiteit/-entiteiten",
           "get_actuals": "Geschatte werkelijke waarden bijgewerkt om middernacht",
           "hard_limit_api": "Maximale vermogenslimiet van de omvormer (kW)",
@@ -477,16 +513,16 @@
         },
         "description": "Configuratieopties voor Solcast",
         "data_description": {
-          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's",
-          "api_limit": "Voer een dagelijkse limiet voor voorspellingsupdates in, komma-gescheiden bij gebruik van meerdere sleutels",
+          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's. Een andere vermelding mag dezelfde sleutel gebruiken; de sites die die vermelding ophaalt, worden hier dan uitgesloten",
+          "api_limit": "Voer de dagelijkse limiet voor API-aanroepen in, geschatte werkelijke waarden inbegrepen, komma-gescheiden bij gebruik van meerdere sleutels. Solcast telt de aanroepen per API-sleutel: de limieten van alle vermeldingen met dezelfde sleutel mogen samen niet hoger zijn dan het dagelijkse quotum van het account",
           "attr_breakdown": "Selecteer welke uitsplitsingen zijn ingeschakeld",
           "auto_dampen": "Vereist geschatte werkelijke waarden en een PV-productie-entiteit — zie de integratiedocumentatie",
           "auto_update": "Als u geen automatische update gebruikt, maak dan een automatisering die de actie \"solcast_solar.update_forecasts\" periodiek aanroept, en houd u daarbij aan de door Solcast geadviseerde maximale totale limiet (meestal in totaal tien keer per dag voor één daksite, of bij twee sites vijf keer per dag)",
           "config_damp": "Klik op verzenden om naar de dempingsfactoreditor te gaan",
           "custom_hours": "Aantal uren voor de aangepaste sensor (minimum 1, maximum 144)",
-          "exclude_sites": "Site(s) die moeten worden uitgesloten van het Energie-dashboard en sensortotalen bij het toevoegen van lokale en externe site-API-sleutels voor een enkele lokale/externe Home Assistant-implementatie",
+          "exclude_sites": "Een uitgesloten site wordt niet bij Solcast opgehaald: geen voorspelling, geen geschatte werkelijke waarden, geen API-aanroepen en geen sitesensor",
           "generation_entities": "Voor automatische demping: energie (Wh/kWh/MWh, totaal stijgend) of vermogen (W/kW/MW, momentaan)",
-          "get_actuals": "Gebruikt één API-aanroep per site per dag — zie de integratiedocumentatie; een lagere API-limiet is aanbevolen",
+          "get_actuals": "Gebruikt één API-aanroep per site per dag, die automatische update vrijhoudt — zie de integratiedocumentatie",
           "hard_limit_api": "Zie de integratiedocumentatie; scheid meerdere waarden per sleutel met komma's",
           "key_estimate": "",
           "site_damp": "Gedetailleerde demping is ingesteld — verwijder om terug te keren naar de algemene demping per uur",
@@ -534,19 +570,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Verwijdert het bestand solcast.json om alle huidige Solcast-sitegegevens te verwijderen.",
-      "name": "Wis alle opgeslagen Solcast gegevens"
+      "name": "Wis alle opgeslagen Solcast gegevens",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
+        }
+      }
     },
     "diagnostic": {
       "description": "Voer een diagnostische zelftest uit om API-connectiviteit, integriteit van cachebestanden, toegankelijkheid van generatie-entiteiten en algehele configuratiestatus te valideren.",
-      "name": "Diagnostische zelftest"
+      "name": "Diagnostische zelftest",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
+        }
+      }
     },
     "force_update_estimates": {
       "description": "Met ‘Force update geschatte waarden’ worden de meest recente geschatte actuele gegevens opgehaald van Solcast.",
-      "name": "Force update geschatte waarden"
+      "name": "Force update geschatte waarden",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Met ‘Force update’ worden de meest recente weersvoorspellingen van Solcast opgehaald.",
-      "name": "Force Update"
+      "name": "Force Update",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
+        }
+      }
     },
     "get_dampening": {
       "description": "Haal de voorspelde dempingsfactoren op.",
@@ -554,13 +614,23 @@
         "site": {
           "description": "Optionele locatie voor demping. (Opmerking: werkt niet als granulaire demping niet is ingeschakeld.)",
           "name": "Site ID"
+        },
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
         }
       },
       "name": "Get forecasts dampening"
     },
     "get_options": {
       "description": "Haal de huidige configuratieopties van de integratie op.",
-      "name": "Opties ophalen"
+      "name": "Opties ophalen",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
+        }
+      }
     },
     "query_estimate_data": {
       "description": "Geef een dataset terug voor een bepaalde zoekopdracht.",
@@ -572,6 +642,10 @@
         "start_date_time": {
           "description": "Vraagt de geschatte en werkelijke gegevens op basis van datum en tijd.",
           "name": "Startdatum en -tijd"
+        },
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
         }
       },
       "name": "Geschatte en werkelijke gegevens opvragen"
@@ -594,13 +668,23 @@
         "undampened": {
           "description": "Optionele booleaanse waarde om de niet-gedempte voorspelling op te halen",
           "name": "Niet gedempt"
+        },
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
         }
       },
       "name": "Prognosegegevens opvragen"
     },
     "remove_hard_limit": {
       "description": "Verwijder de ingestelde limiet.",
-      "name": "Verwijder omvormerprognose harde limiet"
+      "name": "Verwijder omvormerprognose harde limiet",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
+        }
+      }
     },
     "set_custom_hours": {
       "description": "Stel het aantal uren voor de aangepaste X-uursensor in.",
@@ -608,6 +692,10 @@
         "hours": {
           "description": "Aantal in te stellen uren (1-144).",
           "name": "Uren"
+        },
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
         }
       },
       "name": "Sensor voor aangepaste uren instellen"
@@ -622,6 +710,10 @@
         "site": {
           "description": "Optionele site om demping per site in te stellen. (Opmerking: als de site wordt weggelaten, wordt de demping per site gewist, tenzij er 48 waarden zijn.)",
           "name": "Site ID"
+        },
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
         }
       },
       "name": "Set forecasts dampening"
@@ -632,6 +724,10 @@
         "hard_limit": {
           "description": "Stel de maximale waarde in Watt in die de omvormer kan produceren.",
           "name": "Grenswaarde in Watt"
+        },
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
         }
       },
       "name": "Harde limiet voor omvormerprognose instellen"
@@ -718,13 +814,23 @@
         "use_actuals": {
           "description": "Voorspellingsgeschiedenis voor het energiedashboard: 0=prognoses, 1=werkelijk, 2=gedempte werkelijke waarden.",
           "name": "Werkelijke waarden gebruiken"
+        },
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
         }
       },
       "name": "Opties instellen"
     },
     "update_forecasts": {
       "description": "Haal de meest recente voorspellingen op van Solcast.",
-      "name": "Update"
+      "name": "Update",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-vermelding",
+          "description": "De Solcast-vermelding waarop deze actie van toepassing is. Zonder deze beslist het gekozen doel; zonder doel wordt de vermelding zonder naam of de enige vermelding gebruikt."
+        }
+      }
     }
   },
   "system_health": {
