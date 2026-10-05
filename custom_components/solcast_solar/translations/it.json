@@ -2,6 +2,7 @@
   "config": {
     "abort": {
       "internal_error": "Si è verificato un errore imprevisto. Controlla i registri per ulteriori informazioni.",
+      "already_in_progress": "Una voce con questo nome è già in fase di configurazione.",
       "reauth_successful": "Nuova chiave API applicata con successo",
       "reconfigured": "Nuova configurazione applicata con successo",
       "unchanged": "Configurazione invariata"
@@ -15,7 +16,13 @@
       "limit_not_number": "Il limite API non è un numero",
       "limit_one_or_greater": "Il limite API deve essere uno o superiore",
       "limit_too_many": "Sono stati inseriti più conteggi dei limiti API rispetto alle chiavi",
-      "limit_exceeds_maximum": "Il limite API non può superare 50 (e probabilmente dovrebbe essere 10 o meno)."
+      "limit_exceeds_maximum": "Il limite API non può superare 50 (e probabilmente dovrebbe essere 10 o meno).",
+      "instance_name_required": "Un'altra voce ha bisogno di un nome.",
+      "instance_name_invalid": "Il nome deve contenere una lettera o una cifra.",
+      "instance_name_duplicate": "Questo nome è già in uso.",
+      "instance_name_reserved": "Questo nome è riservato ai file della prima voce. Scegli un altro nome.",
+      "rooftop_in_use": "Il sito {rooftops} è già conteggiato da {entries}. Escludilo in una delle due voci.",
+      "api_key_in_use": "Questa chiave API è già usata da {entries}. Ogni voce Solcast richiede una propria chiave API."
     },
     "step": {
       "reauth_confirm": {
@@ -44,13 +51,15 @@
         "data": {
           "api_key": "Chiave API",
           "api_limit": "Limite API",
-          "auto_update": "Aggiornamento automatico"
+          "auto_update": "Aggiornamento automatico",
+          "instance_name": "Nome"
         },
         "description": "Dettagli dell'account Solcast\n\n(Se non si utilizza l'aggiornamento automatico, è necessaria un'automazione - consultare la documentazione dell'integrazione)\n\nL'API Solcast deve essere disponibile per configurare inizialmente questa integrazione. Se ricevi il messaggio di stato '429 / Try again later', l'API non è disponibile e la configurazione non può essere completata. Devi attendere. Tieni presente che la pagina di stato dell'API su status.solcast.com quasi certamente non mostrerà alcun problema API. La causa risiede molto probabilmente in un singolo utente problematico dell'API che sta influenzando la disponibilità per tutti gli appassionati.",
         "data_description": {
           "api_key": "Inserire una o più chiavi API Solcast, separate da virgole",
           "api_limit": "Inserire un limite giornaliero di aggiornamento delle previsioni, separato da virgole quando si utilizzano più chiavi",
-          "auto_update": "Se non si usa l'aggiornamento automatico, creare un'automazione che richiami periodicamente l'azione \"solcast_solar.update_forecasts\", rispettando il limite massimo totale consigliato da Solcast (di solito dieci volte totali al giorno per un singolo sito su tetto, oppure con due siti cinque volte al giorno)"
+          "auto_update": "Se non si usa l'aggiornamento automatico, creare un'automazione che richiami periodicamente l'azione \"solcast_solar.update_forecasts\", rispettando il limite massimo totale consigliato da Solcast (di solito dieci volte totali al giorno per un singolo sito su tetto, oppure con due siti cinque volte al giorno)",
+          "instance_name": "Nome di questo impianto, ad esempio Ovest. Lascialo vuoto solo per la prima voce. Le voci successive hanno bisogno di un nome affinché file e sensori restino separati."
         }
       }
     }
@@ -170,6 +179,12 @@
     "api_duplicate": {
       "message": "Chiave API duplicata specificata."
     },
+    "api_error": {
+      "message": "Errore API Solcast: {error_detail}"
+    },
+    "api_key_in_use": {
+      "message": "Questa chiave API è già usata da {entries}. Ogni voce Solcast richiede una propria chiave API."
+    },
     "api_key_empty": {
       "message": "La chiave API non deve essere vuota."
     },
@@ -190,6 +205,9 @@
     },
     "damp_auto_enabled": {
       "message": "È abilitato lo smorzamento automatico, senza impostare manualmente i fattori di smorzamento."
+    },
+    "damp_count_mixed": {
+      "message": "Il numero di fattori di smorzamento deve corrispondere ai fattori già impostati per gli altri siti."
     },
     "damp_count_not_correct": {
       "message": "Non ci sono 24 o 48 numeri separati da virgola tra 0.0 e 1.0."
@@ -226,6 +244,12 @@
     },
     "export_no_limit": {
       "message": "Un limite di esportazione del sito deve essere specificato se un'entità di esportazione del sito è impostata."
+    },
+    "generation_mixed_types": {
+      "message": "Le entità di generazione fotovoltaica devono essere tutte dello stesso tipo (tutta energia o tutta potenza, non un mix)"
+    },
+    "generation_not_sensor": {
+      "message": "{entity} non è un sensore di energia o potenza esistente."
     },
     "hard_empty": {
       "message": "Valore del limite rigido vuoto."
@@ -296,45 +320,54 @@
     "remove_cache_failed": {
       "message": "Eliminazione di tutti i dati Solcast non riuscita."
     },
+    "rooftop_in_use": {
+      "message": "Il sito {rooftops} è già conteggiato da {entries}. Escludilo in una delle due voci."
+    },
     "set_options_empty": {
       "message": "Deve essere specificata almeno un'opzione."
     },
     "limit_exceeds_maximum": {
       "message": "Il limite API non può superare 50 (e probabilmente dovrebbe essere 10 o meno)."
+    },
+    "instance_required": {
+      "message": "È caricata o selezionata più di una voce Solcast. Scegli una voce Solcast."
+    },
+    "instance_unknown": {
+      "message": "La voce o la destinazione scelta non appartiene a una voce Solcast caricata."
     }
   },
   "issues": {
     "action_deprecated": {
       "description": "L'azione `{deprecated_action}` è obsoleta e verrà rimossa in una versione futura. Utilizzare invece l'azione `{new_action}`.",
-      "title": "Azione obsoleta"
+      "title": "Azione obsoleta{instance}"
     },
     "advanced_deprecated": {
       "description": "L'opzione di configurazione avanzata `{option}` è stata modificata in `{new_option}`. Aggiorna le opzioni di configurazione avanzate per utilizzare il nuovo nome dell'opzione.{stops_working}",
-      "title": "Opzione avanzata deprecata"
+      "title": "Opzione avanzata deprecata{instance}"
     },
     "advanced_problem": {
       "description": "Il file di configurazione avanzata contiene errori.\n{problems}\n\nCorreggili, facendo riferimento alla documentazione dell'integrazione al link 'Per saperne di più'.",
-      "title": "Problema con l'opzione avanzata"
+      "title": "Problema con l'opzione avanzata{instance}"
     },
     "api_unavailable": {
       "description": "L'API Solcast ha segnalato ripetutamente lo stato `429 / Try again later` durante un aggiornamento. Ciò significa che l'API Solcast è occupata e sta bloccando attivamente le richieste degli account hobbisti.\n\n* Il sito web solcast.com non è influenzato, ma l'API è temporaneamente non disponibile per te.\n* La pagina di stato dell'API su status.solcast.com quasi certamente non indicherà alcun problema.\n* Non tentare di risolvere questa situazione.\n* Non modificare la chiave API.\n* Non tentare di aggiornare l'integrazione.\n* Evita di riavviare l'integrazione.\n* L'integrazione continuerà a fornire l'ultima previsione solare recuperata da Solcast.\n* Non è un problema di integrazione e si risolverà da solo. Non cambiare nulla.\n\n(Per sopprimere questo problema, crea un'opzione di configurazione avanzata api_raise_issue e impostala su false.)",
-      "title": "API Solcast temporaneamente non disponibile"
+      "title": "API Solcast temporaneamente non disponibile{instance}"
     },
     "actuals_api_limit": {
       "description": "L'aggiornamento automatico e i valori effettivi stimati sono abilitati mentre il limite API è configurato al valore massimo per hobbisti (`{configured_value}`). I valori effettivi stimati vengono raccolti subito dopo la mezzanotte e utilizzano una chiamata API per ogni impianto sul tetto per ciascuna chiave API configurata. Riduci il limite API a `{suggested_value}` per riservare le chiamate ai valori effettivi stimati.",
-      "title": "Regola il limite API per i valori effettivi stimati"
+      "title": "Regola il limite API per i valori effettivi stimati{instance}"
     },
     "actuals_quota_today": {
-      "title": "Il recupero dei valori effettivi stimati potrebbe superare la quota API giornaliera",
+      "title": "Il recupero dei valori effettivi stimati potrebbe superare la quota API giornaliera{instance}",
       "description": "Il recupero dei valori effettivi stimati è stato abilitato. In base all'utilizzo tipico giornaliero dell'API per gli aggiornamenti delle previsioni ({api_used} chiamate) e alla quota account dedotta di {api_limit} chiamate, l'aggiunta delle {actuals_cost} chiamata/e necessarie per il recupero dei valori effettivi stimati supererebbe la quota in una giornata tipica. Il recupero verrà comunque tentato subito dopo mezzanotte, ma potrebbe fallire (o un successivo aggiornamento delle previsioni) con una risposta `429 Too Many Requests`.\n\nQuesto avviso potrebbe apparire mentre il contatore di utilizzo tipico è ancora in fase di inizializzazione con dati reali. Il conteggio tipico riflette solo gli aggiornamenti automatici/aggiornamenti da automazione e le chiamate di previsione forzate. Verifica il limite API configurato e le eventuali automazioni di aggiornamento forzato se desideri utilizzare i valori effettivi stimati."
     },
     "corrupt_file": {
       "description": "Il/i file di dati memorizzati nella cache `{files}` è/sono danneggiato/i. L'integrazione tenterà di recuperare eliminando il/i file e recuperando nuovamente i dati da Solcast. Prevedere un aumento dell'utilizzo dell'API e potenziali errori dell'API e la perdita della cronologia delle previsioni a causa di questa situazione. È possibile recuperare i file dal backup, ma prevedere comunque errori nelle chiamate API.",
-      "title": "Dati memorizzati nella cache danneggiati"
+      "title": "Dati memorizzati nella cache danneggiati{instance}"
     },
     "records_missing": {
       "description": "I dati delle previsioni future mancano, il che è inaspettato perché l'aggiornamento automatico è attivato. Indaga sulla causa esaminando il registro di Home Assistant. Leggi le FAQ sulla risoluzione dei problemi prima di segnalare un problema di integrazione.",
-      "title": "Previsioni future mancanti"
+      "title": "Previsioni future mancanti{instance}"
     },
     "records_missing_fixable": {
       "fix_flow": {
@@ -353,23 +386,23 @@
           }
         }
       },
-      "title": "Previsioni future mancanti"
+      "title": "Previsioni future mancanti{instance}"
     },
     "records_missing_initial": {
       "description": "I dati delle previsioni e/o i dati effettivi stimati mancano, probabilmente perché non si è verificato l'aggiornamento iniziale delle previsioni. Probabilmente ciò è dovuto al raggiungimento del limite di chiamate API. Avrai problemi con le entità dei sensori e il dashboard Energia probabilmente avrà dati mancanti. Questo si risolverà da solo.",
-      "title": "Previsioni mancanti"
+      "title": "Previsioni mancanti{instance}"
     },
     "records_missing_unfixable": {
       "description": "I dati delle previsioni future sono mancanti, il che è inaspettato. Controllare i registri.",
-      "title": "Previsioni future mancanti"
+      "title": "Previsioni future mancanti{instance}"
     },
     "unusual_azimuth_northern": {
       "description": "L'azimut del sito {site} è insolito per la latitudine di questo tetto dell'emisfero settentrionale. Dovrebbe essere {proposal} invece di {extant}? (Ignorate il problema se il sito è rivolto verso nord.)",
-      "title": "Azimut insolito"
+      "title": "Azimut insolito{instance}"
     },
     "unusual_azimuth_southern": {
       "description": "L'azimut del sito {site} è insolito per la latitudine di questo tetto dell'emisfero australe. Dovrebbe essere {proposal} invece di {extant}? (Ignorate il problema se il sito è esposto a sud.)",
-      "title": "Azimut insolito"
+      "title": "Azimut insolito{instance}"
     }
   },
   "options": {
@@ -392,13 +425,16 @@
       "export_no_entity": "Il sito di esportazione deve essere specificato se è impostato un limite di esportazione del sito",
       "export_no_limit": "Un limite di esportazione del sito deve essere specificato se un'entità di esportazione del sito è impostata.",
       "generation_mixed_types": "Le entità di generazione fotovoltaica devono essere tutte dello stesso tipo (tutta energia o tutta potenza, non un mix)",
+      "generation_not_sensor": "{entity} non è un sensore di energia o potenza esistente.",
       "hard_not_positive_number": "Il limite massimo non è un numero positivo",
       "hard_too_many": "Sono stati inseriti più limiti rigidi che chiavi",
       "internal_error": "Si è verificato un errore imprevisto. Controlla i registri per ulteriori informazioni.",
       "limit_not_number": "Il limite API non è un numero",
       "limit_one_or_greater": "Il limite API deve essere uno o superiore",
       "limit_too_many": "Sono stati inseriti più conteggi dei limiti API rispetto alle chiavi",
-      "limit_exceeds_maximum": "Il limite API non può superare 50 (e probabilmente dovrebbe essere 10 o meno)."
+      "limit_exceeds_maximum": "Il limite API non può superare 50 (e probabilmente dovrebbe essere 10 o meno).",
+      "rooftop_in_use": "Il sito {rooftops} è già conteggiato da {entries}. Escludilo in una delle due voci.",
+      "api_key_in_use": "Questa chiave API è già usata da {entries}. Ogni voce Solcast richiede una propria chiave API."
     },
     "step": {
       "dampen": {
@@ -534,19 +570,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Elimina il file solcast.json per rimuovere tutti i dati del sito Solcast correnti.",
-      "name": "Cancella tutti i dati Solcast salvati"
+      "name": "Cancella tutti i dati Solcast salvati",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "diagnostic": {
       "description": "Esegue un autotest diagnostico per verificare la connettività API, l'integrità dei file di cache, l'accessibilità delle entità di generazione e lo stato generale della configurazione.",
-      "name": "Autotest diagnostico"
+      "name": "Autotest diagnostico",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "force_update_estimates": {
       "description": "Forza il recupero dei più recenti dati reali stimati da Solcast.",
-      "name": "Forza l'aggiornamento dei valori effettivi stimati"
+      "name": "Forza l'aggiornamento dei valori effettivi stimati",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Recupera forzatamente gli ultimi dati delle previsioni da Solcast.",
-      "name": "Aggiornamento forzato"
+      "name": "Aggiornamento forzato",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "get_dampening": {
       "description": "Ottieni i fattori di smorzamento delle previsioni.",
@@ -554,13 +614,23 @@
         "site": {
           "description": "Sito opzionale per ottenere lo smorzamento. (Nota: non funzionerà se lo smorzamento granulare non è abilitato.)",
           "name": "ID sito"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Ottieni smorzamento delle previsioni"
     },
     "get_options": {
       "description": "Ottieni le opzioni di configurazione attuali dell'integrazione.",
-      "name": "Ottieni opzioni"
+      "name": "Ottieni opzioni",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "query_estimate_data": {
       "description": "Restituisce un set di dati per una determinata query.",
@@ -572,6 +642,10 @@
         "start_date_time": {
           "description": "Interroga gli eventi di dati reali stimati a partire dalla data e dall'ora.",
           "name": "Ora della data di inizio"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Interroga i dati reali stimati"
@@ -594,13 +668,23 @@
         "undampened": {
           "description": "Booleano opzionale per recuperare la previsione non smorzata",
           "name": "Non smorzato"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Interroga i dati delle previsioni"
     },
     "remove_hard_limit": {
       "description": "Rimuovi il limite impostato.",
-      "name": "Rimuovi il limite rigido delle previsioni dell'inverter"
+      "name": "Rimuovi il limite rigido delle previsioni dell'inverter",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "set_custom_hours": {
       "description": "Imposta il numero di ore personalizzato del sensore X.",
@@ -608,6 +692,10 @@
         "hours": {
           "description": "Numero di ore da impostare (1-144).",
           "name": "Ore"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Imposta il sensore orario personalizzato"
@@ -622,6 +710,10 @@
         "site": {
           "description": "Sito opzionale per impostare lo smorzamento per sito. (Nota: l'omissione del sito cancella lo smorzamento per sito a meno che non siano presenti 48 valori.)",
           "name": "ID sito"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Imposta lo smorzamento delle previsioni"
@@ -632,6 +724,10 @@
         "hard_limit": {
           "description": "Imposta il valore massimo in Watt che l'inverter può produrre. Usare 0 per disabilitare il limite.",
           "name": "Valore limite in Watt"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Imposta il limite rigido delle previsioni dell'inverter"
@@ -718,13 +814,23 @@
         "use_actuals": {
           "description": "Storico previsioni per il dashboard Energia: 0=previsioni, 1=valori effettivi, 2=valori effettivi attenuati.",
           "name": "Usa valori effettivi"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Imposta opzioni"
     },
     "update_forecasts": {
       "description": "Recupera gli ultimi dati delle previsioni da Solcast.",
-      "name": "Aggiorna"
+      "name": "Aggiorna",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     }
   },
   "system_health": {
