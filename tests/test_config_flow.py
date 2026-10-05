@@ -116,6 +116,16 @@ _LOGGER = logging.getLogger(__name__)
 pytestmark = pytest.mark.xdist_group("solcast_config_flow")
 
 
+def _user_flow(hass: HomeAssistant) -> SolcastSolarFlowHandler:
+    """Return a user flow outside the flow manager, with the context the unique ID needs."""
+
+    flow = SolcastSolarFlowHandler()
+    flow.hass = hass
+    flow.handler = DOMAIN
+    flow.context = {"source": config_entries.SOURCE_USER}
+    return flow
+
+
 def _attr_breakdown_input(data: dict[str, Any]) -> list[str]:
     """Build options-flow attr_breakdown multiselect payload."""
 
@@ -241,8 +251,7 @@ async def test_create_entry(hass: HomeAssistant) -> None:
 
     await async_setup_aioresponses()
 
-    flow = SolcastSolarFlowHandler()
-    flow.hass = hass
+    flow = _user_flow(hass)
 
     expected_options: dict[str, Any] = {
         CONF_API_KEY: KEY1,
@@ -274,8 +283,7 @@ async def test_create_entry(hass: HomeAssistant) -> None:
 async def test_init_api_key(hass: HomeAssistant, user_input: dict[str, Any], reason: str | None) -> None:
     """Test that valid/invalid API key is handled in config flow."""
 
-    flow = SolcastSolarFlowHandler()
-    flow.hass = hass
+    flow = _user_flow(hass)
 
     result = await flow.async_step_user()
     assert result.get("type") == FlowResultType.FORM
@@ -291,8 +299,7 @@ async def test_config_api_key_invalid(hass: HomeAssistant) -> None:
 
     await async_setup_aioresponses()
 
-    flow = SolcastSolarFlowHandler()
-    flow.hass = hass
+    flow = _user_flow(hass)
 
     user_input = {CONF_API_KEY: " 555 ", API_LIMIT: "10", AUTO_UPDATE: "1"}
     result = await flow.async_step_user(user_input)
@@ -316,8 +323,7 @@ async def test_config_api_key_invalid(hass: HomeAssistant) -> None:
 async def test_config_api_quota(hass: HomeAssistant, options: dict[str, Any], user_input: dict[str, Any], reason: str | None) -> None:
     """Test that valid/invalid API quota is handled in config flow."""
 
-    flow = SolcastSolarFlowHandler()
-    flow.hass = hass
+    flow = _user_flow(hass)
 
     result = await flow.async_step_user()
     assert result.get("type") == FlowResultType.FORM
@@ -360,7 +366,8 @@ async def test_reauth_api_key(
                 _assert_flow_error(result, test[REASON])
                 assert _schema_suggested_values(result) == test[USER_INPUT]
 
-        await hass.config_entries.async_unload(entry.entry_id)
+        # Remove the entry, which keeps the cache files of the entry without a name; its key must not be in use.
+        await hass.config_entries.async_remove(entry.entry_id)
         await hass.async_block_till_done()
 
         # Really change key '1' (last test above used API keys '1' and '2', so these are in cached sites/usage)
@@ -430,7 +437,7 @@ async def test_reauth_unchanged_key_retries_setup_without_key_change(hass: HomeA
     result = await entry.start_reauth_flow(hass)
 
     with (
-        patch("homeassistant.components.solcast_solar.config_flow.validate_sites", return_value=(200, "")) as mock_validate_sites,
+        patch("homeassistant.components.solcast_solar.config_flow.validate_sites", return_value=(200, "", [])) as mock_validate_sites,
         patch("homeassistant.components.solcast_solar.config_flow.set_sensitive") as mock_set_sensitive,
         patch.object(SolcastSolarFlowHandler, "_mark_reset_old_key") as mock_mark_reset_old_key,
         patch.object(hass.config_entries, "async_update_entry") as mock_update_entry,
@@ -706,7 +713,7 @@ async def test_options_api_key_change_sets_sensitive(hass: HomeAssistant) -> Non
     options[SITE_EXPORT_ENTITY] = []
 
     with (
-        patch("homeassistant.components.solcast_solar.config_flow.validate_sites", return_value=(200, "")),
+        patch("homeassistant.components.solcast_solar.config_flow.validate_sites", return_value=(200, "", [])),
         patch("homeassistant.components.solcast_solar.config_flow.set_sensitive") as mock_set_sensitive,
     ):
         await flow.async_step_init(options)
@@ -726,7 +733,7 @@ async def test_options_api_key_change_defers_sensitive_until_dampen_commit(hass:
     options[SITE_EXPORT_ENTITY] = []
 
     with (
-        patch("homeassistant.components.solcast_solar.config_flow.validate_sites", return_value=(200, "")),
+        patch("homeassistant.components.solcast_solar.config_flow.validate_sites", return_value=(200, "", [])),
         patch("homeassistant.components.solcast_solar.config_flow.set_sensitive") as mock_set_sensitive,
         patch.object(hass.config_entries, "async_update_entry") as mock_update_entry,
         patch.object(flow, "check_dead") as mock_check_dead,
@@ -1050,6 +1057,27 @@ async def test_entry_options_upgrade(
 
         assert await hass.config_entries.async_unload(entry.entry_id), "Config entry unload failed"
         await hass.async_block_till_done()
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_entry_options_upgrade_does_not_log_api_keys(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test the API limit upgrade does not log the API keys in the names of missing usage caches."""
+
+    api_keys = ("SECRETKEY1234567890", "SECRETKEY0987654321")
+    try:
+        await async_init_integration(hass, {CONF_API_KEY: ",".join(api_keys), "const_disableautopoll": False}, version=3)
+        messages = [
+            record.getMessage() for record in caplog.records if record.getMessage().startswith("Could not load API usage cached limit")
+        ]
+        assert messages
+        assert "usage-******567890.json" in messages[0]
+        assert not any(api_key in message for api_key in api_keys for message in messages)
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

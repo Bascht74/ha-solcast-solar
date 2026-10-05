@@ -106,7 +106,7 @@ async def test_validate_sites_does_not_mutate_caches_before_reload(
 
         proposed = {**entry.options}
         proposed[CONF_API_KEY] = "1a,11,2"
-        status, message = await validate_sites(hass, proposed)
+        status, message, _ = await validate_sites(hass, proposed)
         assert status == 200, message
 
         # Validation must not delete old key caches or create new key caches.
