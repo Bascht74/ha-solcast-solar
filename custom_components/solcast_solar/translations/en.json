@@ -1,6 +1,7 @@
 {
   "config": {
     "abort": {
+      "already_in_progress": "An entry with this name is already being set up.",
       "internal_error": "An unexpected error occurred. Check the logs for more information.",
       "reauth_successful": "New API key applied successfully",
       "reconfigured": "New configuration applied successfully",
@@ -10,12 +11,18 @@
       "api_duplicate": "Duplicate API key specified",
       "api_error": "Solcast API error: {error_detail}",
       "api_key_empty": "API key must not be empty",
+      "api_key_in_use": "This API key is already used by {entries}. Each Solcast entry needs its own API key.",
       "api_looks_like_site": "API key looks like a site ID",
+      "instance_name_duplicate": "That name is already used.",
+      "instance_name_invalid": "The name must contain a letter or a digit.",
+      "instance_name_required": "Another entry needs a name.",
+      "instance_name_reserved": "That name is reserved for the files of the first entry. Choose another name.",
       "internal_error": "An unexpected error occurred. Check the logs for more information.",
       "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
-      "limit_too_many": "There are more API limit counts entered than keys"
+      "limit_too_many": "There are more API limit counts entered than keys",
+      "rooftop_in_use": "Site {rooftops} is already counted by {entries}. Exclude it in one of the two entries."
     },
     "step": {
       "reauth_confirm": {
@@ -44,12 +51,14 @@
         "data": {
           "api_key": "API key",
           "api_limit": "API limit",
-          "auto_update": "Auto-update"
+          "auto_update": "Auto-update",
+          "instance_name": "Name"
         },
         "data_description": {
           "api_key": "Enter one or more Solcast API keys, separated by commas",
           "api_limit": "Enter a forecast update daily limit, comma separated when using multiple keys",
-          "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)"
+          "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)",
+          "instance_name": "Name of this plant, for example West. Leave empty only for the first entry. Further entries need a name so their files and sensors stay separate."
         },
         "description": "Solcast Account Details\n\n(If not using auto-update then an automation is required - see the integration documentation)\n\nThe Solcast API must be available to initially configure this integration. If you receive a status message '429 / Try again later' then the API is unavailable and configuration cannot be completed. You need to wait. Note that the API status page at status.solcast.com will almost certainly not show any API issues. The cause most likely lies with a single bad API user who is affecting availability for all hobbyists."
       }
@@ -170,8 +179,14 @@
     "api_duplicate": {
       "message": "Duplicate API key specified."
     },
+    "api_error": {
+      "message": "Solcast API error: {error_detail}"
+    },
     "api_key_empty": {
       "message": "API key must not be empty."
+    },
+    "api_key_in_use": {
+      "message": "This API key is already used by {entries}. Each Solcast entry needs its own API key."
     },
     "api_looks_like_site": {
       "message": "API key looks like a site ID."
@@ -190,6 +205,9 @@
     },
     "damp_auto_enabled": {
       "message": "Automated dampening is enabled, not setting manual dampening factors."
+    },
+    "damp_count_mixed": {
+      "message": "The number of dampening factors must match the factors already set for the other sites."
     },
     "damp_count_not_correct": {
       "message": "There are not 24 or 48 comma separated numbers between 0.0 and 1.0."
@@ -224,6 +242,12 @@
     "export_no_limit": {
       "message": "A site export limit must be specified if a site export entity is set."
     },
+    "generation_mixed_types": {
+      "message": "PV generation entities must all be the same type (all energy or all power, not a mix)"
+    },
+    "generation_not_sensor": {
+      "message": "{entity} is not an existing energy or power sensor."
+    },
     "hard_empty": {
       "message": "Empty hard limit value."
     },
@@ -256,6 +280,12 @@
     },
     "init_usage_corrupt": {
       "message": "Usage data is corrupt, check or delete `config/solcast_solar/solcast-usage.json`."
+    },
+    "instance_required": {
+      "message": "More than one Solcast entry is loaded or targeted. Choose one Solcast entry."
+    },
+    "instance_unknown": {
+      "message": "The chosen entry or target does not belong to a loaded Solcast entry."
     },
     "integration_not_loaded": {
       "message": "Integration not loaded, not performing action."
@@ -302,6 +332,9 @@
     "remove_cache_failed": {
       "message": "Clear all Solcast data failed."
     },
+    "rooftop_in_use": {
+      "message": "Site {rooftops} is already counted by {entries}. Exclude it in one of the two entries."
+    },
     "set_options_empty": {
       "message": "At least one option must be specified."
     }
@@ -309,35 +342,35 @@
   "issues": {
     "action_deprecated": {
       "description": "The `{deprecated_action}` action is deprecated and will be removed in a future release. Use the `{new_action}` action instead.",
-      "title": "Deprecated action"
+      "title": "Deprecated action{instance}"
     },
     "actuals_api_limit": {
       "description": "Auto-update and estimated actuals are enabled while API limit is configured at hobbyist maximum value (`{configured_value}`). Estimated actuals are collected just after midnight and use one API call per rooftop site for each configured API key. Reduce your API limit to `{suggested_value}` to reserve calls for estimated actuals.",
-      "title": "Adjust API limit for estimated actuals"
+      "title": "Adjust API limit for estimated actuals{instance}"
     },
     "actuals_quota_today": {
       "description": "Estimated actuals fetching has been enabled. Based on typical daily forecast update API usage ({api_used} calls) and the inferred {api_limit} call account quota, adding the {actuals_cost} call(s) needed for the estimated actuals fetch would exceed the quota on a typical day. The fetch will still be attempted just after midnight, but it (or a subsequent forecast update) may fail with a `429 Too Many Requests` response.\n\nThis warning may appear while the typical usage counter is still being seeded from real data. The typical count reflects auto-update/automation update and forced forecast calls only. Review your configured API limit and any force-update automations if you want to use estimated actuals.",
-      "title": "Estimated actuals fetch may exceed daily API quota"
+      "title": "Estimated actuals fetch may exceed daily API quota{instance}"
     },
     "advanced_deprecated": {
       "description": "Advanced configuration option(s) `{option}` changed to `{new_option}`. Please update your advanced configuration options to use the new option name.{stops_working}",
-      "title": "Advanced option deprecated"
+      "title": "Advanced option deprecated{instance}"
     },
     "advanced_problem": {
       "description": "The advanced configuration file contains errors.\n{problems}\n\nPlease fix these, referring to the integration documentation at the 'Learn more' link.",
-      "title": "Advanced option problem"
+      "title": "Advanced option problem{instance}"
     },
     "api_unavailable": {
       "description": "The Solcast API has reported `429 / Try again later` status repeatedly during an update. This means that the Solcast API is busy and is actively blocking requests for hobbyist accounts.\n\n* The solcast.com website is unaffected, but the API is temporarily unavailable to you.\n* The API status page at status.solcast.com will almost certainly indicate no issue.\n* Do not attempt to fix this situation.\n* Do not change your API key.\n* Do not attempt an integration upgrade.\n* Avoid restarting the integration.\n* The integration will continue providing the last solar forecast it retrieved from Solcast.\n* This is not an integration issue and will resolve itself. Change nothing.\n\n(To suppress this issue, create an advanced configuration option api_raise_issue and set it to false.)",
-      "title": "Solcast API temporarily unavailable"
+      "title": "Solcast API temporarily unavailable{instance}"
     },
     "corrupt_file": {
       "description": "The cached data file(s) `{files}` is corrupted. The integration will attempt to recover by deleting the file(s) and re-fetching data from Solcast. Expect increased API usage and potential API failures, and loss of forecast history due to this situation. Possibly recover the files from backup, but still expect API call failures.",
-      "title": "Corrupted cached data"
+      "title": "Corrupted cached data{instance}"
     },
     "records_missing": {
       "description": "Future forecast data is missing, which is unexpected because auto-update is enabled. Investigate the cause by examining the Home Assistant log. Read the troubleshooting FAQ before raising an integration issue.",
-      "title": "Future forecasts missing"
+      "title": "Future forecasts missing{instance}"
     },
     "records_missing_fixable": {
       "fix_flow": {
@@ -356,23 +389,23 @@
           }
         }
       },
-      "title": "Future forecasts missing"
+      "title": "Future forecasts missing{instance}"
     },
     "records_missing_initial": {
       "description": "Forecast and/or estimated actual data is missing, likely because the initial forecast update did not occur. This is likely because the API call limit has been reached. You _will_ have sensor entity issues, and the Energy dashboard will likely have missing data. This will resolve itself.",
-      "title": "Forecasts missing"
+      "title": "Forecasts missing{instance}"
     },
     "records_missing_unfixable": {
       "description": "Future forecast data is missing, which is unexpected. Check the logs.",
-      "title": "Future forecasts missing"
+      "title": "Future forecasts missing{instance}"
     },
     "unusual_azimuth_northern": {
       "description": "The azimuth for site {site} is unusual for the latitude of this northern hemisphere rooftop. Should this be {proposal} instead of {extant}? (Ignore the issue if the site is facing towards North.)",
-      "title": "Unusual azimuth"
+      "title": "Unusual azimuth{instance}"
     },
     "unusual_azimuth_southern": {
       "description": "The azimuth for site {site} is unusual for the latitude of this southern hemisphere rooftop. Should this be {proposal} instead of {extant}? (Ignore the issue if the site is facing towards South.)",
-      "title": "Unusual azimuth"
+      "title": "Unusual azimuth{instance}"
     }
   },
   "options": {
@@ -387,6 +420,7 @@
       "api_duplicate": "Duplicate API key specified",
       "api_error": "Solcast API error: {error_detail}",
       "api_key_empty": "API key must not be empty",
+      "api_key_in_use": "This API key is already used by {entries}. Each Solcast entry needs its own API key.",
       "api_looks_like_site": "API key looks like a site ID",
       "custom_invalid": "Custom sensor not between 1 and 144",
       "dampen_without_actuals": "Estimated actuals must be selected to use auto-dampening",
@@ -395,13 +429,15 @@
       "export_no_entity": "Site export entity must be specified if site export limit is set",
       "export_no_limit": "Site export limit must be specified if site export entity is set",
       "generation_mixed_types": "PV generation entities must all be the same type (all energy or all power, not a mix)",
+      "generation_not_sensor": "{entity} is not an existing energy or power sensor.",
       "hard_not_positive_number": "Hard limit is not a positive number",
       "hard_too_many": "There are more hard limits entered than keys",
       "internal_error": "An unexpected error occurred. Check the logs for more information.",
       "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
-      "limit_too_many": "There are more API limit counts entered than keys"
+      "limit_too_many": "There are more API limit counts entered than keys",
+      "rooftop_in_use": "Site {rooftops} is already counted by {entries}. Exclude it in one of the two entries."
     },
     "step": {
       "dampen": {
@@ -537,23 +573,51 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Deletes the solcast.json file to remove all current solcast site data.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Clear all saved Solcast data"
     },
     "diagnostic": {
       "description": "Run a diagnostic self-test to validate API connectivity, cache file integrity, generation entity accessibility, and overall configuration health.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Diagnostic self-test"
     },
     "force_update_estimates": {
       "description": "Force fetches the latest estimated actual data from Solcast.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Force Update Estimated Actuals"
     },
     "force_update_forecasts": {
       "description": "Force fetches the latest forecasts data from Solcast.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Force Update"
     },
     "get_dampening": {
       "description": "Get the forecast dampening factors.",
       "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        },
         "site": {
           "description": "Optional site to get dampening. (Note: Will not work if granular dampening is not enabled.)",
           "name": "Site ID"
@@ -563,11 +627,21 @@
     },
     "get_options": {
       "description": "Get current integration configuration options.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Get options"
     },
     "query_estimate_data": {
       "description": "Return a data set for a given query.",
       "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        },
         "end_date_time": {
           "description": "Query estimated actual data events up to date time.",
           "name": "End date time"
@@ -582,6 +656,10 @@
     "query_forecast_data": {
       "description": "Return a data set for a given query.",
       "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        },
         "end_date_time": {
           "description": "Query forecast data events up to date time.",
           "name": "End date time"
@@ -603,11 +681,21 @@
     },
     "remove_hard_limit": {
       "description": "Remove set limit.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Remove inverter forecast hard limit"
     },
     "set_custom_hours": {
       "description": "Set the custom X hours sensor number of hours.",
       "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        },
         "hours": {
           "description": "Number of hours to set (1-144).",
           "name": "Hours"
@@ -618,6 +706,10 @@
     "set_dampening": {
       "description": "Set forecast dampening factors.",
       "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        },
         "damp_factor": {
           "description": "String of dampening factor values comma separated (24 or 48 values).",
           "name": "Dampening string"
@@ -632,6 +724,10 @@
     "set_hard_limit": {
       "description": "Prevent forecast values being higher than the inverter can produce.",
       "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        },
         "hard_limit": {
           "description": "Set the max value in Watts that the inverter can produce. Use 0 to disable the hard limit.",
           "name": "Limit value in Watts"
@@ -686,6 +782,10 @@
           "description": "Auto update mode: 0=none, 1=sunrise to sunset, 2=all day.",
           "name": "Auto update"
         },
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        },
         "custom_hours": {
           "description": "Number of hours for the custom hours sensor (1-144).",
           "name": "Custom hours"
@@ -727,6 +827,12 @@
     },
     "update_forecasts": {
       "description": "Fetches the latest forecasts data from Solcast.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The Solcast entry this action applies to. Without it, the chosen target decides; without a target, the entry without a name or the only entry is used.",
+          "name": "Solcast entry"
+        }
+      },
       "name": "Update"
     }
   },
