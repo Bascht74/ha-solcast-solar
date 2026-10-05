@@ -42,6 +42,7 @@ ADVANCED_AUTOMATED_DAMPENING_NO_LIMITING_CONSISTENCY: Final[str] = "automated_da
 ADVANCED_AUTOMATED_DAMPENING_PRESERVE_UNMATCHED_FACTORS: Final[str] = "automated_dampening_preserve_unmatched_factors"
 ADVANCED_AUTOMATED_DAMPENING_SIMILAR_PEAK: Final[str] = "automated_dampening_similar_peak"
 ADVANCED_AUTOMATED_DAMPENING_SUPPRESSION_ENTITY: Final[str] = "automated_dampening_suppression_entity"
+ADVANCED_DNS_TIMEOUT_RETRIES: Final[str] = "dns_timeout_retries"
 ADVANCED_ENTITY_LOGGING: Final[str] = "entity_logging"
 ADVANCED_ESTIMATED_ACTUALS_FETCH_DELAY: Final[str] = "estimated_actuals_fetch_delay"
 ADVANCED_ESTIMATED_ACTUALS_LOG_APE_PERCENTILES: Final[str] = "estimated_actuals_log_ape_percentiles"
@@ -91,6 +92,7 @@ BRK_SITE_DETAILED: Final[str] = "attr_brk_detailed"
 COMPLETION: Final[str] = "completion"
 CONFIG_DAMP: Final[str] = "config_damp"
 CONFIG_DISCRETE_NAME: Final[str] = "solcast_solar"
+CONFIG_ENTRY_ID: Final[str] = "config_entry_id"
 CONFIG_FOLDER_DISCRETE: Final[bool] = True  # Whether to use a sub-folder for config files
 CONFIG_VERSION: Final[int] = 19
 CONFIGURATION_URL: Final[str] = "https://toolkit.solcast.com.au/"
@@ -133,6 +135,7 @@ DEFAULT_DAMPENING_MODEL_DAYS: Final[int] = 14  # Number of days over which to mo
 DEFAULT_DAMPENING_NO_LIMITING_CONSISTENCY: Final[bool] = False  # Whether to ignore intervals that have been limited at least once
 DEFAULT_DAMPENING_SIMILAR_PEAK: Final[float] = 0.90  # Factor to consider similar estimated actual peak generation for automated dampening
 DEFAULT_DAMPENING_SUPPRESSION_ENTITY: Final[str] = "solcast_suppress_auto_dampening"  # Entity ID to invalidate generation when active
+DEFAULT_DNS_TIMEOUT_RETRIES: Final[int] = 5  # Additional immediate retries for DNS resolution timeout failures
 DEFAULT_ESTIMATED_ACTUALS_FETCH_DELAY: Final[int] = 0  # Minutes to wait after midnight before get estimated actuals (plus random offset)
 DEFAULT_FORECAST_DAYS: Final[int] = 14  # Minimum 8, maximum 14
 DEFAULT_FORECAST_DAY_SENSORS: Final[int] = 8  # Minimum 8, maximum 14
@@ -184,6 +187,8 @@ ENTITY_TOTAL_KWH_FORECAST: Final[str] = "total_kwh_forecast"
 ENTITY_TOTAL_KWH_FORECAST_TODAY: Final[str] = "total_kwh_forecast_today"
 ENTITY_TOTAL_KWH_FORECAST_TOMORROW: Final[str] = "total_kwh_forecast_tomorrow"
 ENTRY_ID: Final[str] = "entry_id"
+INSTANCE_NAME: Final[str] = "instance_name"
+INSTANCE_SLUG: Final[str] = "instance_slug"
 ENTRY_TYPE_SERVICE: Final[str] = "service"
 ERROR_CODE: Final[str] = "error_code"
 ESTIMATE: Final[str] = "pv_estimate"
@@ -199,6 +204,7 @@ EXCEPTION_ACTUALS_WITHOUT_GET: Final[str] = "actuals_without_get"
 EXCEPTION_API_ERROR: Final[str] = "api_error"
 EXCEPTION_API_DUPLICATE: Final[str] = "api_duplicate"
 EXCEPTION_API_KEY_EMPTY: Final[str] = "api_key_empty"
+EXCEPTION_API_KEY_IN_USE: Final[str] = "api_key_in_use"
 EXCEPTION_API_LOOKS_LIKE_SITE: Final[str] = "api_looks_like_site"
 EXCEPTION_AUTO_USE_FORCE: Final[str] = "auto_use_force"
 EXCEPTION_INVALID_AUTO_UPDATE: Final[str] = "invalid_auto_update"
@@ -213,6 +219,7 @@ EXCEPTION_BUILD_FAILED_ACTUALS: Final[str] = "build_failed_actuals"
 EXCEPTION_BUILD_FAILED_FORECASTS: Final[str] = "build_failed_forecasts"
 EXCEPTION_CUSTOM_INVALID: Final[str] = "custom_invalid"
 EXCEPTION_DAMP_AUTO_ENABLED: Final[str] = "damp_auto_enabled"
+EXCEPTION_DAMP_COUNT_MIXED: Final[str] = "damp_count_mixed"
 EXCEPTION_DAMP_COUNT_NOT_CORRECT: Final[str] = "damp_count_not_correct"
 EXCEPTION_DAMP_NO_ALL_24: Final[str] = "damp_no_all_24"
 EXCEPTION_DAMP_ERROR_PARSING: Final[str] = "damp_error_parsing"
@@ -223,7 +230,10 @@ EXCEPTION_DAMP_NO_FACTORS: Final[str] = "damp_no_factors"
 EXCEPTION_DAMPEN_WITHOUT_ACTUALS: Final[str] = "dampen_without_actuals"
 EXCEPTION_DAMPEN_WITHOUT_GENERATION: Final[str] = "dampen_without_generation"
 EXCEPTION_ENTRY_NOT_FOUND: Final[str] = "entry_not_found"
+EXCEPTION_INSTANCE_REQUIRED: Final[str] = "instance_required"
+EXCEPTION_INSTANCE_UNKNOWN: Final[str] = "instance_unknown"
 EXCEPTION_GENERATION_MIXED_TYPES: Final[str] = "generation_mixed_types"
+EXCEPTION_GENERATION_NOT_SENSOR: Final[str] = "generation_not_sensor"
 EXCEPTION_EXPORT_MULTIPLE_ENTITIES: Final[str] = "export_multiple_entities"
 EXCEPTION_EXPORT_NO_ENTITY: Final[str] = "export_no_entity"
 EXCEPTION_EXPORT_NO_LIMIT: Final[str] = "export_no_limit"
@@ -245,6 +255,7 @@ EXCEPTION_LIMIT_ONE_OR_GREATER: Final[str] = "limit_one_or_greater"
 EXCEPTION_LIMIT_TOO_MANY: Final[str] = "limit_too_many"
 EXCEPTION_LIMIT_EXCEEDS_MAXIMUM: Final[str] = "limit_exceeds_maximum"
 EXCEPTION_NOT_A_SITE: Final[str] = "not_a_site"
+EXCEPTION_ROOFTOP_IN_USE: Final[str] = "rooftop_in_use"
 EXCEPTION_SET_OPTIONS_EMPTY: Final[str] = "set_options_empty"
 EXCLUDE_SITES: Final[str] = "exclude_sites"
 EXPORT_LIMITING: Final[str] = "export_limiting"
@@ -366,6 +377,7 @@ SITE_EXPORT_ENTITY: Final[str] = "site_export_entity"
 SITE_EXPORT_LIMIT: Final[str] = "site_export_limit"
 SITE_INFO: Final[str] = "siteinfo"
 SITES_STATUS: Final[str] = "sites_status"
+SITES_TIMEOUT: Final[int] = 60  # Seconds to wait for the rooftop sites of one API key
 STATUS: Final[str] = "status"
 STOPS_WORKING: Final[str] = "stops_working"
 SUGGESTED_VALUE: Final[str] = "suggested_value"
@@ -523,6 +535,12 @@ ADVANCED_OPTIONS: Final[dict[str, dict[str, Any]]] = {
         DEFAULT: DEFAULT_DAMPENING_SIMILAR_PEAK,
     },
     ADVANCED_AUTOMATED_DAMPENING_SUPPRESSION_ENTITY: {ADVANCED_TYPE: ADVANCED_OPTION.STR, DEFAULT: DEFAULT_DAMPENING_SUPPRESSION_ENTITY},
+    ADVANCED_DNS_TIMEOUT_RETRIES: {
+        ADVANCED_TYPE: ADVANCED_OPTION.INT,
+        MINIMUM: 0,
+        MAXIMUM: 20,
+        DEFAULT: DEFAULT_DNS_TIMEOUT_RETRIES,
+    },
     ADVANCED_ENTITY_LOGGING: {ADVANCED_TYPE: ADVANCED_OPTION.BOOL, DEFAULT: SENSOR_UPDATE_LOGGING},
     ADVANCED_ESTIMATED_ACTUALS_FETCH_DELAY: {
         ADVANCED_TYPE: ADVANCED_OPTION.INT,

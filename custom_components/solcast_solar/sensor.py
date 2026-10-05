@@ -14,7 +14,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_API_KEY, EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
@@ -55,6 +55,7 @@ from .const import (
     ENTITY_TOTAL_KWH_FORECAST,
     ENTITY_TOTAL_KWH_FORECAST_TODAY,
     ENTITY_TOTAL_KWH_FORECAST_TOMORROW,
+    EXCLUDE_SITES,
     FACTORS,
     HARD_LIMIT,
     HARD_LIMIT_API,
@@ -66,8 +67,10 @@ from .const import (
 )
 from .coordinator import SolcastUpdateCoordinator
 from .entity import build_service_device_info
+from .instance import shared_unique_id
 from .log import get_logger
 from .redact import format_site_key, redact_api_key
+from .util import split_and_strip
 
 _LOGGER = get_logger(__name__)
 
@@ -526,6 +529,43 @@ def get_sensor_update_policy(key: str) -> SensorUpdatePolicy:
     return SensorUpdatePolicy.DEFAULT
 
 
+def _counted_elsewhere(hass: HomeAssistant, entry: ConfigEntry, resource_id: str) -> bool:
+    """Whether a rooftop this entry excludes is counted by another entry on one of its API keys, which then owns its sensor."""
+
+    if resource_id not in entry.options.get(EXCLUDE_SITES, []):
+        return False
+    keys = set(split_and_strip(entry.options[CONF_API_KEY]))
+    return any(
+        other.entry_id != entry.entry_id
+        and keys & set(split_and_strip(other.options[CONF_API_KEY]))
+        and resource_id not in other.options.get(EXCLUDE_SITES, [])
+        for other in hass.config_entries.async_entries(DOMAIN)
+    )
+
+
+def _warn_duplicate_rooftops(hass: HomeAssistant, entry: ConfigEntry, sites: list[dict[str, Any]]) -> None:
+    """Log a rooftop that another loaded Solcast entry counts too, which doubles it in the totals."""
+
+    own_ids = {site[RESOURCE_ID] for site in sites} - set(entry.options.get(EXCLUDE_SITES, []))
+    if not own_ids:
+        return
+    for other in hass.config_entries.async_entries(DOMAIN):
+        if other.entry_id == entry.entry_id or other.state is not ConfigEntryState.LOADED:
+            continue
+        runtime = other.runtime_data
+        if runtime is None:
+            continue
+        try:
+            other_sites = runtime.coordinator.solcast.sites
+        except AttributeError:
+            continue
+        shared = own_ids & {site[RESOURCE_ID] for site in other_sites} - set(other.options.get(EXCLUDE_SITES, []))
+        for resource_id in sorted(shared):
+            _LOGGER.warning(
+                "Rooftop %s is also counted by Solcast entry %s; exclude it in one of the two entries", resource_id, other.title
+            )
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -581,7 +621,7 @@ async def async_setup_entry(
         }
         sen = SolcastSensor(coordinator, entry, k)
         entities.append(sen)
-        expecting_limits = [HARD_LIMIT]
+        expecting_limits = [shared_unique_id(entry.options, HARD_LIMIT)]
     else:
         for api_key in coordinator.solcast.options.api_key.split(","):
             k = {
@@ -596,10 +636,16 @@ async def async_setup_entry(
             }
             sen = SolcastSensor(coordinator, entry, k)
             entities.append(sen)
-        expecting_limits = [f"hard_limit_{_api_key_last_six(api_key)}" for api_key in coordinator.solcast.options.api_key.split(",")]
+        expecting_limits = [
+            shared_unique_id(entry.options, f"hard_limit_{_api_key_last_six(api_key)}")
+            for api_key in coordinator.solcast.options.api_key.split(",")
+        ]
 
     # Site sensors
+    _warn_duplicate_rooftops(hass, entry, coordinator.solcast.sites)
     for site in coordinator.solcast.sites:
+        if _counted_elsewhere(hass, entry, site[RESOURCE_ID]):
+            continue
         k = {
             DESCRIPTION: SensorEntityDescription(
                 key=site[RESOURCE_ID],
@@ -647,7 +693,7 @@ class SolcastSensor(CoordinatorEntity, SensorEntity):
 
         self.entity_description = sensor[DESCRIPTION]
         self._attr_extra_state_attributes = {}
-        self._attr_unique_id = f"{self.entity_description.key}"
+        self._attr_unique_id = shared_unique_id(entry.options, f"{self.entity_description.key}")
         self._coordinator = coordinator
         self._attr_entity_registry_enabled_default = sensor.get(ENABLED_BY_DEFAULT, True)
         self._sensor_data = None

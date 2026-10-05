@@ -56,13 +56,19 @@ from .log import get_logger
 _LOGGER = get_logger(__name__)
 
 
-async def async_is_allow_exceed_api_limit(hass: HomeAssistant) -> bool:
-    """Return whether the advanced API limit override is enabled."""
+async def async_is_allow_exceed_api_limit(hass: HomeAssistant, advanced_file: Path | None = None) -> bool:
+    """Return whether the allow-exceed flag is set in this entry's advanced file.
 
-    config_dir = Path(hass.config.config_dir)
-    advanced_dir = config_dir / CONFIG_DISCRETE_NAME if CONFIG_FOLDER_DISCRETE else config_dir
-    advanced_file = advanced_dir / "solcast-advanced.json"
-    if not advanced_file.exists():
+    The original entry keeps ``solcast-advanced.json``. A named entry reads
+    ``solcast-<slug>-advanced.json``. Callers that omit the path keep the
+    original file, which is what the first config flow and the tests use.
+    """
+
+    if advanced_file is None:
+        config_dir = Path(hass.config.config_dir)
+        advanced_dir = config_dir / CONFIG_DISCRETE_NAME if CONFIG_FOLDER_DISCRETE else config_dir
+        advanced_file = advanced_dir / "solcast-advanced.json"
+    if not await hass.async_add_executor_job(advanced_file.exists):
         return False
 
     def _read_advanced_setting() -> bool:
@@ -168,7 +174,7 @@ class AdvancedOptions:
                         for _ in range(600):
                             await asyncio.sleep(0.1)
                         _LOGGER.error(problem)
-                        await raise_or_clear_advanced_problems([problem], self.api.hass)
+                        await raise_or_clear_advanced_problems([problem], self.api.hass, entry=self.api.entry)
                 except asyncio.CancelledError:
                     self.api.tasks.pop(ADVANCED_INVALID_JSON_TASK, None)
 
@@ -452,11 +458,12 @@ class AdvancedOptions:
                     if not self.api.advanced_options.get(ADVANCED_AUTOMATED_DAMPENING_ADAPTIVE_MODEL_CONFIGURATION, False):
                         await clear_cache(self.api.filename_dampening_history, False)  # remove dampening history if necessary
             finally:
-                await raise_or_clear_advanced_problems(problems, self.api.hass)
+                await raise_or_clear_advanced_problems(problems, self.api.hass, entry=self.api.entry)
                 await raise_or_clear_advanced_deprecated(
                     deprecated_in_use,
                     self.api.hass,
                     stops_working={o: dt.strptime(stops, DT_DATE_ONLY_FORMAT) for o, stops in deprecated.items() if stops is not None},
+                    entry=self.api.entry,
                 )
 
         return change

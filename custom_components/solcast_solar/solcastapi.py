@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import date, datetime as dt, timedelta, tzinfo
 from operator import itemgetter
 from pathlib import Path
-import sys
 import time
 from types import MappingProxyType
 from typing import Any
@@ -90,6 +89,7 @@ from .dates import DateTimeHelper
 from .enums import AutoUpdate, HistoryType, SitesStatus, SolcastApiStatus, UsageStatus
 from .fetcher import Fetcher
 from .forecast import ForecastQuery
+from .instance import repair_issue_id, repair_placeholders
 from .log import get_logger
 from .redact import redact_api_key
 from .sites_cache import FRESH_DATA, SitesCache
@@ -127,9 +127,6 @@ _STATUS_TRANSLATE: dict[int, str] = {
     997: "Connect call failed",
     999: "Prior crash",
 }
-
-# Return the function name at a specified caller depth. 0=current, 1=caller, 2=caller of caller, etc.
-FunctionName = lambda n=0: sys._getframe(n + 1).f_code.co_name  # noqa: E731, SLF001 # type: ignore[no-redef]
 
 
 @dataclass
@@ -310,7 +307,6 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
 
         # Configuration directory and file paths.
         self.config_dir = f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}" if CONFIG_FOLDER_DISCRETE else hass.config.config_dir
-        (Path(self.config_dir).mkdir(parents=False, exist_ok=True)) if CONFIG_FOLDER_DISCRETE else None
         _LOGGER.debug("Configuration directory is %s", self.config_dir)
 
         file_path = Path(self.config_dir) / Path(options.file_path).name
@@ -333,6 +329,7 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
     def _migrate_config_files(self) -> list[str]:
         """Migrate config files to discrete folder if required."""
 
+        (Path(self.config_dir).mkdir(parents=False, exist_ok=True)) if CONFIG_FOLDER_DISCRETE else None
         source_path = Path(self.config_dir) / ".." if CONFIG_FOLDER_DISCRETE else Path(self.config_dir) / "solcast_solar"
         if source_path.exists():
             for file in source_path.glob("solcast*.json"):
@@ -341,7 +338,7 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                 file.replace(target_path)
 
         unlinked: list[str] = []
-        for file in Path(self.config_dir).glob("solcast*.json"):
+        for file in filter(self.sites_cache.is_this_entry_cache, Path(self.config_dir).glob("solcast*.json")):
             if file.stat().st_size == 0:
                 _LOGGER.critical("Removing zero-length file %s", file.resolve())
                 file.unlink()
@@ -367,14 +364,12 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
             ir.async_create_issue(
                 self.hass,
                 DOMAIN,
-                ISSUE_CORRUPT_FILE,
+                repair_issue_id(ISSUE_CORRUPT_FILE, self.entry),
                 is_fixable=False,
                 is_persistent=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key=ISSUE_CORRUPT_FILE,
-                translation_placeholders={
-                    FILES: str(unlinked),
-                },
+                translation_placeholders=repair_placeholders(self.entry, {FILES: str(unlinked)}),
                 learn_more_url=LEARN_MORE_CORRUPT_FILE,
             )
 
@@ -657,7 +652,7 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                 _api_key = redact_api_key(api_key) if multi_key else ALL
                 siteinfo = {site: {forecast[PERIOD_START]: forecast for forecast in data[SITE_INFO][site][FORECASTS]} for site in sites}
                 earliest: dt = dt_util.now(self.tz)
-                latest: dt = earliest
+                latest: dt = max(limits[LAST_PERIOD] for limits in sites.values())
                 for limits in sites.values():
                     if len(sites_hard_limit[api_key]) == 0:
                         msg = f"Build hard limit period values from scratch for {data_set} {_api_key}"
@@ -667,7 +662,6 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                         earliest = min(earliest, limits[EARLIEST_PERIOD])
                     else:
                         earliest = self.dt_helper.day_start_utc()  # Past hard limits done, so re-calculate from today onwards
-                    latest = limits[LAST_PERIOD]
                 if _api_key not in logged_hard_limit:
                     logged_hard_limit.append(_api_key)
                     _LOGGER.debug(
@@ -685,7 +679,8 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                     earliest + timedelta(minutes=HALF_HOUR_MINUTES * x)
                     for x in range(int((latest - earliest).total_seconds() / HALF_HOUR_SECONDS))
                 ]
-                sites_hard_limit[api_key] = {est: {} for est in estimates}
+                past = sites_hard_limit[api_key]  # Keep the past hard limits when re-calculating from today onwards
+                sites_hard_limit[api_key] = {est: {p: v for p, v in past.get(est, {}).items() if p < earliest} for est in estimates}
                 for count, period in enumerate(periods):
                     for pv_estimate in estimates:
                         estimate = {site: siteinfo[site].get(period, {}).get(pv_estimate) for site in sites}
@@ -974,17 +969,11 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
             end_utc = self.dt_helper.day_start_utc(future=future_day + 1)
             start_index, end_index = self.query.get_list_slice(self.data_forecasts, start_utc, end_utc)
 
-            expected_intervals = 48
-            _is_dst: bool | None = (
-                self.dt_helper.is_interval_dst(self.data_forecasts[start_index]) if start_index < len(self.data_forecasts) else None
-            )
-            for interval in range(start_index, min(len(self.data_forecasts), start_index + 8)):
-                is_daylight = self.dt_helper.is_interval_dst(self.data_forecasts[interval])
-                if is_daylight != _is_dst:
-                    time_transitioning = True
-                    transition_from_dst = _is_dst
-                    expected_intervals = 50 if _is_dst else 46
-                    break
+            # The local day is 23, 23.5, 24, 24.5 or 25 hours long, whenever and by how much the clocks change (Cairo, Santiago, Lord Howe).
+            expected_intervals = round((end_utc - start_utc).total_seconds() / 1800)
+            if expected_intervals != 48:
+                time_transitioning = True
+                transition_from_dst = expected_intervals > 48
             intervals = end_index - start_index
             forecasts_date = dt_util.now(self.tz).date() + timedelta(days=future_day)
 
@@ -1053,9 +1042,10 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                 ISSUE_RECORDS_MISSING_INITIAL,  # Raised elsewhere but cleaned up here
                 ISSUE_RECORDS_MISSING_UNFIXABLE,
             ):
-                if issue_registry.async_get_issue(DOMAIN, check_issue) is not None:
-                    _LOGGER.debug("Remove issue for %s", check_issue)
-                    ir.async_delete_issue(self.hass, DOMAIN, check_issue)
+                issue_id = repair_issue_id(check_issue, self.entry)
+                if issue_registry.async_get_issue(DOMAIN, issue_id) is not None:
+                    _LOGGER.debug("Remove issue for %s", issue_id)
+                    ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
         if 0 < contiguous < self.advanced_options[ADVANCED_FORECAST_FUTURE_DAYS] - 1:
             if self.entry is not None:
@@ -1066,16 +1056,20 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
 
                 # If auto-update is enabled yet the prior forecast update was manual then do not raise an issue.
                 raise_issue = None if self.data[AUTO_UPDATED] == 0 and self.entry.options[AUTO_UPDATE] != AutoUpdate.NONE else raise_issue
-                if raise_issue is not None and issue_registry.async_get_issue(DOMAIN, raise_issue) is None:
-                    _LOGGER.warning("Raise issue `%s` for missing forecast data", raise_issue)
+                if (
+                    raise_issue is not None
+                    and issue_registry.async_get_issue(DOMAIN, scoped_issue := repair_issue_id(raise_issue, self.entry)) is None
+                ):
+                    _LOGGER.warning("Raise issue `%s` for missing forecast data", scoped_issue)
                     ir.async_create_issue(
                         self.hass,
                         DOMAIN,
-                        raise_issue,
+                        scoped_issue,
                         is_fixable=self.entry.options[AUTO_UPDATE] == AutoUpdate.NONE and not any(self.data[FAILURE][LAST_14D]),
                         data={CONTIGUOUS: contiguous, ENTRY_ID: self.entry.entry_id if self.entry is not None else ""},
                         severity=ir.IssueSeverity.WARNING,
                         translation_key=raise_issue,
+                        translation_placeholders=repair_placeholders(self.entry),
                         learn_more_url=LEARN_MORE_MISSING_FORECAST_DATA,
                     )
                 if not raise_issue:

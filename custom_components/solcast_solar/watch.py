@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime as dt
+import os
 from pathlib import Path
 from threading import Event
 from typing import TYPE_CHECKING, Any
@@ -148,7 +149,7 @@ class FileWatcher:
         coordinator = self.coordinator
 
         try:
-            dampening_mtime = Path(file_path).stat().st_mtime
+            dampening_mtime = await coordinator.hass.async_add_executor_job(os.path.getmtime, file_path)
         except FileNotFoundError:
             return
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 import contextlib
 import copy
-from datetime import UTC, datetime as dt, timedelta
+from datetime import UTC, datetime as dt
+from functools import partial
 import json
 from pathlib import Path
 import re
@@ -44,6 +46,7 @@ from .const import (
     FORECASTS,
     FORMAT,
     GENERATION,
+    GENERATION_ENTITIES,
     INTEGRATION_VERSION,
     ISSUE_UNUSUAL_AZIMUTH_NORTHERN,
     ISSUE_UNUSUAL_AZIMUTH_SOUTHERN,
@@ -66,6 +69,7 @@ from .const import (
     SITE_ATTRIBUTE_LONGITUDE,
     SITE_INFO,
     SITES,
+    SITES_TIMEOUT,
     SUCCESS,
     SUCCESS_ACTUALS,
     SUCCESS_FORCED,
@@ -83,6 +87,7 @@ from .enums import (
     UpdateResult,
     UsageStatus,
 )
+from .instance import repair_issue_id, repair_placeholders
 from .issues import check_unusual_azimuth
 from .log import get_logger
 from .migration import SchemaIncompatibleError, clear_cache, upgrade_cache_schema
@@ -94,7 +99,7 @@ from .redact import (
     redact_msg_api_key,
 )
 from .state import raise_and_record
-from .util import split_and_strip
+from .util import split_and_strip, write_file_atomic
 
 if TYPE_CHECKING:
     from .solcastapi import SolcastApi
@@ -111,6 +116,9 @@ FRESH_DATA: Final[dict[str, Any]] = {
 }
 
 _LOGGER = get_logger(__name__)
+_ORIGINAL_KINDS = frozenset(
+    ("undampened", "actuals", "actuals-dampened", "advanced", "dampening", "dampening-history", "generation", "sites", "usage")
+)
 
 
 class SitesCache:
@@ -123,6 +131,7 @@ class SitesCache:
             api: The parent SolcastApi instance.
         """
         self.api = api
+        self.missed_midnight_resets: int = 0  # Daily resets missed while Home Assistant was stopped.
 
         # Private attributes (alphabetical).
         self._api_used_reset: dict[str, dt | None] = {}
@@ -185,20 +194,25 @@ class SitesCache:
                 return True
         return False
 
+    async def _is_file(self, filename: str) -> bool:
+        """Return whether a file exists, checked outside the event loop."""
+        return await self.api.hass.async_add_executor_job(Path(filename).is_file)
+
     # Public methods (alphabetical).
 
     async def cleanup_issues(self, any_unusual: bool = True) -> None:
         """Check and clean up any existing issues if the conditions are now resolved."""
         issue_registry = ir.async_get(self.api.hass)
         for issue in [ISSUE_UNUSUAL_AZIMUTH_NORTHERN, ISSUE_UNUSUAL_AZIMUTH_SOUTHERN]:
-            if (i := issue_registry.async_get_issue(DOMAIN, issue)) is not None:
+            issue_id = repair_issue_id(issue, self.api.entry)
+            if (i := issue_registry.async_get_issue(DOMAIN, issue_id)) is not None:
                 if (
                     i.dismissed_version is not None
                     and i.translation_placeholders is not None
                     and self._dismissal.get(i.translation_placeholders.get(SITE, ""), False)
                 ) or not any_unusual:
-                    _LOGGER.debug("Remove %sissue for %s", "ignored " if i.dismissed_version is not None else "", issue)
-                    ir.async_delete_issue(self.api.hass, DOMAIN, issue)
+                    _LOGGER.debug("Remove %sissue for %s", "ignored " if i.dismissed_version is not None else "", issue_id)
+                    ir.async_delete_issue(self.api.hass, DOMAIN, issue_id)
 
     async def delete_solcast_file(self, *args: tuple[Any]) -> None:
         """Delete the solcast json files.
@@ -224,7 +238,8 @@ class SitesCache:
         tracked at startup, and necessary adjustments are made to file naming.
 
         Single key installations have cache files named like `solcast-sites.json`, while
-        multi-key installations have caches named `solcast-sites-api_key.json`
+        multi-key installations have caches named `solcast-sites-api_key.json`. A named
+        extra entry uses its own stem, for example `solcast-norddach-sites.json`.
 
         The reason is that sites are loaded in groups of API key, and similarly for API
         usage, so these must be cached separately.
@@ -239,10 +254,11 @@ class SitesCache:
         issue_registry = ir.async_get(self.api.hass)
         cache_mutation_allowed = self.api.entry is not None
 
-        def rename(file1: str, file2: str, api_key: str):
-            if Path(file1).is_file():
-                _LOGGER.info("Renaming %s to %s", redact_msg_api_key(file1, api_key), redact_msg_api_key(file2, api_key))
-                Path(file1).rename(Path(file2))
+        def rename_pairs(pairs: list[tuple[str, str]], api_key: str):
+            for file1, file2 in pairs:
+                if Path(file1).is_file():
+                    _LOGGER.info("Renaming %s to %s", redact_msg_api_key(file1, api_key), redact_msg_api_key(file2, api_key))
+                    Path(file1).rename(Path(file2))
 
         async def test_unusual_azimuth() -> None:
             """Test for unusual azimuth values."""
@@ -267,8 +283,10 @@ class SitesCache:
                     if unusual:
                         log = (
                             _LOGGER.warning
-                            if issue_registry.async_get_issue(DOMAIN, ISSUE_UNUSUAL_AZIMUTH_NORTHERN) is None
-                            and issue_registry.async_get_issue(DOMAIN, ISSUE_UNUSUAL_AZIMUTH_SOUTHERN) is None
+                            if issue_registry.async_get_issue(DOMAIN, repair_issue_id(ISSUE_UNUSUAL_AZIMUTH_NORTHERN, self.api.entry))
+                            is None
+                            and issue_registry.async_get_issue(DOMAIN, repair_issue_id(ISSUE_UNUSUAL_AZIMUTH_SOUTHERN, self.api.entry))
+                            is None
                             and not self._dismissal.get(site, False)
                             else _LOGGER.debug
                         )
@@ -282,18 +300,21 @@ class SitesCache:
                             ir.async_create_issue(
                                 self.api.hass,
                                 DOMAIN,
-                                raise_issue,
+                                repair_issue_id(raise_issue, self.api.entry),
                                 is_fixable=False,
                                 is_persistent=True,
                                 severity=ir.IssueSeverity.WARNING,
                                 translation_key=raise_issue,
-                                translation_placeholders={
-                                    SITE: site,
-                                    SITE_ATTRIBUTE_LATITUDE: str(v[SITE_ATTRIBUTE_LATITUDE]),
-                                    PROPOSAL: str(proposal),
-                                    EXTANT: str(v[SITE_ATTRIBUTE_AZIMUTH]),
-                                    LEARN_MORE: "",
-                                },
+                                translation_placeholders=repair_placeholders(
+                                    self.api.entry,
+                                    {
+                                        SITE: site,
+                                        SITE_ATTRIBUTE_LATITUDE: str(v[SITE_ATTRIBUTE_LATITUDE]),
+                                        PROPOSAL: str(proposal),
+                                        EXTANT: str(v[SITE_ATTRIBUTE_AZIMUTH]),
+                                        LEARN_MORE: "",
+                                    },
+                                ),
                                 learn_more_url=LEARN_MORE_UNUSUAL_AZIMUTH,
                             )
                             raise_issue = ""
@@ -316,34 +337,42 @@ class SitesCache:
                             break
                     _LOGGER.debug("Re-serialising sites cache for %s", redact_api_key(api_key))
                     payload = json.dumps({SITES: [site for site in self.api.sites if site.get(API_KEY) == api_key]}, ensure_ascii=False)
-                    async with self.api.serialise_lock, aiofiles.open(cache_filename, "w") as file:
-                        await file.write(payload)
+                    async with self.api.serialise_lock:
+                        await self.api.hass.async_add_executor_job(write_file_atomic, cache_filename, payload)
 
         async def from_single_site_to_multi(api_keys: list[str]):
             """Transition from a single API key to multiple API keys."""
-            single_sites = f"{self.api.config_dir}/solcast-sites.json"
-            single_usage = f"{self.api.config_dir}/solcast-usage.json"
-            if Path(single_sites).is_file():
+            single_sites = self._scoped_cache("sites")
+            single_usage = self._scoped_cache("usage")
+            if await self._is_file(single_sites):
                 async with aiofiles.open(single_sites) as file:
                     single_api_key = json.loads(await file.read(), cls=JSONDecoder)[SITES][0].get(API_KEY, api_keys[0])
-                multi_sites = f"{self.api.config_dir}/solcast-sites-{single_api_key}.json"
-                if not Path(multi_sites).is_file() and Path(single_sites).is_file():
-                    multi_usage = f"{self.api.config_dir}/solcast-usage-{single_api_key}.json"
-                    rename(single_sites, multi_sites, single_api_key)
-                    rename(single_usage, multi_usage, single_api_key)
+                multi_sites = self._scoped_cache("sites", single_api_key)
+                if not await self._is_file(multi_sites):
+                    multi_usage = self._scoped_cache("usage", single_api_key)
+                    await self.api.hass.async_add_executor_job(
+                        rename_pairs, [(single_sites, multi_sites), (single_usage, multi_usage)], single_api_key
+                    )
 
         async def from_multi_site_to_single(api_keys: list[str]):
             """Transition from multiple API keys to a single API key."""
-            single_sites = f"{self.api.config_dir}/solcast-sites.json"
-            if not Path(single_sites).is_file():
-                rename(f"{self.api.config_dir}/solcast-sites-{api_keys[0]}.json", single_sites, api_keys[0])
-                rename(f"{self.api.config_dir}/solcast-usage-{api_keys[0]}.json", f"{self.api.config_dir}/solcast-usage.json", api_keys[0])
+            single_sites = self._scoped_cache("sites")
+            if not await self._is_file(single_sites):
+                await self.api.hass.async_add_executor_job(
+                    rename_pairs,
+                    [
+                        (self._scoped_cache("sites", api_keys[0]), single_sites),
+                        (self._scoped_cache("usage", api_keys[0]), self._scoped_cache("usage")),
+                    ],
+                    api_keys[0],
+                )
 
         def remove_orphans(all_cached: list[str], multi_cached: list[str]):
-            """Remove orphaned cache files."""
+            """Remove orphaned cache files for this entry only."""
+            stem = re.escape(self._cache_stem())
             for file in all_cached:
                 if file not in multi_cached:
-                    component_parts = re.search(r"(.+solcast-(sites-|usage-))(.+)(\.json)", file)
+                    component_parts = re.search(rf"(.+{stem}-(sites-|usage-))(.+)(\.json)", file)
                     if component_parts is not None:
                         _LOGGER.warning(
                             "Removing orphaned %s",
@@ -353,10 +382,11 @@ class SitesCache:
 
         def list_all_and_multi_key_files() -> tuple[tuple[list[str], list[str]], tuple[list[str], list[str]]]:
             config_dir = Path(self.api.config_dir)
-            all_sites = sorted(str(s) for s in config_dir.glob("solcast-sites*.json"))
-            all_usage = sorted(str(u) for u in config_dir.glob("solcast-usage*.json"))
-            multi_sites = sorted(str(s) for s in config_dir.glob("solcast-sites-*.json"))
-            multi_usage = sorted(str(u) for u in config_dir.glob("solcast-usage-*.json"))
+            stem = self._cache_stem()
+            all_sites = sorted(str(s) for s in config_dir.glob(f"{stem}-sites*.json"))
+            all_usage = sorted(str(u) for u in config_dir.glob(f"{stem}-usage*.json"))
+            multi_sites = sorted(str(s) for s in config_dir.glob(f"{stem}-sites-*.json"))
+            multi_usage = sorted(str(u) for u in config_dir.glob(f"{stem}-usage-*.json"))
             return (all_sites, all_usage), (multi_sites, multi_usage)
 
         async def load_extant_sites_and_usage(sites: list[str], usages: list[str]):
@@ -384,7 +414,7 @@ class SitesCache:
                     except json.decoder.JSONDecodeError:
                         _LOGGER.error("JSONDecodeError, usage ignored: %s", usage)
                         continue
-                    match = re.search(r"solcast-usage-(.+)\.json", usage)
+                    match = re.search(rf"{re.escape(self._cache_stem())}-usage-(.+)\.json$", Path(usage).name)
                     if match:
                         extant_usage[match.group(1)] = response_json
                     elif not self.multi_key and single_key:
@@ -399,16 +429,15 @@ class SitesCache:
                 await from_single_site_to_multi(api_keys)
             else:
                 await from_multi_site_to_single(api_keys)
-        multi_sites = [f"{self.api.config_dir}/solcast-sites-{api_key}.json" for api_key in api_keys]
-        multi_usage = [f"{self.api.config_dir}/solcast-usage-{api_key}.json" for api_key in api_keys]
+        multi_sites = [self._scoped_cache("sites", api_key) for api_key in api_keys]
+        multi_usage = [self._scoped_cache("usage", api_key) for api_key in api_keys]
 
         (all_sites, all_usage), (multi_key_sites, multi_key_usage) = await self.api.hass.async_add_executor_job(
             list_all_and_multi_key_files
         )
         self._extant_sites, self._extant_usage = await load_extant_sites_and_usage(all_sites, all_usage)
         if cache_mutation_allowed:
-            remove_orphans(multi_key_sites, multi_sites)
-            remove_orphans(multi_key_usage, multi_usage)
+            await self.api.hass.async_add_executor_job(remove_orphans, multi_key_sites + multi_key_usage, multi_sites + multi_usage)
 
         status, message, api_key_in_error = await self._sites_data(prior_crash=prior_crash, use_cache=use_cache)
         if self.api.sites_status == SitesStatus.OK:
@@ -433,7 +462,7 @@ class SitesCache:
                 async def load_data(filename: str, set_loaded: bool = True) -> dict[str, Any] | None:
                     nonlocal file
 
-                    if Path(filename).is_file():
+                    if await self._is_file(filename):
                         file = filename
                         async with aiofiles.open(filename) as data_file:
                             json_data: dict[str, Any] = json.loads(await data_file.read(), cls=JSONDecoder)
@@ -636,6 +665,16 @@ class SitesCache:
                     generation_data = await self.api.dampening.load_generation_data()
                     if generation_data:
                         self.api.dampening.data_generation = generation_data
+                    entities = sorted(self.api.options.generation_entities)
+                    stored_entities = self.api.dampening.data_generation.get(GENERATION_ENTITIES)
+                    if stored_entities is None:  # Written now, so a change before the next generation update is still seen
+                        self.api.dampening.data_generation[GENERATION_ENTITIES] = entities
+                        if generation_data:
+                            await self.serialise_data(self.api.dampening.data_generation, file)
+                    elif stored_entities != entities:
+                        _LOGGER.debug("Generation entities changed, reloading generation and dampening history")
+                        self.api.dampening.data_generation.update({GENERATION: [], GENERATION_ENTITIES: entities})
+                        await self.api.hass.async_add_executor_job(Path(self.api.filename_dampening_history).unlink, True)
 
                     # if using adaptive dampening config load the data
                     if (
@@ -655,6 +694,8 @@ class SitesCache:
                     await adds_moves_changes()
                     # Migrate un-dampened history data to the un-dampened cache if needed.
                     await self.api.dampening.migrate_undampened_history()
+                    # Fill a short adaptive dampening history from the cached generation and estimated actuals.
+                    await self.api.dampening.adaptive.update_history(include_yesterday=False)
                 else:
                     # There is no cached data, so start fresh.
                     self.api.data = copy.deepcopy(FRESH_DATA)
@@ -694,24 +735,28 @@ class SitesCache:
         if force or self.stale_usage_cache:
             _LOGGER.debug("Reset API usage")
             for api_key in self.api.api_used:
-                yesterday_total = self.api.api_used[api_key] + self.api.api_forced.get(api_key, 0)
-                self.api.api_typical_forecast_updates[api_key] = yesterday_total
-                if yesterday_total > 0:
-                    self.api.api_typical[api_key] = yesterday_total
-                    _LOGGER.debug(
-                        "Typical daily API usage for %s updated to %d (tracked %d + forced %d, actuals excluded %d)",
-                        redact_api_key(api_key),
-                        yesterday_total,
-                        self.api.api_used[api_key],
-                        self.api.api_forced.get(api_key, 0),
-                        self.api.api_actuals.get(api_key, 0),
-                    )
-                self.api.api_used[api_key] = 0
-                self.api.api_forced[api_key] = 0
-                self.api.api_actuals[api_key] = 0
-                await self.serialise_usage(api_key, reset=True)
+                await self._reset_key_usage(api_key)
         else:
             _LOGGER.debug("Usage cache is fresh, so not resetting")
+
+    async def _reset_key_usage(self, api_key: str) -> None:
+        """Keep yesterday's total as the typical daily usage, then reset the usage of one API key."""
+        yesterday_total = self.api.api_used[api_key] + self.api.api_forced.get(api_key, 0)
+        self.api.api_typical_forecast_updates[api_key] = yesterday_total
+        if yesterday_total > 0:
+            self.api.api_typical[api_key] = yesterday_total
+            _LOGGER.debug(
+                "Typical daily API usage for %s updated to %d (tracked %d + forced %d, actuals excluded %d)",
+                redact_api_key(api_key),
+                yesterday_total,
+                self.api.api_used[api_key],
+                self.api.api_forced.get(api_key, 0),
+                self.api.api_actuals.get(api_key, 0),
+            )
+        self.api.api_used[api_key] = 0
+        self.api.api_forced[api_key] = 0
+        self.api.api_actuals[api_key] = 0
+        await self.serialise_usage(api_key, reset=True)
 
     async def reset_usage_cache(self):
         """Reset all usage caches."""
@@ -735,9 +780,9 @@ class SitesCache:
         """
         if self.api.loaded_data and data[LAST_UPDATED] != dt.fromtimestamp(0, UTC):
             data[INTEGRATION_VERSION] = self.api.integration_version
-            payload = json.dumps(data, ensure_ascii=False, cls=DateTimeEncoder)
-            async with self.api.serialise_lock, aiofiles.open(filename, "w") as file:
-                await file.write(payload)
+            payload = await self.api.hass.async_add_executor_job(partial(json.dumps, data, ensure_ascii=False, cls=DateTimeEncoder))
+            async with self.api.serialise_lock:
+                await self.api.hass.async_add_executor_job(write_file_atomic, filename, payload)
             log_file = {
                 self.api.filename: "dampened",
                 self.api.filename_undampened: "undampened",
@@ -777,8 +822,8 @@ class SitesCache:
             RESET: self._api_used_reset[api_key],
         }
         payload = json.dumps(json_content, ensure_ascii=False, cls=DateTimeEncoder)
-        async with self.api.serialise_lock, aiofiles.open(filename, "w") as file:
-            await file.write(payload)
+        async with self.api.serialise_lock:
+            await self.api.hass.async_add_executor_job(write_file_atomic, filename, payload)
 
     async def _backup_json_caches(self) -> None:
         """Backup all JSON caches.
@@ -793,6 +838,7 @@ class SitesCache:
         backup_day = dt_util.now(UTC).strftime("%y%m%d")
         config_dir = Path(self.api.config_dir)
         cache_files = await self.api.hass.async_add_executor_job(list_matching_files, config_dir, "solcast*.json")
+        cache_files = [cache_file for cache_file in cache_files if self.is_this_entry_cache(cache_file)]
 
         for cache_file in cache_files:
             backup_file = cache_file.with_name(f"{cache_file.stem}-{backup_day}{cache_file.suffix}.bak")
@@ -824,7 +870,9 @@ class SitesCache:
                 await self.api.hass.async_add_executor_job(shutil.copy2, cache_file, backup_file)
                 _LOGGER.debug("Created backup %s", redact_filename_api_key(str(backup_file)))
             except OSError as err:
-                _LOGGER.warning("Could not create backup %s: %s", redact_filename_api_key(str(backup_file)), err)
+                _LOGGER.warning(
+                    "Could not create backup %s: %s", redact_filename_api_key(str(backup_file)), redact_filename_api_key(str(err))
+                )
 
     def _site_transfer_signature(self, site: dict[str, Any]) -> tuple[str, str, str] | None:
         """Return a comparable site signature used for site-ID transfer matching."""
@@ -915,6 +963,33 @@ class SitesCache:
 
     # Private methods (alphabetical).
 
+    def _cache_stem(self) -> str:
+        """Return ``solcast`` or ``solcast-<slug>`` from this entry's forecast file."""
+
+        return Path(self.api.filename).stem
+
+    def _scoped_cache(self, kind: str, api_key: str | None = None) -> str:
+        """Return this entry's sites or usage cache path.
+
+        The original entry keeps ``solcast-sites.json``. A named entry gets
+        ``solcast-<slug>-sites.json``. Several keys in one entry add the key.
+        """
+
+        name = f"{self._cache_stem()}-{kind}.json" if not api_key else f"{self._cache_stem()}-{kind}-{api_key}.json"
+        return f"{self.api.config_dir}/{name}"
+
+    def is_this_entry_cache(self, path: Path) -> bool:
+        """Whether a solcast*.json file belongs to this entry and not to another one."""
+
+        name, stem = path.name, self._cache_stem()
+        if name == f"{stem}.json":
+            return True
+        if not name.startswith(f"{stem}-"):
+            return False
+        # Every named entry's file also starts with "solcast-", so the original entry names its own kinds.
+        kind = name[len(stem) + 1 : -len(".json")]
+        return stem != "solcast" or kind in _ORIGINAL_KINDS or kind.startswith(("sites-", "usage-"))
+
     def _get_sites_cache_filename(self, api_key: str) -> str:
         """Build a site details cache filename.
 
@@ -924,7 +999,7 @@ class SitesCache:
         Returns:
             str: A fully qualified cache filename using a simple name or separate files for more than one API key.
         """
-        return f"{self.api.config_dir}/solcast-sites{'' if not self.multi_key else '-' + api_key}.json"
+        return self._scoped_cache("sites", api_key if self.multi_key else None)
 
     def _get_usage_cache_filename(self, api_key: str) -> str:
         """Build an API cache filename.
@@ -935,7 +1010,7 @@ class SitesCache:
         Returns:
             str: A fully qualified cache filename using a simple name or separate files for more than one API key.
         """
-        return f"{self.api.config_dir}/solcast-usage{'' if not self.multi_key else '-' + api_key}.json"
+        return self._scoped_cache("usage", api_key if self.multi_key else None)
 
     async def _sites_data(self, prior_crash: bool = False, use_cache: bool = True) -> tuple[int, str, str]:  # noqa: C901
         """Request site details.
@@ -965,8 +1040,8 @@ class SitesCache:
             if not cache_mutation_allowed:
                 return
             _LOGGER.debug("Writing sites cache for %s", redact_api_key(api_key))
-            async with self.api.serialise_lock, aiofiles.open(cache_filename, "w") as file:
-                await file.write(json.dumps(response_json, ensure_ascii=False))
+            async with self.api.serialise_lock:
+                await self.api.hass.async_add_executor_job(write_file_atomic, cache_filename, json.dumps(response_json, ensure_ascii=False))
 
         async def load_dismissals(cache_filename: str) -> None:
             _LOGGER.debug("Loading warning dismissals for %s", redact_api_key(api_key))
@@ -1088,7 +1163,7 @@ class SitesCache:
                 response_json: dict[str, Any] = {}
                 api_key = api_key.strip()
                 cache_filename = self._get_sites_cache_filename(api_key)
-                cache_exists = Path(cache_filename).is_file()
+                cache_exists = await self._is_file(cache_filename)
                 if not cache_exists:
                     prior_crash = False
                 else:
@@ -1106,9 +1181,10 @@ class SitesCache:
                     )
                     params = {FORMAT: JSON, API_KEY: api_key}
                     _LOGGER.debug("Connecting to %s?format=json&api_key=%s", url, redact_api_key(api_key))
-                    response: ClientResponse = await self.api.aiohttp_session.get(
-                        url=url, params=params, headers=self.api.headers, ssl=False
-                    )
+                    async with asyncio.timeout(SITES_TIMEOUT):
+                        response: ClientResponse = await self.api.aiohttp_session.get(
+                            url=url, params=params, headers=self.api.headers, ssl=False
+                        )
                     status = response.status
                     (_LOGGER.debug if status == 200 else _LOGGER.warning)(
                         "HTTP session returned status %s for API key %s%s",
@@ -1197,10 +1273,13 @@ class SitesCache:
                 else:
                     cached_sites_unavailable(at_least_one_only=True)
         except (ClientConnectionError, ClientResponseError, ConnectionRefusedError, TimeoutError) as e:
-            _LOGGER.error("Connection error: %s", e)
+            error_text = str(e)
+            for api_key in api_keys:
+                error_text = redact_msg_api_key(error_text, api_key.strip())
+            _LOGGER.error("Connection error: %s", error_text)
             self.api.sites_status = SitesStatus.ERROR
             api_key_in_error = ""
-            _LOGGER.error("Error retrieving sites: %s", e)
+            _LOGGER.error("Error retrieving sites: %s", error_text)
             if use_cache:
                 _LOGGER.info("Attempting to continue with cached sites")
                 error = False
@@ -1208,7 +1287,7 @@ class SitesCache:
                 for api_key in api_keys:
                     api_key = api_key.strip()
                     cache_filename = self._get_sites_cache_filename(api_key)
-                    if Path(cache_filename).is_file():  # Cache exists, so load it
+                    if await self._is_file(cache_filename):  # Cache exists, so load it
                         response_json = await load_cache(cache_filename)
                         set_sites(response_json, api_key)
                         _ = check_rekey(response_json, api_key)
@@ -1243,126 +1322,132 @@ class SitesCache:
 
         The limit is specified by the user in integration configuration.
         """
-        try:
 
-            async def sanitise_and_set_usage(api_key: str, usage: dict[str, Any]):
-                self.api.api_limits[api_key] = usage.get(DAILY_LIMIT, 10)
-                assert isinstance(self.api.api_limits[api_key], int), "daily_limit is not an integer"
-                self.api.api_used[api_key] = usage.get(DAILY_LIMIT_CONSUMED, 0)
-                assert isinstance(self.api.api_used[api_key], int), "daily_limit_consumed is not an integer"
-                self.api.api_forced[api_key] = usage.get(DAILY_FORCED_CONSUMED, 0)
-                assert isinstance(self.api.api_forced[api_key], int), "daily_forced_consumed is not an integer"
-                self.api.api_actuals[api_key] = usage.get(DAILY_ACTUALS_CONSUMED, 0)
-                assert isinstance(self.api.api_actuals[api_key], int), "daily_actuals_consumed is not an integer"
-                configured_limit = quota.get(api_key, 10)
-                allow_exceed = self.api.advanced_options.get(ADVANCED_ALLOW_EXCEED_API_LIMIT_MAXIMUM, False)
-                # Seed from the configured limit.  Auto-update can never consume more.
-                loaded_typical = usage.get(DAILY_TYPICAL, configured_limit)
-                # Cap stale values.
-                if not allow_exceed:
-                    loaded_typical = min(loaded_typical, configured_limit)
-                self.api.api_typical[api_key] = loaded_typical
-                assert isinstance(self.api.api_typical[api_key], int), "daily_typical is not an integer"
-                loaded_typical_forecast_updates = usage.get(DAILY_TYPICAL_FORECAST_UPDATES)
-                if loaded_typical_forecast_updates is None:
-                    loaded_typical_forecast_updates = self.api.api_typical[api_key] + self.api.api_forced.get(api_key, 0)
-                assert isinstance(loaded_typical_forecast_updates, int), "daily_typical_forecast_updates is not an integer"
-                self.api.api_typical_forecast_updates[api_key] = loaded_typical_forecast_updates
-                self._api_used_reset[api_key] = usage.get(RESET, self.api.dt_helper.utc_previous_midnight())
-                assert isinstance(self._api_used_reset[api_key], dt), "reset is not a datetime"
-                if (used_reset := self._api_used_reset[api_key]) is not None:
-                    _LOGGER.debug(
-                        "Usage cache for %s last reset %s",
-                        redact_api_key(api_key),
-                        used_reset.astimezone(self.api.tz).strftime(DT_DATE_FORMAT),
-                    )
-                if usage.get(DAILY_LIMIT) != quota[api_key]:  # Limit has been adjusted, so rewrite the cache.
+        def invalid_usage_fields(usage: Any) -> list[str]:
+            if not isinstance(usage, dict):
+                return ["content"]
+            invalid = [
+                field
+                for field in (DAILY_LIMIT, DAILY_LIMIT_CONSUMED, DAILY_FORCED_CONSUMED, DAILY_ACTUALS_CONSUMED, DAILY_TYPICAL)
+                if field in usage and (not isinstance(usage[field], int) or isinstance(usage[field], bool))
+            ]
+            if usage.get(DAILY_TYPICAL_FORECAST_UPDATES) is not None and not isinstance(usage[DAILY_TYPICAL_FORECAST_UPDATES], int):
+                invalid.append(DAILY_TYPICAL_FORECAST_UPDATES)
+            if RESET in usage and (not isinstance(usage[RESET], dt) or usage[RESET].tzinfo is None):
+                invalid.append(RESET)
+            return invalid
+
+        async def sanitise_and_set_usage(api_key: str, usage: dict[str, Any]) -> bool:
+            if invalid := invalid_usage_fields(usage):
+                _LOGGER.error("The usage cache for %s is corrupt, invalid %s", redact_api_key(api_key), ", ".join(invalid))
+                self.api.usage_status = UsageStatus.ERROR
+                return False
+            self.api.api_limits[api_key] = usage.get(DAILY_LIMIT, 10)
+            self.api.api_used[api_key] = usage.get(DAILY_LIMIT_CONSUMED, 0)
+            self.api.api_forced[api_key] = usage.get(DAILY_FORCED_CONSUMED, 0)
+            self.api.api_actuals[api_key] = usage.get(DAILY_ACTUALS_CONSUMED, 0)
+            configured_limit = quota.get(api_key, 10)
+            allow_exceed = self.api.advanced_options.get(ADVANCED_ALLOW_EXCEED_API_LIMIT_MAXIMUM, False)
+            # Seed from the configured limit.  Auto-update can never consume more.
+            loaded_typical = usage.get(DAILY_TYPICAL, configured_limit)
+            # Cap stale values.
+            if not allow_exceed:
+                loaded_typical = min(loaded_typical, configured_limit)
+            self.api.api_typical[api_key] = loaded_typical
+            loaded_typical_forecast_updates = usage.get(DAILY_TYPICAL_FORECAST_UPDATES)
+            if loaded_typical_forecast_updates is None:
+                loaded_typical_forecast_updates = self.api.api_typical[api_key] + self.api.api_forced.get(api_key, 0)
+            self.api.api_typical_forecast_updates[api_key] = loaded_typical_forecast_updates
+            self._api_used_reset[api_key] = used_reset = usage.get(RESET, self.api.dt_helper.utc_previous_midnight())
+            _LOGGER.debug(
+                "Usage cache for %s last reset %s",
+                redact_api_key(api_key),
+                used_reset.astimezone(self.api.tz).strftime(DT_DATE_FORMAT),
+            )
+            if usage.get(DAILY_LIMIT) != quota[api_key]:  # Limit has been adjusted, so rewrite the cache.
+                self.api.api_limits[api_key] = quota[api_key]
+                # Reset typical to the new limit.
+                self.api.api_typical[api_key] = quota[api_key]
+                await self.serialise_usage(api_key)
+                _LOGGER.info("Usage loaded and cache updated with new limit")
+            elif (
+                DAILY_FORCED_CONSUMED not in usage or DAILY_ACTUALS_CONSUMED not in usage
+            ):  # Schema upgraded, rewrite to persist new field.
+                await self.serialise_usage(api_key)
+                _LOGGER.debug("Usage loaded and cache updated with new schema")
+            elif DAILY_TYPICAL_FORECAST_UPDATES not in usage:
+                await self.serialise_usage(api_key)
+                _LOGGER.debug("Usage loaded and cache updated with typical forecast updates")
+            else:
+                _LOGGER.debug(
+                    "Usage loaded%s",
+                    (" for " + redact_api_key(api_key)) if self.multi_key else "",
+                )
+            if used_reset < (previous_midnight := self.api.dt_helper.utc_previous_midnight()):
+                # A restart across UTC midnight missed the daily reset, so do it now and rotate the failure statistics later.
+                _LOGGER.warning(
+                    "Resetting usage for %s, last reset was more than 24-hours ago",
+                    redact_api_key(api_key),
+                )
+                self.missed_midnight_resets = max(self.missed_midnight_resets, (previous_midnight - used_reset).days, 1)
+                await self._reset_key_usage(api_key)
+            return True
+
+        self.api.usage_status = UsageStatus.OK
+        api_keys = self.api.options.api_key.split(",")
+        api_limit_values = self.api.options.api_limit.split(",")
+        for index in range(len(api_keys)):  # If only one limit value is present, yet there are multiple sites then use the same limit.
+            if len(api_limit_values) < index + 1:
+                api_limit_values.append(api_limit_values[index - 1])
+        api_limit_values = api_limit_values[: len(api_keys)]
+        quota = {k.strip(): int(v.strip()) for k, v in zip(api_keys, api_limit_values, strict=True)}
+
+        for api_key in api_keys:
+            api_key = api_key.strip()
+            old_api_key = self._rekey.get(api_key)  # For a re-keyed API key.
+            cache_filename = self._get_usage_cache_filename(api_key)
+            cache_exists = await self._is_file(cache_filename)
+            _LOGGER.debug(
+                "%s for %s",
+                "Usage cache " + ("exists" if cache_exists else "does not yet exist"),
+                redact_api_key(api_key),
+            )
+            cache = True
+            usage: dict[str, Any] = {}
+            if cache_exists:
+                usage = self._extant_usage.get(old_api_key, {}) if old_api_key is not None else {}
+                if not old_api_key:
+                    async with aiofiles.open(cache_filename) as file:
+                        try:
+                            usage = json.loads(await file.read(), cls=JSONDecoder)
+                        except json.decoder.JSONDecodeError:
+                            _LOGGER.error(
+                                "The usage cache for %s is corrupt, re-creating cache with zero usage",
+                                redact_api_key(api_key),
+                            )
+                            cache = False
+            else:
+                cache = False
+            if not cache and old_api_key:
+                # Multi-key, so the old cache has been removed
+                _LOGGER.debug("Using extant cache data for API key %s", redact_api_key(api_key))
+                usage = self._extant_usage.get(old_api_key, {})
+            if (cache or old_api_key) and not await sanitise_and_set_usage(api_key, usage):
+                return
+            if not cache:
+                if not old_api_key:
+                    _LOGGER.warning("Creating usage cache for %s, assuming zero API used", redact_api_key(api_key))
                     self.api.api_limits[api_key] = quota[api_key]
-                    # Reset typical to the new limit.
+                    self.api.api_used[api_key] = 0
+                    self.api.api_forced[api_key] = 0
+                    self.api.api_actuals[api_key] = 0
                     self.api.api_typical[api_key] = quota[api_key]
-                    await self.serialise_usage(api_key)
-                    _LOGGER.info("Usage loaded and cache updated with new limit")
-                elif (
-                    DAILY_FORCED_CONSUMED not in usage or DAILY_ACTUALS_CONSUMED not in usage
-                ):  # Schema upgraded, rewrite to persist new field.
-                    await self.serialise_usage(api_key)
-                    _LOGGER.debug("Usage loaded and cache updated with new schema")
-                elif DAILY_TYPICAL_FORECAST_UPDATES not in usage:
-                    await self.serialise_usage(api_key)
-                    _LOGGER.debug("Usage loaded and cache updated with typical forecast updates")
-                else:
-                    _LOGGER.debug(
-                        "Usage loaded%s",
-                        (" for " + redact_api_key(api_key)) if self.multi_key else "",
-                    )
-                if used_reset is not None:
-                    if self.api.dt_helper.real_now_utc() > used_reset + timedelta(hours=24):
-                        _LOGGER.warning(
-                            "Resetting usage for %s, last reset was more than 24-hours ago",
-                            redact_api_key(api_key),
-                        )
-                        self.api.api_used[api_key] = 0
-                        await self.serialise_usage(api_key, reset=True)
-
-            self.api.usage_status = UsageStatus.OK
-            api_keys = self.api.options.api_key.split(",")
-            api_limit_values = self.api.options.api_limit.split(",")
-            for index in range(len(api_keys)):  # If only one limit value is present, yet there are multiple sites then use the same limit.
-                if len(api_limit_values) < index + 1:
-                    api_limit_values.append(api_limit_values[index - 1])
-            api_limit_values = api_limit_values[: len(api_keys)]
-            quota = {k.strip(): int(v.strip()) for k, v in zip(api_keys, api_limit_values, strict=True)}
-
-            for api_key in api_keys:
-                api_key = api_key.strip()
-                old_api_key = self._rekey.get(api_key)  # For a re-keyed API key.
-                cache_filename = self._get_usage_cache_filename(api_key)
-                _LOGGER.debug(
-                    "%s for %s",
-                    "Usage cache " + ("exists" if Path(cache_filename).is_file() else "does not yet exist"),
-                    redact_api_key(api_key),
-                )
-                cache = True
-                usage: dict[str, Any] = {}
-                if Path(cache_filename).is_file():
-                    usage = self._extant_usage.get(old_api_key, {}) if old_api_key is not None else {}
-                    if not old_api_key:
-                        async with aiofiles.open(cache_filename) as file:
-                            try:
-                                usage = json.loads(await file.read(), cls=JSONDecoder)
-                            except json.decoder.JSONDecodeError:
-                                _LOGGER.error(
-                                    "The usage cache for %s is corrupt, re-creating cache with zero usage",
-                                    redact_api_key(api_key),
-                                )
-                                cache = False
-                    if cache and usage:
-                        await sanitise_and_set_usage(api_key, usage)
-                else:
-                    cache = False
-                if not cache:
-                    if old_api_key:
-                        # Multi-key, so the old cache has been removed
-                        _LOGGER.debug("Using extant cache data for API key %s", redact_api_key(api_key))
-                        usage = self._extant_usage.get(old_api_key, {}) if old_api_key is not None else {}
-                        await sanitise_and_set_usage(api_key, usage)
-                    else:
-                        _LOGGER.warning("Creating usage cache for %s, assuming zero API used", redact_api_key(api_key))
-                        self.api.api_limits[api_key] = quota[api_key]
-                        self.api.api_used[api_key] = 0
-                        self.api.api_forced[api_key] = 0
-                        self.api.api_actuals[api_key] = 0
-                        self.api.api_typical[api_key] = quota[api_key]
-                        self.api.api_typical_forecast_updates[api_key] = quota[api_key]
-                        self._api_used_reset[api_key] = self.api.dt_helper.utc_previous_midnight()
-                    await self.serialise_usage(api_key, reset=True)
-                _LOGGER.debug(
-                    "API counter for %s is %d/%d",
-                    redact_api_key(api_key),
-                    self.api.api_used[api_key],
-                    self.api.api_limits[api_key],
-                )
-
-        except Exception:
-            _LOGGER.exception("Exception in _sites_usage()")
-            self.api.usage_status = UsageStatus.ERROR
+                    self.api.api_typical_forecast_updates[api_key] = quota[api_key]
+                    self._api_used_reset[api_key] = self.api.dt_helper.utc_previous_midnight()
+                await self.serialise_usage(api_key, reset=True)
+            _LOGGER.debug(
+                "API counter for %s is %d/%d",
+                redact_api_key(api_key),
+                self.api.api_used[api_key],
+                self.api.api_limits[api_key],
+            )

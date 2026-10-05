@@ -1,7 +1,7 @@
 """Solcast service actions."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -10,15 +10,24 @@ from typing import Any, Final
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_API_KEY
+from homeassistant.const import (
+    ATTR_AREA_ID,
+    ATTR_DEVICE_ID,
+    ATTR_ENTITY_ID,
+    ATTR_FLOOR_ID,
+    ATTR_LABEL_ID,
+    CONF_API_KEY,
+)
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationError
 from homeassistant.helpers import (
     config_validation as cv,
     entity_registry as er,
     issue_registry as ir,
+    service,
 )
 from homeassistant.util import dt as dt_util
+from homeassistant.util.hass_dict import HassKey
 
 from .advanced import async_is_allow_exceed_api_limit
 from .const import (
@@ -42,6 +51,7 @@ from .const import (
     BRK_SITE,
     BRK_SITE_DETAILED,
     COMPLETION,
+    CONFIG_ENTRY_ID,
     CUSTOM_HOURS,
     DAILY_TYPICAL_FORECAST_UPDATES,
     DAMP_FACTOR,
@@ -51,9 +61,12 @@ from .const import (
     EVENT_START_DATETIME,
     EXCEPTION_ACTUALS_NOT_ENABLED,
     EXCEPTION_ACTUALS_WITHOUT_GET,
+    EXCEPTION_API_ERROR,
+    EXCEPTION_API_KEY_IN_USE,
     EXCEPTION_AUTO_USE_FORCE,
     EXCEPTION_AUTO_USE_NORMAL,
     EXCEPTION_DAMP_AUTO_ENABLED,
+    EXCEPTION_DAMP_COUNT_MIXED,
     EXCEPTION_DAMP_COUNT_NOT_CORRECT,
     EXCEPTION_DAMP_ERROR_PARSING,
     EXCEPTION_DAMP_NO_ALL_24,
@@ -64,9 +77,12 @@ from .const import (
     EXCEPTION_EXPORT_NO_ENTITY,
     EXCEPTION_EXPORT_NO_LIMIT,
     EXCEPTION_INIT_KEY_INVALID,
+    EXCEPTION_INSTANCE_REQUIRED,
+    EXCEPTION_INSTANCE_UNKNOWN,
     EXCEPTION_INTEGRATION_NOT_LOADED,
     EXCEPTION_INVALID_QUERY_RANGE,
     EXCEPTION_NOT_A_SITE,
+    EXCEPTION_ROOFTOP_IN_USE,
     EXCEPTION_SET_OPTIONS_EMPTY,
     EXCLUDE_SITES,
     FAILURES_LAST_7D,
@@ -127,7 +143,15 @@ from .const import (
 )
 from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, UsageStatus
-from .log import get_logger
+from .instance import (
+    api_keys_in_use,
+    instance_name,
+    repair_issue_id,
+    repair_placeholders,
+    rooftop_placeholders,
+    rooftops_counted_elsewhere,
+)
+from .log import get_logger, set_log_instance
 from .migration import sync_legacy_keys
 from .solcastapi import SolcastApi
 from .updater import Updater
@@ -142,15 +166,21 @@ from .validators import (
     validate_auto_update_value,
     validate_custom_hours_value,
     validate_export_limit_value,
+    validate_generation_entities,
     validate_hard_limit_value,
     validate_key_estimate_value,
     validate_use_actuals_value,
 )
 
+# Every action names its entry by config_entry_id or by a target (device, entity, area, floor, label).
+_ENTRY_FIELDS: Final = {vol.Optional(CONFIG_ENTRY_ID): cv.string, **cv.TARGET_SERVICE_FIELDS}
+_TARGET_KEYS: Final = (ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_FLOOR_ID, ATTR_LABEL_ID)
+
 SERVICE_DAMP_SCHEMA: Final = vol.All(
     {
         vol.Required(DAMP_FACTOR): cv.string,
         vol.Optional(SITE): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_QUERY_ESTIMATE_SCHEMA: Final = vol.All(
@@ -159,11 +189,13 @@ SERVICE_QUERY_ESTIMATE_SCHEMA: Final = vol.All(
         vol.Optional(EVENT_END_DATETIME): cv.datetime,
         vol.Optional(DAMPENED): cv.boolean,
         vol.Optional(SITE): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_DAMP_GET_SCHEMA: Final = vol.All(
     {
         vol.Optional(SITE): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_QUERY_SCHEMA: Final = vol.All(
@@ -172,6 +204,7 @@ SERVICE_QUERY_SCHEMA: Final = vol.All(
         vol.Required(EVENT_END_DATETIME): cv.datetime,
         vol.Optional(UNDAMPENED): cv.boolean,
         vol.Optional(SITE): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_SET_OPTIONS_SCHEMA: Final = vol.All(
@@ -196,6 +229,7 @@ SERVICE_SET_OPTIONS_SCHEMA: Final = vol.All(
         vol.Optional(EXCLUDE_SITES): cv.string,
         vol.Optional(SITE_EXPORT_ENTITY): cv.string,
         vol.Optional(SITE_EXPORT_LIMIT): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 
@@ -203,11 +237,13 @@ SERVICE_SET_OPTIONS_SCHEMA: Final = vol.All(
 SERVICE_HARD_LIMIT_SCHEMA: Final = vol.All(
     {
         vol.Required(HARD_LIMIT): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_CUSTOM_HOURS_SCHEMA: Final = vol.All(
     {
         vol.Required(HOURS): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 
@@ -382,17 +418,19 @@ class ServiceActions:
         }
 
     def _register(self) -> None:
-        """Register all service actions with Home Assistant."""
+        """Register all service actions with Home Assistant; each one dispatches to the entry the call names."""
+        self._hass.data.setdefault(_OWNERS, {})[self._entry.entry_id] = self
         for action, call in self._get_service_actions().items():
             _LOGGER.debug("Register action %s.%s", DOMAIN, action)
             self._hass.services.async_remove(DOMAIN, action)  # Remove the stub action
+            handler = _dispatcher(self._hass, call[ACTION].__name__)
             if call.get(SUPPORTS_RESPONSE_KEY):
-                self._hass.services.async_register(DOMAIN, action, call[ACTION], call[SCHEMA], call[SUPPORTS_RESPONSE_KEY])
+                self._hass.services.async_register(DOMAIN, action, handler, call[SCHEMA], call[SUPPORTS_RESPONSE_KEY])
                 continue
             if call.get(SCHEMA):
-                self._hass.services.async_register(DOMAIN, action, call[ACTION], call[SCHEMA])
+                self._hass.services.async_register(DOMAIN, action, handler, call[SCHEMA])
                 continue
-            self._hass.services.async_register(DOMAIN, action, call[ACTION])
+            self._hass.services.async_register(DOMAIN, action, handler)
 
     async def async_get_forecast_data(self, call: ServiceCall) -> dict[str, Any] | None:
         """Handle query forecast data action.
@@ -490,7 +528,7 @@ class ServiceActions:
         out_of_range = False
         try:
             for factor in factors:
-                if float(factor) < 0 or float(factor) > 1:
+                if not 0 <= float(factor) <= 1:  # Also not a number or infinite
                     out_of_range = True
         except:  # noqa: E722
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_DAMP_ERROR_PARSING) from None
@@ -512,6 +550,8 @@ class ServiceActions:
                 self._solcast.dampening.set_allow_granular_reset(True)
         else:
             await self._solcast.dampening.refresh_granular_data()  # Ensure latest file content gets updated
+            if any(len(other) != len(factors) for other_site, other in self._solcast.dampening.factors.items() if other_site != site):
+                raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_DAMP_COUNT_MIXED)
             self._solcast.dampening.factors[site] = [float(f) for f in factors]
             await self._solcast.dampening.serialise_granular()
             old_damp = opt.get(SITE_DAMP, False)
@@ -645,7 +685,7 @@ class ServiceActions:
             api_count = len(opt[CONF_API_KEY].split(","))
 
         if (api_limit := call_data.get(API_LIMIT)) is not None:
-            allow_exceed = await async_is_allow_exceed_api_limit(self._hass)
+            allow_exceed = await async_is_allow_exceed_api_limit(self._hass, Path(self._solcast.filename_advanced))
             validated_quota, error = validate_api_limit_value(api_limit, api_count, allow_exceed=allow_exceed)
             if error is not None:
                 raise ServiceValidationError(translation_domain=DOMAIN, translation_key=error)
@@ -667,7 +707,7 @@ class ServiceActions:
             ServiceValidationError: Notify that a validation error has occurred.
 
         """
-        if not call.data:
+        if not {key for key in call.data if key not in (CONFIG_ENTRY_ID, *_TARGET_KEYS)}:
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_SET_OPTIONS_EMPTY)
 
         _LOGGER.info("Action: Set options")
@@ -719,6 +759,38 @@ class ServiceActions:
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_EXPORT_NO_ENTITY)
         if opt.get(SITE_EXPORT_LIMIT, 0) == 0.0 and opt.get(SITE_EXPORT_ENTITY, ""):
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_EXPORT_NO_LIMIT)
+
+        # Validate new generation entities as the options flow does.
+        error, entity = (
+            validate_generation_entities(self._hass, opt[GENERATION_ENTITIES]) if GENERATION_ENTITIES in call.data else (None, "")
+        )
+        if error is not None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key=error, translation_placeholders={"entity": entity} if entity else None
+            )
+
+        # Refuse a key of another entry, a key Solcast does not accept, and counting a rooftop twice, as the flows do.
+        from .config_flow import validate_sites  # noqa: PLC0415
+
+        rooftops: list[str] = []
+        if opt[CONF_API_KEY] != self._entry.options[CONF_API_KEY]:
+            if in_use := api_keys_in_use(self._hass, self._entry.entry_id, opt[CONF_API_KEY]):
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key=EXCEPTION_API_KEY_IN_USE,
+                    translation_placeholders={"entries": ", ".join(in_use)},
+                )
+            status, message, rooftops = await validate_sites(self._hass, opt)
+            if status != 200:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN, translation_key=EXCEPTION_API_ERROR, translation_placeholders={"error_detail": message}
+                )
+        elif opt.get(EXCLUDE_SITES, []) != self._entry.options.get(EXCLUDE_SITES, []):
+            rooftops = [site[RESOURCE_ID] for site in self._solcast.sites]
+        if clash := rooftops_counted_elsewhere(self._hass, self._entry.entry_id, rooftops, opt.get(EXCLUDE_SITES, [])):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key=EXCEPTION_ROOFTOP_IN_USE, translation_placeholders=rooftop_placeholders(clash)
+            )
 
         # Sync legacy keys before updating the entry to keep downgrade compatibility.
         sync_legacy_keys(opt)
@@ -794,12 +866,15 @@ class ServiceActions:
         ir.async_create_issue(
             self._hass,
             DOMAIN,
-            issue_id,
+            repair_issue_id(issue_id, self._entry),
             is_fixable=False,
             is_persistent=False,
             severity=ir.IssueSeverity.WARNING,
             translation_key=ISSUE_ACTION_DEPRECATED,
-            translation_placeholders={"deprecated_action": action_name, "new_action": SERVICE_SET_OPTIONS},
+            translation_placeholders=repair_placeholders(
+                self._entry,
+                {"deprecated_action": action_name, "new_action": SERVICE_SET_OPTIONS},
+            ),
         )
 
 
@@ -1086,6 +1161,74 @@ def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoo
         "export_entity": export_entity_check,
         "recorder_available": recorder_available,
     }
+
+
+_OWNERS: HassKey[dict[str, ServiceActions]] = HassKey(f"{DOMAIN}_actions")
+
+
+async def _target_entry_ids(hass: HomeAssistant, call: ServiceCall) -> set[str]:
+    """Return the config entries a call's target refers to, areas, floors and labels included."""
+
+    extract: Callable[..., Awaitable[set[str]]] = service.async_extract_config_entry_ids
+    try:
+        return await extract(call)
+    except TypeError:  # Home Assistant before 2026.1 takes hass first.
+        return await extract(hass, call)
+
+
+async def _entry_id_for_call(hass: HomeAssistant, call: ServiceCall) -> str:
+    """Pick the loaded entry an action applies to.
+
+    The config_entry_id field wins, then a target. Without either, the original
+    unnamed entry is used while it is loaded, otherwise the only loaded entry.
+    """
+
+    owners = hass.data.get(_OWNERS, {})
+    if (entry_id := call.data.get(CONFIG_ENTRY_ID)) is not None:
+        if entry_id in owners:
+            return str(entry_id)
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_UNKNOWN)
+
+    if any(call.data.get(key) for key in _TARGET_KEYS):
+        targeted = [entry_id for entry_id in await _target_entry_ids(hass, call) if entry_id in owners]
+        if len(targeted) == 1:
+            return targeted[0]
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_REQUIRED if targeted else EXCEPTION_INSTANCE_UNKNOWN
+        )
+
+    unnamed = [entry_id for entry_id in owners if not instance_name(_entry_options(hass, entry_id))]
+    if len(unnamed) == 1:
+        return unnamed[0]
+    if len(owners) == 1:
+        return next(iter(owners))
+    raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_REQUIRED)
+
+
+def _entry_options(hass: HomeAssistant, entry_id: str) -> Mapping[str, Any] | None:
+    """Return the options of a config entry."""
+
+    return entry.options if (entry := hass.config_entries.async_get_entry(entry_id)) is not None else None
+
+
+def _dispatcher(hass: HomeAssistant, method_name: str) -> Callable[[ServiceCall], Any]:
+    """Return an action handler that forwards to the selected entry."""
+
+    async def handler(call: ServiceCall) -> Any:
+        entry_id = await _entry_id_for_call(hass, call)
+        set_log_instance(instance_name(_entry_options(hass, entry_id)))
+        return await getattr(hass.data[_OWNERS][entry_id], method_name)(call)
+
+    return handler
+
+
+def release_entry_actions(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Drop one entry. Services stay until the last entry is gone."""
+
+    owners = hass.data.get(_OWNERS, {})
+    owners.pop(entry.entry_id, None)
+    if not owners:
+        unregister_actions(hass)
 
 
 async def stub_action(call: ServiceCall) -> None:
