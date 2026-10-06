@@ -21,7 +21,7 @@
       "instance_name_invalid": "名前には文字または数字を含める必要があります。",
       "instance_name_duplicate": "その名前はすでに使用されています。",
       "instance_name_reserved": "その名前は最初のエントリのファイル用に予約されています。別の名前を選んでください。",
-      "rooftop_in_use": "サイト {rooftops} はすでに {entries} で集計されています。どちらか一方のエントリで除外してください。",
+      "rooftop_in_use": "サイト {rooftops} はすでに {entries} で集計されています。このエントリまたはもう一方のエントリで除外してください。",
       "all_sites_excluded": "すべてのサイトが除外されています。少なくとも1つのサイトを残してください。"
     },
     "step": {
@@ -245,6 +245,9 @@
     "export_no_limit": {
       "message": "サイトエクスポートエンティティが設定されている場合は、サイトエクスポートの上限を指定する必要があります。"
     },
+    "export_not_sensor": {
+      "message": "{entity} は既存のエネルギーセンサーではありません。"
+    },
     "generation_mixed_types": {
       "message": "PV発電エンティティはすべて同じ型（すべてエネルギーまたはすべて電力、混在なし）である必要があります"
     },
@@ -324,13 +327,13 @@
       "message": "すべてのSolcastデータのクリアに失敗しました。"
     },
     "rooftop_in_use": {
-      "message": "サイト {rooftops} はすでに {entries} で集計されています。どちらか一方のエントリで除外してください。"
+      "message": "サイト {rooftops} はすでに {entries} で集計されています。このエントリまたはもう一方のエントリで除外してください。"
     },
     "set_options_empty": {
       "message": "少なくとも1つのオプションを指定する必要があります。"
     },
     "instance_required": {
-      "message": "複数のSolcastエントリが読み込まれているか選択されています。Solcastエントリを1つ選んでください。"
+      "message": "複数のSolcastエントリが有効になっているか選択されています。Solcastエントリを1つ選んでください。"
     },
     "instance_unknown": {
       "message": "選択したエントリまたはターゲットは、読み込まれたSolcastエントリに属していません。"
@@ -378,7 +381,7 @@
               "auto_update": "自動更新"
             },
             "description": "予報更新のオートメーションが実行されていません。自動更新を有効化しますか？（詳細情報：{learn_more}）",
-            "title": "将来の予報が不足"
+            "title": "将来の予報が不足{instance}"
           }
         }
       },
@@ -433,7 +436,7 @@
       "limit_not_number": "APIリミットは数字ではありません",
       "limit_one_or_greater": "APIリミットは1以上である必要があります",
       "limit_too_many": "入力されたAPIリミットの数がキーの数より多いです",
-      "rooftop_in_use": "サイト {rooftops} はすでに {entries} で集計されています。どちらか一方のエントリで除外してください。",
+      "rooftop_in_use": "サイト {rooftops} はすでに {entries} で集計されています。このエントリまたはもう一方のエントリで除外してください。",
       "all_sites_excluded": "すべてのサイトが除外されています。少なくとも1つのサイトを残してください。"
     },
     "step": {

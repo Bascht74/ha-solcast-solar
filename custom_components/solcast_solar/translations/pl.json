@@ -21,7 +21,7 @@
       "instance_name_invalid": "Nazwa musi zawierać literę lub cyfrę.",
       "instance_name_duplicate": "Ta nazwa jest już używana.",
       "instance_name_reserved": "Ta nazwa jest zarezerwowana dla plików pierwszego wpisu. Wybierz inną nazwę.",
-      "rooftop_in_use": "Witryna {rooftops} jest już liczona przez {entries}. Wyklucz ją w jednym z dwóch wpisów.",
+      "rooftop_in_use": "Witryny {rooftops} są już liczone przez {entries}. Wyklucz je w tym wpisie lub w drugim.",
       "all_sites_excluded": "Wszystkie witryny są wykluczone. Pozostaw co najmniej jedną witrynę."
     },
     "step": {
@@ -245,6 +245,9 @@
     "export_no_limit": {
       "message": "Limit eksportu witryny musi być określony, jeśli ustawiono jednostkę eksportu witryny."
     },
+    "export_not_sensor": {
+      "message": "{entity} nie jest istniejącym czujnikiem energii."
+    },
     "generation_mixed_types": {
       "message": "Wszystkie jednostki generujące energię fotowoltaiczną muszą być tego samego typu (cała energia lub cała moc, a nie mieszanka)"
     },
@@ -321,7 +324,7 @@
       "message": "Wyczyść wszystkie dane Solcast nie powiodło się."
     },
     "rooftop_in_use": {
-      "message": "Witryna {rooftops} jest już liczona przez {entries}. Wyklucz ją w jednym z dwóch wpisów."
+      "message": "Witryny {rooftops} są już liczone przez {entries}. Wyklucz je w tym wpisie lub w drugim."
     },
     "set_options_empty": {
       "message": "Należy określić co najmniej jedną opcję."
@@ -330,7 +333,7 @@
       "message": "Limit API nie może przekraczać 50 (i prawdopodobnie powinien wynosić 10 lub mniej)."
     },
     "instance_required": {
-      "message": "Załadowano lub wybrano więcej niż jeden wpis Solcast. Wybierz jeden wpis Solcast."
+      "message": "Włączono lub wybrano więcej niż jeden wpis Solcast. Wybierz jeden wpis Solcast."
     },
     "instance_unknown": {
       "message": "Wybrany wpis lub cel nie należy do żadnego załadowanego wpisu Solcast."
@@ -378,7 +381,7 @@
               "auto_update": "Automatyczna aktualizacja"
             },
             "description": "Automatyzacja aktualizacji prognozy nie została uruchomiona. Czy chcesz włączyć automatyczną aktualizację? (Dowiedz się więcej: {learn_more})",
-            "title": "Brak prognoz na przyszłość"
+            "title": "Brak prognoz na przyszłość{instance}"
           }
         }
       },
@@ -433,7 +436,7 @@
       "limit_one_or_greater": "Limit API musi wynosić jeden lub więcej",
       "limit_too_many": "Wprowadzono więcej limitów API niż kluczy",
       "limit_exceeds_maximum": "Limit API nie może przekraczać 50 (i prawdopodobnie powinien wynosić 10 lub mniej).",
-      "rooftop_in_use": "Witryna {rooftops} jest już liczona przez {entries}. Wyklucz ją w jednym z dwóch wpisów.",
+      "rooftop_in_use": "Witryny {rooftops} są już liczone przez {entries}. Wyklucz je w tym wpisie lub w drugim.",
       "all_sites_excluded": "Wszystkie witryny są wykluczone. Pozostaw co najmniej jedną witrynę."
     },
     "step": {

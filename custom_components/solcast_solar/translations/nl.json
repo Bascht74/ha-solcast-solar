@@ -21,7 +21,7 @@
       "instance_name_invalid": "De naam moet een letter of een cijfer bevatten.",
       "instance_name_duplicate": "Die naam is al in gebruik.",
       "instance_name_reserved": "Die naam is gereserveerd voor de bestanden van de eerste vermelding. Kies een andere naam.",
-      "rooftop_in_use": "Site {rooftops} wordt al geteld door {entries}. Sluit hem uit in een van beide vermeldingen.",
+      "rooftop_in_use": "Site(s) {rooftops} al geteld door {entries}. Sluit ze uit in deze vermelding of in de andere.",
       "all_sites_excluded": "Alle sites zijn uitgesloten. Behoud ten minste één site."
     },
     "step": {
@@ -245,6 +245,9 @@
     "export_no_limit": {
       "message": "Een site-exportlimiet moet worden opgegeven als een site-exportentiteit is ingesteld."
     },
+    "export_not_sensor": {
+      "message": "{entity} is geen bestaande energiesensor."
+    },
     "generation_mixed_types": {
       "message": "PV-opwekkingsentiteiten moeten allemaal van hetzelfde type zijn (allemaal energie of allemaal vermogen, geen mix)"
     },
@@ -321,7 +324,7 @@
       "message": "Alle Solcast gegevens wissen mislukt."
     },
     "rooftop_in_use": {
-      "message": "Site {rooftops} wordt al geteld door {entries}. Sluit hem uit in een van beide vermeldingen."
+      "message": "Site(s) {rooftops} al geteld door {entries}. Sluit ze uit in deze vermelding of in de andere."
     },
     "set_options_empty": {
       "message": "Er moet minimaal één optie worden opgegeven."
@@ -330,7 +333,7 @@
       "message": "De API-limiet mag niet hoger zijn dan 50 (en zou waarschijnlijk 10 of minder moeten zijn)."
     },
     "instance_required": {
-      "message": "Er is meer dan één Solcast-vermelding geladen of gekozen. Kies één Solcast-vermelding."
+      "message": "Er is meer dan één Solcast-vermelding ingeschakeld of gekozen. Kies één Solcast-vermelding."
     },
     "instance_unknown": {
       "message": "De gekozen vermelding of het doel hoort niet bij een geladen Solcast-vermelding."
@@ -378,7 +381,7 @@
               "auto_update": "Automatische update"
             },
             "description": "De automatische update van de gegevens is niet actief. Wilt u automatische updates inschakelen? (Meer informatie: {learn_more})",
-            "title": "Toekomstprognoses ontbreken"
+            "title": "Toekomstprognoses ontbreken{instance}"
           }
         }
       },
@@ -433,7 +436,7 @@
       "limit_one_or_greater": "API-limiet moet één of meer zijn",
       "limit_too_many": "Er zijn meer API-limietwaarden ingevoerd dan API-sleutels",
       "limit_exceeds_maximum": "De API-limiet mag niet hoger zijn dan 50 (en zou waarschijnlijk 10 of minder moeten zijn).",
-      "rooftop_in_use": "Site {rooftops} wordt al geteld door {entries}. Sluit hem uit in een van beide vermeldingen.",
+      "rooftop_in_use": "Site(s) {rooftops} al geteld door {entries}. Sluit ze uit in deze vermelding of in de andere.",
       "all_sites_excluded": "Alle sites zijn uitgesloten. Behoud ten minste één site."
     },
     "step": {

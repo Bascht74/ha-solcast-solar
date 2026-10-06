@@ -21,7 +21,7 @@
       "instance_name_invalid": "Názov musí obsahovať písmeno alebo číslicu.",
       "instance_name_duplicate": "Tento názov sa už používa.",
       "instance_name_reserved": "Tento názov je vyhradený pre súbory prvého záznamu. Vyberte iný názov.",
-      "rooftop_in_use": "Stránku {rooftops} už započítava {entries}. Vylúčte ju v jednom z dvoch záznamov.",
+      "rooftop_in_use": "Stránky {rooftops} už započítava {entries}. Vylúčte ich v tomto zázname alebo v druhom.",
       "all_sites_excluded": "Všetky lokality sú vylúčené. Ponechajte aspoň jednu lokalitu."
     },
     "step": {
@@ -245,6 +245,9 @@
     "export_no_limit": {
       "message": "Limit exportu lokality musí byť špecifikovaný, ak je nastavená entita exportu lokality."
     },
+    "export_not_sensor": {
+      "message": "{entity} nie je existujúci senzor energie."
+    },
     "generation_mixed_types": {
       "message": "Všetky jednotky na výrobu fotovoltaiky musia byť rovnakého typu (iba energia alebo iba výkon, nie zmiešané)"
     },
@@ -321,7 +324,7 @@
       "message": "Vymazanie všetkých údajov Solcast zlyhalo."
     },
     "rooftop_in_use": {
-      "message": "Stránku {rooftops} už započítava {entries}. Vylúčte ju v jednom z dvoch záznamov."
+      "message": "Stránky {rooftops} už započítava {entries}. Vylúčte ich v tomto zázname alebo v druhom."
     },
     "set_options_empty": {
       "message": "Musí byť špecifikovaná aspoň jedna možnosť."
@@ -330,7 +333,7 @@
       "message": "Limit API nemôže prekročiť 50 (a pravdepodobne by mal byť 10 alebo menej)."
     },
     "instance_required": {
-      "message": "Je načítaných alebo vybraných viac záznamov Solcast. Vyberte jeden záznam Solcast."
+      "message": "Je zapnutých alebo vybraných viac záznamov Solcast. Vyberte jeden záznam Solcast."
     },
     "instance_unknown": {
       "message": "Vybraný záznam alebo cieľ nepatrí k žiadnemu načítanému záznamu Solcast."
@@ -378,7 +381,7 @@
               "auto_update": "Automatická aktualizácia"
             },
             "description": "Automatizácia aktualizácie prognózy nebola spustená. Chcete povoliť automatickú aktualizáciu? (Viac informácií: {learn_more})",
-            "title": "Predpovede do budúcnosti chýbajú"
+            "title": "Predpovede do budúcnosti chýbajú{instance}"
           }
         }
       },
@@ -433,7 +436,7 @@
       "limit_one_or_greater": "Limit API musí byť jeden alebo väčší",
       "limit_too_many": "Je zadaných viac limitov API ako kľúčov",
       "limit_exceeds_maximum": "Limit API nemôže prekročiť 50 (a pravdepodobne by mal byť 10 alebo menej).",
-      "rooftop_in_use": "Stránku {rooftops} už započítava {entries}. Vylúčte ju v jednom z dvoch záznamov.",
+      "rooftop_in_use": "Stránky {rooftops} už započítava {entries}. Vylúčte ich v tomto zázname alebo v druhom.",
       "all_sites_excluded": "Všetky lokality sú vylúčené. Ponechajte aspoň jednu lokalitu."
     },
     "step": {

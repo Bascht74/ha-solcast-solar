@@ -21,7 +21,7 @@
       "instance_name_invalid": "Der Name muss einen Buchstaben oder eine Ziffer enthalten.",
       "instance_name_duplicate": "Dieser Name ist schon vergeben.",
       "instance_name_reserved": "Dieser Name ist für die Dateien des ersten Eintrags reserviert. Wählen Sie einen anderen Namen.",
-      "rooftop_in_use": "Der Standort {rooftops} wird schon von {entries} gezählt. Schließen Sie ihn in einem der beiden Einträge aus.",
+      "rooftop_in_use": "Standort(e) {rooftops} bereits von {entries} gezählt. Schließen Sie sie in diesem oder im anderen Eintrag aus.",
       "all_sites_excluded": "Alle Standorte sind ausgeschlossen. Behalten Sie mindestens einen Standort."
     },
     "step": {
@@ -245,6 +245,9 @@
     "export_no_limit": {
       "message": "Das Site-Export-Limit muss angegeben werden, wenn eine Site-Export-Entität festgelegt ist."
     },
+    "export_not_sensor": {
+      "message": "{entity} ist kein vorhandener Energiesensor."
+    },
     "generation_mixed_types": {
       "message": "PV-Erzeugungsentitäten müssen alle denselben Typ haben (entweder alle Energie oder alle Leistung, keine Mischung)"
     },
@@ -321,13 +324,13 @@
       "message": "Das Löschen aller Solcast-Daten ist fehlgeschlagen."
     },
     "rooftop_in_use": {
-      "message": "Der Standort {rooftops} wird schon von {entries} gezählt. Schließen Sie ihn in einem der beiden Einträge aus."
+      "message": "Standort(e) {rooftops} bereits von {entries} gezählt. Schließen Sie sie in diesem oder im anderen Eintrag aus."
     },
     "set_options_empty": {
       "message": "Mindestens eine Option muss angegeben werden."
     },
     "instance_required": {
-      "message": "Mehr als ein Solcast-Eintrag ist geladen oder gewählt. Wählen Sie einen Solcast-Eintrag."
+      "message": "Mehr als ein Solcast-Eintrag ist aktiviert oder gewählt. Wählen Sie einen Solcast-Eintrag."
     },
     "instance_unknown": {
       "message": "Der gewählte Eintrag oder das Ziel gehört zu keinem geladenen Solcast-Eintrag."
@@ -378,7 +381,7 @@
               "auto_update": "Automatische Aktualisierung"
             },
             "description": "Es wurde keine Prognoseaktualisierungsautomatisierung ausgeführt. Möchten Sie die automatische Aktualisierung aktivieren? (Weitere Informationen: {learn_more})",
-            "title": "Zukunftsprognosen fehlen"
+            "title": "Zukunftsprognosen fehlen{instance}"
           }
         }
       },
@@ -433,7 +436,7 @@
       "limit_one_or_greater": "Das API-Limit muss eins oder größer sein",
       "limit_too_many": "Es wurden mehr API-Limit-Zähler als Schlüssel eingegeben",
       "limit_exceeds_maximum": "Das API-Limit darf 50 nicht überschreiten (und sollte wahrscheinlich 10 oder weniger betragen).",
-      "rooftop_in_use": "Der Standort {rooftops} wird schon von {entries} gezählt. Schließen Sie ihn in einem der beiden Einträge aus.",
+      "rooftop_in_use": "Standort(e) {rooftops} bereits von {entries} gezählt. Schließen Sie sie in diesem oder im anderen Eintrag aus.",
       "all_sites_excluded": "Alle Standorte sind ausgeschlossen. Behalten Sie mindestens einen Standort."
     },
     "step": {

@@ -22,7 +22,7 @@
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
       "limit_too_many": "There are more API limit counts entered than keys",
-      "rooftop_in_use": "Site {rooftops} is already counted by {entries}. Exclude it in one of the two entries."
+      "rooftop_in_use": "Site(s) {rooftops} already counted by {entries}. Exclude them in this entry or in the other one."
     },
     "step": {
       "reauth_confirm": {
@@ -242,6 +242,9 @@
     "export_no_limit": {
       "message": "A site export limit must be specified if a site export entity is set."
     },
+    "export_not_sensor": {
+      "message": "{entity} is not an existing energy sensor."
+    },
     "generation_mixed_types": {
       "message": "PV generation entities must all be the same type (all energy or all power, not a mix)"
     },
@@ -282,7 +285,7 @@
       "message": "Usage data is corrupt, check or delete `config/solcast_solar/solcast-usage.json`."
     },
     "instance_required": {
-      "message": "More than one Solcast entry is loaded or targeted. Choose one Solcast entry."
+      "message": "More than one Solcast entry is enabled or targeted. Choose one Solcast entry."
     },
     "instance_unknown": {
       "message": "The chosen entry or target does not belong to a loaded Solcast entry."
@@ -333,7 +336,7 @@
       "message": "Clear all Solcast data failed."
     },
     "rooftop_in_use": {
-      "message": "Site {rooftops} is already counted by {entries}. Exclude it in one of the two entries."
+      "message": "Site(s) {rooftops} already counted by {entries}. Exclude them in this entry or in the other one."
     },
     "set_options_empty": {
       "message": "At least one option must be specified."
@@ -381,7 +384,7 @@
               "auto_update": "Auto-update"
             },
             "description": "A forecast update automation has not been running. Would you like to enable auto-update? (Learn more: {learn_more})",
-            "title": "Future forecasts missing"
+            "title": "Future forecasts missing{instance}"
           }
         }
       },
@@ -437,7 +440,7 @@
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
       "limit_too_many": "There are more API limit counts entered than keys",
-      "rooftop_in_use": "Site {rooftops} is already counted by {entries}. Exclude it in one of the two entries."
+      "rooftop_in_use": "Site(s) {rooftops} already counted by {entries}. Exclude them in this entry or in the other one."
     },
     "step": {
       "dampen": {

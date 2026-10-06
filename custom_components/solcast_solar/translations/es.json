@@ -21,7 +21,7 @@
       "instance_name_invalid": "El nombre debe contener una letra o un dígito.",
       "instance_name_duplicate": "Ese nombre ya está en uso.",
       "instance_name_reserved": "Ese nombre está reservado para los archivos de la primera entrada. Elija otro nombre.",
-      "rooftop_in_use": "El sitio {rooftops} ya lo cuenta {entries}. Exclúyalo en una de las dos entradas.",
+      "rooftop_in_use": "Sitio(s) {rooftops} ya contado(s) por {entries}. Exclúyalo(s) en esta entrada o en la otra.",
       "all_sites_excluded": "Todos los sitios están excluidos. Mantenga al menos un sitio."
     },
     "step": {
@@ -245,6 +245,9 @@
     "export_no_limit": {
       "message": "El límite de exportación del sitio debe especificarse si se establece una entidad de exportación del sitio."
     },
+    "export_not_sensor": {
+      "message": "{entity} no es un sensor de energía existente."
+    },
     "generation_mixed_types": {
       "message": "Las entidades de generación fotovoltaica deben ser todas del mismo tipo (toda la energía o toda la potencia, no una mezcla)"
     },
@@ -321,7 +324,7 @@
       "message": "Error al borrar todos los datos de Solcast."
     },
     "rooftop_in_use": {
-      "message": "El sitio {rooftops} ya lo cuenta {entries}. Exclúyalo en una de las dos entradas."
+      "message": "Sitio(s) {rooftops} ya contado(s) por {entries}. Exclúyalo(s) en esta entrada o en la otra."
     },
     "set_options_empty": {
       "message": "Se debe especificar al menos una opción."
@@ -330,7 +333,7 @@
       "message": "El límite de API no puede superar 50 (y probablemente debería ser 10 o menos)."
     },
     "instance_required": {
-      "message": "Hay más de una entrada de Solcast cargada o seleccionada. Elija una entrada de Solcast."
+      "message": "Hay más de una entrada de Solcast activada o seleccionada. Elija una entrada de Solcast."
     },
     "instance_unknown": {
       "message": "La entrada o el destino elegido no pertenece a ninguna entrada de Solcast cargada."
@@ -378,7 +381,7 @@
               "auto_update": "Actualización automática"
             },
             "description": "No se ha ejecutado una actualización automática de pronóstico. ¿Le gustaría habilitar la actualización automática? (Obtenga más información: {learn_more})",
-            "title": "Faltan previsiones de futuro"
+            "title": "Faltan previsiones de futuro{instance}"
           }
         }
       },
@@ -433,7 +436,7 @@
       "limit_one_or_greater": "El límite de API debe ser uno o mayor",
       "limit_too_many": "Se ingresaron más recuentos de límites de API que claves",
       "limit_exceeds_maximum": "El límite de API no puede superar 50 (y probablemente debería ser 10 o menos).",
-      "rooftop_in_use": "El sitio {rooftops} ya lo cuenta {entries}. Exclúyalo en una de las dos entradas.",
+      "rooftop_in_use": "Sitio(s) {rooftops} ya contado(s) por {entries}. Exclúyalo(s) en esta entrada o en la otra.",
       "all_sites_excluded": "Todos los sitios están excluidos. Mantenga al menos un sitio."
     },
     "step": {
