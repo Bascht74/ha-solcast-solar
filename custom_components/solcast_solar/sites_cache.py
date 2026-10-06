@@ -776,7 +776,7 @@ class SitesCache:
         """
         if self._counted_unmarked is None:
             version = await self.api.hass.async_add_executor_job(_cache_version, self.api.filename)
-            self._counted_unmarked = version == _COUNTED_ACTUALS_UNMARKED
+            self._counted_unmarked = (version or "").removeprefix("v") == _COUNTED_ACTUALS_UNMARKED
         return self._counted_unmarked
 
     async def reset_api_usage(self, force: bool = False) -> None:

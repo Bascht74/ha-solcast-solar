@@ -53,7 +53,7 @@ rules:
     comment: |
       The whole suite covers every statement, the bodies of `try:` blocks included. tests/.coveragerc excludes
       only `pragma: no cover`, type-checking imports and fall-backs for older Core versions; CI requires 100 %
-      on two Core versions.
+      on three Core versions.
   # Gold
   devices: done
   diagnostics: done

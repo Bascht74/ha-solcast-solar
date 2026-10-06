@@ -196,6 +196,7 @@ async def test_clocks_forward_in_london(
     ("written_by", "expected"),
     [
         pytest.param("4.7.0.2", 3, id="4.7.0.2_counted_them_already"),
+        pytest.param("v4.7.0.2", 3, id="v4.7.0.2_from_the_hacs_zip"),
         pytest.param("4.7.0.1", 4, id="4.7.0.1_did_not_count_them"),
     ],
 )
