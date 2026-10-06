@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict, defaultdict
+from collections.abc import Iterable
 import copy
 from datetime import UTC, date, datetime as dt, timedelta
 from itertools import pairwise
@@ -45,6 +46,7 @@ from .const import (
     ADVANCED_GRANULAR_DAMPENING_DELTA_ADJUSTMENT,
     ADVANCED_HISTORY_MAX_DAYS,
     ALL,
+    DEFAULT_DAMPENING_SIMILAR_PEAK,
     DOMAIN,
     DT_DATE_FORMAT,
     DT_DATE_FORMAT_SHORT,
@@ -84,6 +86,7 @@ from .redact import format_site_key
 from .util import (
     azimuth_to_compass_degrees,
     diff,
+    ease_insignificant,
     interquartile_bounds,
     percentile,
     write_file_atomic,
@@ -320,6 +323,7 @@ class Dampening:
         self.granular_serialising = False
         self.factors: dict[str, list[float]] = {}
         self.factors_mtime: float = 0
+        self.target_peak_intervals: dict[int, float] | None = None  # Peaks the model compared with, see adjustment_peak()
 
     def allow_granular_reset(self) -> bool:
         """Allow options change to reset the granular dampening file to an empty dictionary."""
@@ -340,13 +344,12 @@ class Dampening:
     def adjusted_interval_dt(self, interval: dt) -> int:
         """Adjust a datetime as standard time."""
         interval_tz = interval.astimezone(self.api.tz)
-        offset = 1 if self.api.dt_helper.dst(interval_tz) else 0
-        return self._interval_index_from_tz_dt(interval_tz, offset)
+        return self._interval_index_from_tz_dt(interval_tz, self.api.dt_helper.dst_offset(interval_tz))
 
     @staticmethod
-    def _interval_index_from_tz_dt(period_start_tz: dt, offset: int) -> int:
-        """Return the interval index (0-47) from a timezone-aware datetime and DST offset."""
-        return ((period_start_tz.hour - offset) * 2 + period_start_tz.minute // 30) if period_start_tz.hour - offset >= 0 else 0
+    def _interval_index_from_tz_dt(period_start_tz: dt, offset: timedelta) -> int:
+        """Return the interval index (0-47) from a timezone-aware datetime and its DST offset, early intervals capped at 0."""
+        return max(0, period_start_tz.hour * 2 + period_start_tz.minute // 30 - offset // timedelta(minutes=HALF_HOUR_MINUTES))
 
     @staticmethod
     def _tilt_incidence_gain(elevation: float, solar_azimuth: float, tilt: float, panel_azimuth: float) -> float:
@@ -422,11 +425,8 @@ class Dampening:
         if self.api.data_undampened[SITE_INFO]:
             _LOGGER.debug("Applying future dampening")
 
-            self.auto_factors = {
-                period_start: factor
-                for period_start, factor in self.auto_factors.items()
-                if period_start >= self.api.dt_helper.day_start_utc()
-            }
+            # Factors of this run only, so a period that only a later site reaches gets this run's factor, not the last run's.
+            auto_factors: dict[dt, float] = {}
 
             undampened_interval_pv50: defaultdict[dt, float] = defaultdict(float)
             for site in self.api.sites:
@@ -474,9 +474,9 @@ class Dampening:
                             undampened_interval_pv50.get(period_start, -1),
                             record_adjustment=record_adjustment,
                         )
-                        if record_adjustment or period_start not in self.auto_factors:
+                        if record_adjustment or period_start not in auto_factors:
                             # Also a period the first site lacks, as a site fetched at another time can reach further ahead.
-                            self.auto_factors[period_start] = dampening_factor
+                            auto_factors[period_start] = dampening_factor
                         pv_dampened = round(pv * dampening_factor, 4)
                         pv10_dampened = round(pv10 * dampening_factor, 4)
                         pv90_dampened = round(pv90 * dampening_factor, 4)
@@ -498,6 +498,13 @@ class Dampening:
                 await self.api.fetcher.sort_and_prune(
                     site_id, self.api.data, self.api.advanced_options[ADVANCED_HISTORY_MAX_DAYS], forecasts
                 )
+
+            # Periods of sites left out of this run keep their factor.
+            self.auto_factors = {
+                period_start: factor
+                for period_start, factor in self.auto_factors.items()
+                if period_start >= self.api.dt_helper.day_start_utc() and period_start not in auto_factors
+            } | auto_factors
 
     async def apply_yesterday(self) -> None:
         """Apply dampening to yesterday's estimated actuals."""
@@ -1442,6 +1449,7 @@ class Dampening:
         if not self.api.options.auto_dampen and not force:
             _LOGGER.debug("Automated dampening is not enabled, skipping dampening model_automated()")
             await self.prepare_data(only_peaks=True)
+            self.target_peak_intervals = None
             return
 
         if await self.check_deal_breaker_automated():
@@ -1539,17 +1547,24 @@ class Dampening:
 
     def _adjusted_interval(self, interval: dict[str, Any]) -> int:
         """Adjust a forecast/actual interval as standard time."""
-        period_start_tz = interval[PERIOD_START].astimezone(self.api.tz)
-        offset = 1 if self.api.dt_helper.is_interval_dst(interval) else 0
-        return self._interval_index_from_tz_dt(period_start_tz, offset)
+        return self.adjusted_interval_dt(interval[PERIOD_START])
+
+    def adjustment_peak(self, interval: int) -> float:
+        """Return the peak estimated actual a forecast is compared with by delta adjustment.
+
+        With elevation adjustment it is the peak normalised to the sun of the day the factors were modelled for, as the
+        model compared generation with that peak. Otherwise, and before the model ran, it is the peak as recorded.
+        """
+        return (self.target_peak_intervals if self.target_peak_intervals is not None else self.api.peak_intervals)[interval]
 
     def apply_adjustment(self, interval_pv50, factor, interval, delta_adjustment_model) -> float:
         """Applies selected delta_adjustment_model to past dampening factor."""
+        peak = self.adjustment_peak(interval)
         match delta_adjustment_model:
             case 1:
                 # Adjust the factor based on how far the forecast falls short of the peak interval, squared.
                 # A forecast at or above the peak keeps the factor, and the factor never exceeds 1.0.
-                shortfall = max(0.0, 1.0 - (interval_pv50 / self.api.peak_intervals[interval]))
+                shortfall = max(0.0, 1.0 - (interval_pv50 / peak))
                 factor = max(factor, min(1.0, factor + ((1.0 - factor) * (shortfall**2))))
             case _:
                 # Adjust the factor based on forecast vs. peak interval delta-logarithmically.
@@ -1557,7 +1572,7 @@ class Dampening:
                     factor,
                     min(
                         1.0,
-                        factor + ((1.0 - factor) * (math.log(self.api.peak_intervals[interval]) - math.log(interval_pv50))),
+                        factor + ((1.0 - factor) * (math.log(peak) - math.log(interval_pv50))),
                     ),
                 )
 
@@ -1624,6 +1639,8 @@ class Dampening:
         """Applies selected dampening_model to passed data to calculate list of dampening factors."""
 
         dampening = [1.0] * INTERVALS_PER_DAY  # Initialise dampening factors
+        known = [False] * INTERVALS_PER_DAY  # A factor modelled from data (1.0 included) or preserved
+        unknown: list[int] = []  # Matched intervals with too few samples for a factor of their own
 
         apply_elevation_adjustment = bool(self.api.advanced_options.get(ADVANCED_AUTOMATED_DAMPENING_ELEVATION_ADJUSTMENT, False))
         if apply_elevation_adjustment and target_day is None:
@@ -1633,14 +1650,11 @@ class Dampening:
         # actuals across MODEL_DAYS. It is normalised here (when elevation adjustment is enabled) to target_day's sun elevation.
         peak_intervals: dict[int, float] = self.api.peak_intervals
         if apply_elevation_adjustment and target_day is not None:
-            normalised_peaks: dict[int, float] = dict.fromkeys(range(INTERVALS_PER_DAY), 0.0)
-            for period_start, actual in actuals.items():
-                ratio = self.elevation_adjustment_ratio(period_start, self._target_timestamp(period_start, target_day))
-                adjusted = actual * ratio
-                idx = self.adjusted_interval_dt(period_start)
-                if normalised_peaks[idx] < adjusted:
-                    normalised_peaks[idx] = round(adjusted, 3)
-            peak_intervals = normalised_peaks
+            normalised, peak_intervals = self._normalise_to_target_day(actuals, target_day)
+            if dampening_model not in (1, 2, 3):
+                # The default model divides by the normalised peak, so it also matches the days against it. Against the
+                # recorded peak only the oldest days match near sunrise and sunset in spring and autumn, too few for a factor.
+                matching_intervals = self._similar_to_peak(normalised, peak_intervals, matching_intervals)
 
         # Check the generation for each interval and determine if it is consistently lower than the peak.
         for interval, matching in matching_intervals.items():
@@ -1648,14 +1662,7 @@ class Dampening:
             if self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_PRESERVE_UNMATCHED_FACTORS]:
                 prior_factor = self.factors[ALL][interval] if self.factors.get(ALL) is not None else 1.0
 
-            dst_offset = (
-                1
-                if self.api.dt_helper.dst(
-                    dt_util.now(self.api.tz).replace(hour=interval // 2, minute=30 * (interval % 2), second=0, microsecond=0)
-                )
-                else 0
-            )
-            interval_time = f"{interval // 2 + (dst_offset):02}:{30 * (interval % 2):02}"
+            interval_time = self._interval_time(interval)
             if interval in ignored_intervals:
                 if verbose_log:
                     _LOGGER.debug("Interval %s is intentionally ignored, skipping", interval_time)
@@ -1731,12 +1738,9 @@ class Dampening:
                                         case 3:  # min factor from matched pairs
                                             factor = min(raw_factors)
                                     factor = round(factor, 3) if factor > 0 else 1.0
-                                    if self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR] <= factor < 1.0:
-                                        msg = f"Ignoring insignificant factor for {interval_time} of {factor:.3f}"
-                                        factor = 1.0
-                                    else:
-                                        msg = f"Auto-dampen factor for {interval_time} is {factor:.3f}"
+                                    msg, factor = self._insignificant_eased(factor, interval_time)
                                     dampening[interval] = factor
+                                    known[interval] = True
                                 msg = (
                                     f"Mismatched sample lengths for {interval_time}: {len(actual_samples)} actuals vs {len(generation_samples)} generations"
                                     if len(actual_samples) != len(generation_samples)
@@ -1758,13 +1762,9 @@ class Dampening:
                                     len(generation_samples)
                                     >= self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_MINIMUM_MATCHING_GENERATION]
                                 ):
-                                    factor = (peak / peak_intervals[interval]) if peak_intervals[interval] != 0 else 1.0
-                                    if self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR] <= factor < 1.0:
-                                        msg = f"Ignoring insignificant factor for {interval_time} of {factor:.3f}"
-                                        factor = 1.0
-                                    else:
-                                        msg = f"Auto-dampen factor for {interval_time} is {factor:.3f}"
-                                    dampening[interval] = round(factor, 3)
+                                    factor = round(peak / peak_intervals[interval], 3) if peak_intervals[interval] != 0 else 1.0
+                                    msg, dampening[interval] = self._insignificant_eased(factor, interval_time)
+                                    known[interval] = True
                                 else:
                                     msg = f"Not enough reliable generation samples for {interval_time} to determine dampening ({len(generation_samples)})"
                                     preserve_this_interval = self.api.advanced_options[
@@ -1772,6 +1772,7 @@ class Dampening:
                                     ]
                             else:
                                 log_msg = False
+                                known[interval] = True  # Generation reached the peak: a measured 1.0
 
                 if not preserve_this_interval:
                     msg = (
@@ -1786,12 +1787,62 @@ class Dampening:
 
                 if preserve_this_interval:
                     dampening[interval] = prior_factor
+                    known[interval] = True
                     msg = msg + f", preserving prior factor {prior_factor:.3f}" if prior_factor != 1.0 else msg
+                elif not known[interval]:
+                    unknown.append(interval)
 
                 if log_msg and msg != "" and verbose_log:
                     _LOGGER.debug(msg)
 
-        return dampening
+        return self._smooth_factors(dampening, known, unknown, verbose_log)
+
+    def _insignificant_eased(self, factor: float, interval_time: str) -> tuple[str, float]:
+        """Return the log message and a modelled factor eased towards 1.0 near the insignificant threshold."""
+        eased = ease_insignificant(factor, self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR])
+        if eased == 1.0 and factor < 1.0:
+            return f"Ignoring insignificant factor for {interval_time} of {factor:.3f}", eased
+        if eased != factor:
+            return f"Auto-dampen factor for {interval_time} is {eased:.3f}, eased towards 1.0 from {factor:.3f}", eased
+        return f"Auto-dampen factor for {interval_time} is {factor:.3f}", factor
+
+    def _smooth_factors(self, dampening: list[float], known: list[bool], unknown: list[int], verbose_log: bool) -> list[float]:
+        """Fill matched intervals that lack samples from their neighbours, then remove a 1.0 between dampened neighbours.
+
+        An interval with too few samples would otherwise stay at 1.0 between dampened neighbours, and one sample day more
+        or less flips it, so the dampened forecast jumps between half hours. It takes the straight line between the nearest
+        modelled intervals on both sides; without one on both sides it stays at 1.0, so nothing is extended beyond them.
+        A 1.0 between two dampened neighbours, from generation that reached the peak or an insignificant factor, takes the
+        median of the three, the higher neighbour. Other factors keep their value, so shading measured in a single
+        interval stays. Intervals without matches (night) or ignored ones neither change nor count as neighbours.
+        """
+        filled = list(known)
+        modelled = [interval for interval, is_known in enumerate(known) if is_known]
+        for interval in unknown:
+            before = [i for i in modelled if i < interval]
+            after = [i for i in modelled if i > interval]
+            if before and after:
+                left, right = before[-1], after[0]
+                dampening[interval] = round(dampening[left] + (dampening[right] - dampening[left]) * (interval - left) / (right - left), 3)
+                filled[interval] = True
+                if verbose_log:
+                    _LOGGER.debug("Interpolated factor for %s is %.3f", self._interval_time(interval), dampening[interval])
+
+        smoothed = list(dampening)
+        for interval in range(1, INTERVALS_PER_DAY - 1):
+            if dampening[interval] == 1.0 and filled[interval - 1] and filled[interval] and filled[interval + 1]:
+                smoothed[interval] = max(dampening[interval - 1], dampening[interval + 1])
+                if verbose_log and smoothed[interval] != 1.0:
+                    _LOGGER.debug("Smoothed factor for %s is %.3f (was 1.000)", self._interval_time(interval), smoothed[interval])
+        return smoothed
+
+    def _interval_time(self, interval: int) -> str:
+        """Return the local time of a standard-time interval today, for the log."""
+        offset = self.api.dt_helper.dst_offset(
+            dt_util.now(self.api.tz).replace(hour=interval // 2, minute=30 * (interval % 2), second=0, microsecond=0)
+        )
+        local = interval + offset // timedelta(minutes=HALF_HOUR_MINUTES)
+        return f"{local // 2:02}:{30 * (local % 2):02}"
 
     @staticmethod
     def _get_earliest_estimate_after(data: list[dict[str, Any]], after: dt, dampened: bool = False) -> dt | None:
@@ -1810,7 +1861,7 @@ class Dampening:
 
     def _get_granular_factor(self, site: str, period_start: dt, interval_pv50: float = -1.0, record_adjustment: bool = False) -> float:
         """Retrieve a granular dampening factor."""
-        index = period_start.hour if len(self.factors[site]) == 24 else ((period_start.hour * 2) + (1 if period_start.minute > 0 else 0))
+        index = period_start.hour if len(self.factors[site]) == 24 else period_start.hour * 2 + period_start.minute // 30
         factor = self.factors[site][index]
         if (
             site == ALL
@@ -1822,7 +1873,7 @@ class Dampening:
             factor = min(1.0, self.factors[ALL][interval if self.api.options.auto_dampen else index])
             if (
                 not self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_NO_DELTA_ADJUSTMENT]
-                and self.api.peak_intervals[interval] > 0
+                and self.adjustment_peak(interval) > 0
                 and interval_pv50 > 0
                 and factor < 1.0
             ):
@@ -1846,17 +1897,23 @@ class Dampening:
                         interval_time,
                         factor,
                         factor_pre_adjustment,
-                        self.api.peak_intervals[interval],
+                        self.adjustment_peak(interval),
                         interval_pv50,
                     )
-                factor = 1.0 if factor >= self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR_ADJUSTED] else factor
+                factor = ease_insignificant(
+                    factor, self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR_ADJUSTED], factor_pre_adjustment
+                )
 
         return min(1.0, factor)
 
     async def prepare_data(
-        self, only_peaks: bool = False, until: dt | None = None
+        self, only_peaks: bool = False, until: dt | None = None, target_day: dt | None = None
     ) -> tuple[OrderedDict[dt, float], list[int], dict[dt, float], dict[int, list[dt]]]:
-        """Builds data required for dampening calculations, for the model days before until (default today)."""
+        """Builds data required for dampening calculations, for the model days before until (default today).
+
+        target_day is the day the factors are modelled for (default today). With elevation adjustment the peaks kept for
+        delta adjustment are normalised to its sun.
+        """
         actuals: OrderedDict[dt, float] = OrderedDict()
         model_days: int = self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_MODEL_DAYS]
         day_end = until or self.api.dt_helper.day_start_utc()
@@ -1893,7 +1950,6 @@ class Dampening:
 
         ignore_intervals_cfg: list[str] = self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_IGNORE_INTERVALS]
         no_limiting: bool = self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_NO_LIMITING_CONSISTENCY]
-        similar_peak: float = self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_SIMILAR_PEAK]
 
         ignored_intervals: list[int] = []  # Intervals to ignore in local time zone
         for time_string in ignore_intervals_cfg:
@@ -1917,10 +1973,37 @@ class Dampening:
             elif not gen[EXPORT_LIMITING]:
                 generation[gen[PERIOD_START]] = gen[GENERATION]
 
+        # Delta adjustment compares a forecast with the peak the default model divides by, with elevation adjustment the
+        # peak normalised to the target day's sun.
+        self.target_peak_intervals = (
+            self._normalise_to_target_day(actuals, target_day or self.api.dt_helper.day_start_utc())[1]
+            if self.api.advanced_options.get(ADVANCED_AUTOMATED_DAMPENING_ELEVATION_ADJUSTMENT, False)
+            else dict(self.api.peak_intervals)
+        )
+
         # Collect intervals that are close to the peak.
-        matching_intervals: dict[int, list[dt]] = {i: [] for i in range(INTERVALS_PER_DAY)}
+        matching_intervals = self._similar_to_peak(actuals, self.api.peak_intervals, range(INTERVALS_PER_DAY))
+        return actuals, ignored_intervals, generation, matching_intervals
+
+    def _similar_to_peak(self, actuals: dict[dt, float], peaks: dict[int, float], intervals: Iterable[int]) -> dict[int, list[dt]]:
+        """Return per interval the periods whose estimated actual is close to the interval's peak."""
+        similar_peak: float = self.api.advanced_options.get(ADVANCED_AUTOMATED_DAMPENING_SIMILAR_PEAK, DEFAULT_DAMPENING_SIMILAR_PEAK)
+        matching_intervals: dict[int, list[dt]] = {interval: [] for interval in intervals}
         for period_start, actual in actuals.items():
             interval = self.adjusted_interval_dt(period_start)
-            if actual > similar_peak * self.api.peak_intervals[interval]:
+            if interval in matching_intervals and actual > similar_peak * peaks[interval]:
                 matching_intervals[interval].append(period_start)
-        return actuals, ignored_intervals, generation, matching_intervals
+        return matching_intervals
+
+    def _normalise_to_target_day(self, actuals: dict[dt, float], target_day: dt) -> tuple[dict[dt, float], dict[int, float]]:
+        """Return the estimated actuals scaled to the sun of target_day, and their peak per standard-time interval."""
+        normalised: dict[dt, float] = {}
+        peaks: dict[int, float] = dict.fromkeys(range(INTERVALS_PER_DAY), 0.0)
+        for period_start, actual in actuals.items():
+            normalised[period_start] = adjusted = actual * self.elevation_adjustment_ratio(
+                period_start, self._target_timestamp(period_start, target_day)
+            )
+            interval = self.adjusted_interval_dt(period_start)
+            if peaks[interval] < adjusted:
+                peaks[interval] = round(adjusted, 3)
+        return normalised, peaks

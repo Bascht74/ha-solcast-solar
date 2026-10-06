@@ -48,7 +48,7 @@ from .const import (
     VALUE_ADAPTIVE_DAMPENING_NO_DELTA,
 )
 from .dates import NoIndentEncoder
-from .util import ordinal, write_file_atomic
+from .util import ease_insignificant, ordinal, write_file_atomic
 
 if TYPE_CHECKING:
     from .dampen import Dampening
@@ -364,9 +364,8 @@ class DampeningAdaptive:
         """Add the dampening factors of all models for the day days_ago, from the model days before its end."""
 
         day_end = self.dampening.api.dt_helper.day_start_utc(future=1 - days_ago)
-        actuals, ignored_intervals, generation, matching_intervals = await self.dampening.prepare_data(until=day_end)
-
         day = self.dampening.api.dt_helper.day_start_utc(future=-days_ago)
+        actuals, ignored_intervals, generation, matching_intervals = await self.dampening.prepare_data(until=day_end, target_day=day)
 
         # Build undampened pv50 estimates for the day
 
@@ -408,22 +407,17 @@ class DampeningAdaptive:
                 for period_start, period_value in undampened_interval_pv50.items():
                     interval = self.dampening.adjusted_interval_dt(period_start)
                     if (
-                        self.dampening.api.peak_intervals[interval] > 0
+                        self.dampening.adjustment_peak(interval) > 0
                         and period_value > 0
                         and dampening[interval] < 1.0
                         and period_start in actuals
                     ):
-                        adjusted_dampening[interval] = self.dampening.apply_adjustment(
-                            actuals[period_start], dampening[interval], interval, delta_adjustment
-                        )  # Adjust based on actual vs peak rather than forecast vs peak
-                        adjusted_dampening[interval] = (
-                            1.0
-                            if (
-                                self.dampening.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR]
-                                <= adjusted_dampening[interval]
-                                < 1.0
-                            )
-                            else adjusted_dampening[interval]
+                        adjusted_dampening[interval] = ease_insignificant(
+                            self.dampening.apply_adjustment(
+                                actuals[period_start], dampening[interval], interval, delta_adjustment
+                            ),  # Adjust based on actual vs peak rather than forecast vs peak
+                            self.dampening.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR],
+                            dampening[interval],
                         )
 
                 self._add_history(

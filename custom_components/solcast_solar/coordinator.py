@@ -349,11 +349,12 @@ class SolcastUpdateCoordinator(DataUpdateCoordinator):
                 }
                 if self.solcast.options.auto_dampen:
                     factors: dict[str, dict[str, Any]] = {}
-                    dst = False
                     now_local = dt.now(self.solcast.options.tz)
                     for i, f in enumerate(self.solcast.dampening.factors.get(ALL, [])):
-                        dst = now_local.replace(hour=i // 2, minute=i % 2 * 30, second=0, microsecond=0).dst() == timedelta(hours=1)
-                        interval = f"{i // 2 + (1 if dst else 0):02d}:{i % 2 * 30:02d}"
+                        # Factors are in standard time; daylight savings time can also be half an hour (Lord Howe Island).
+                        dst = now_local.replace(hour=i // 2, minute=i % 2 * 30, second=0, microsecond=0).dst() or timedelta(0)
+                        local = i + max(dst, timedelta(0)) // timedelta(minutes=30)
+                        interval = f"{local // 2:02d}:{local % 2 * 30:02d}"
                         factors[interval] = {
                             INTERVAL: interval,
                             FACTOR: f,
@@ -362,9 +363,8 @@ class SolcastUpdateCoordinator(DataUpdateCoordinator):
                         if factors.get(hour + ":00") is None:
                             factors[hour + ":00"] = {INTERVAL: hour + ":00", FACTOR: 1}
                             factors[hour + ":30"] = {INTERVAL: hour + ":30", FACTOR: 1}
-                    if factors.get("24:00"):
-                        factors.pop("24:00")
-                        factors.pop("24:30")
+                    factors.pop("24:00", None)
+                    factors.pop("24:30", None)
                     ret[FACTORS] = sorted(factors.values(), key=itemgetter(INTERVAL))
                 else:
                     ret[FACTORS] = [

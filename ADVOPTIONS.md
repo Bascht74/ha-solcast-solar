@@ -69,7 +69,7 @@ Past data used to model dampening for today was recorded on days when the sun tr
 
 When this option is enabled the integration computes a geometry-normalised ratio between past and present timestamps for every past half-hour sample used in modelling. This normalises historical PV generation samples from a prior day to the expected solar contribution on the present day, compensating for solar-geometry drift. Said another way, your given panel tilt and azimuth will subtly change generation over time based on where the sun would be, so this mechanism compensates for that in automated dampening computations to improve peak interval comparison.
 
-The peak estimated actual used by the default model is likewise normalised to today's sun geometry. Dampening models 1/2/3 compare each generation sample with the estimated actual of the same half-hour, which already shares its sun geometry, so they use no ratio.
+The peak estimated actual used by the default model is likewise normalised to today's sun geometry, and the default model also finds its "matching" days against that normalised peak. Delta adjustment compares the forecast with the normalised peak too. Dampening models 1/2/3 compare each generation sample with the estimated actual of the same half-hour, which already shares its sun geometry, so they use no ratio.
 
 **Key: "automated_dampening_generation_fetch_delay"**
 
@@ -105,13 +105,13 @@ An example list: `["12:00", "12:30", "13:00", "13:30", "14:00", "14:30", "15:00"
 
 Possible values: float `0.0`..`1.0` (default `0.95`)
 
-Dampening values modelled as higher than a certain threshold are ignored as insignificant.
+Dampening values modelled at or above a certain threshold are ignored as insignificant (set to 1.0). Values in a band below the threshold, as wide as the gap between the threshold and 1.0 (0.90 to 0.95 by default), are eased towards 1.0 in a straight line, so there is no step at the threshold. A value of `1.0` ignores nothing.
 
 **Key: "automated_dampening_insignificant_factor_adjusted"**
 
 Possible values: float `0.0`..`1.0` (default `0.95`)
 
-Dampening values adjusted by delta adjustment as higher than a certain threshold are ignored as insignificant.
+Dampening values adjusted by delta adjustment at or above a certain threshold are ignored as insignificant, and eased towards 1.0 below it in the same way. The band starts no lower than the factor before adjustment, so a factor is not raised a second time.
 
 **Key: "automated_dampening_minimum_matching_generation"**
 
@@ -125,7 +125,7 @@ This value must be less than or equal to the minimum matching intervals or the n
 
 Possible values: integer `1`..`21` (default `2`)
 
-Dampening modelling will skip intervals where there are a low number of matching past intervals. A low number of matches are generally seen at the beginning and end of each day, and these are ignored by default.
+Dampening modelling will skip intervals where there are a low number of matching past intervals. A low number of matches are generally seen at the beginning and end of each day. A skipped interval takes the straight line between the nearest modelled intervals before and after it, and stays at 1.0 where there is none on one side (see `automated_dampening_preserve_unmatched_factors`).
 
 This value must be greater than or equal to the minimum matching generation, or higher than the number of past days considered for automated dampening.
 
@@ -171,7 +171,7 @@ Set this option to `true` to prevent this behaviour.
 
 Possible values: boolean `true`/`false` (default `false`)
 
-Default behaviour when calculating base dampening factors is that any interval with insufficient matching intervals or generation (see `automated_dampening_minimum_matching_generation` and `automated_dampening_minimum_matching_intervals`) will have a dampening factor of 1.0.  This can be an issue if there is a sustained period of poor solar generation (e.g. a sustained cloudy spell) when previously calculated dampening factors for these intervals may be reset to 1.0 leading to a higher generation forecast until sufficient 'good' intervals are recorded and the dampening factors can be recalculated.
+Default behaviour when calculating base dampening factors is that any interval with insufficient matching intervals or generation (see `automated_dampening_minimum_matching_generation` and `automated_dampening_minimum_matching_intervals`) takes the straight line between the nearest modelled intervals before and after it, or a dampening factor of 1.0 when there is none on one side, as at the start and end of the day. A factor of 1.0 between two dampened intervals, for example where generation reached the peak, takes the higher of its neighbours.  This can be an issue if there is a sustained period of poor solar generation (e.g. a sustained cloudy spell) when previously calculated dampening factors for these intervals may be reset to 1.0 leading to a higher generation forecast until sufficient 'good' intervals are recorded and the dampening factors can be recalculated.
 
 Setting this option to `true` will retain the previously calculated factor for such an interval, with factors reverting to 1.0 when all recent estimated actuals for the interval are 0.
 

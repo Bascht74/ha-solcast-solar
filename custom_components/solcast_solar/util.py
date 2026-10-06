@@ -83,6 +83,19 @@ def percentile(data: list[Any], _percentile: float) -> float | int:
     return round(d0 + d1, 4)
 
 
+def ease_insignificant(factor: float, threshold: float, start: float = 0.0) -> float:
+    """Return a dampening factor eased towards 1.0 below the insignificant threshold, rounded to three places.
+
+    A factor at or above the threshold is 1.0. Below it the factor rises in a straight line over a band as wide as the
+    gap between the threshold and 1.0 (0.90 to 0.95 by default), so a factor just below the threshold no longer stays
+    while one just above it jumps to 1.0. A threshold of 1.0 leaves every factor as it is.
+
+    For a factor raised by delta adjustment, start is the factor before it: the band then begins there at the earliest,
+    so a factor that was eased already, or that delta adjustment left alone, is not raised a second time.
+    """
+    return min(1.0, max(round(factor, 3), round(2 * factor - max(2 * threshold - 1, start), 3)))
+
+
 def ordinal(value: int) -> str:
     """Return a number with an ordinal suffix."""
 

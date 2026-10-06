@@ -1012,7 +1012,7 @@ Having `DEBUG` level logging enabled for the integration will expose what happen
 
 ##### Automated dampening notes
 
-A modelled factor of greater than 0.95 is considered insignificant and is ignored. Feedback is welcomed as to whether these small factors should be significant and utilised.
+A modelled factor of 0.95 or more is considered insignificant and is ignored. Factors between 0.90 and 0.95 are eased towards 1.0, so the dampened forecast has no step at 0.95. Feedback is welcomed as to whether these small factors should be significant and utilised.
 
 These small factors would be corrected based on forecasted generation, so a case could be made to not ignore them. However a small and regular deviation from forecast is likely due to rooftop site misconfiguration or seasonal drift, and not shading.
 

@@ -41,11 +41,17 @@ class DateTimeHelper:
 
     def dst(self, dt_obj: dt | None = None) -> bool:
         """Return whether a given date is daylight savings time, or for zones using winter time whether summer time."""
-        result = False
-        if dt_obj is not None:
-            delta = timedelta(hours=1) if not self.is_dublin else timedelta(hours=0)
-            result = dt_obj.astimezone(self._tz).dst() == delta
-        return result
+        return dt_obj is not None and bool(self.dst_offset(dt_obj))
+
+    def dst_offset(self, dt_obj: dt) -> timedelta:
+        """Return how far local time is ahead of standard time, or for zones using winter time of winter time.
+
+        Daylight savings time is not always an hour: Lord Howe Island moves the clocks by half an hour.
+        """
+        offset = dt_obj.astimezone(self._tz).dst() or timedelta(0)
+        if self.is_dublin:
+            return timedelta(hours=1) if offset == timedelta(0) else timedelta(0)
+        return max(offset, timedelta(0))
 
     def hour_start_utc(self) -> dt:
         """Return the UTC datetime representing the start of the current hour."""
