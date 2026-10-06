@@ -43,7 +43,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
     """
     coordinator: SolcastUpdateCoordinator = entry.runtime_data.coordinator
     energy_data = coordinator.solcast.query.get_energy_data()
-    health_check = build_health_check_report(hass, coordinator, coordinator.solcast)
+    health_check = await build_health_check_report(hass, coordinator, coordinator.solcast)
 
     return {
         "tz_conversion": coordinator.solcast.options.tz,

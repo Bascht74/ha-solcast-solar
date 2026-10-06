@@ -31,9 +31,10 @@ rules:
   unique-config-entry:
     status: done
     comment: |
-      Several entries are allowed. Each needs a name of its own (the unique ID of a new entry) and an API key
-      of its own, and a rooftop can be counted by one entry only; the user, reconfigure, reauth and options
-      flows and the set_options action check this. Entries that already share a key keep loading.
+      Several entries are allowed. Each needs a name of its own (the unique ID of a new entry). Entries may share
+      an API key, but a site is fetched by one entry only: a new key leaves the sites another entry fetches
+      excluded, and the user, reconfigure, reauth and options flows and the set_options action refuse a site
+      fetched elsewhere. A repair names the entries of a key whose API limits add up to more than ten.
   # Silver
   action-exceptions: done
   config-entry-unloading: done
@@ -50,8 +51,9 @@ rules:
   test-coverage:
     status: done
     comment: |
-      The whole suite covers every statement. tests/.coveragerc excludes only `pragma: no cover`, type-checking
-      imports, bare `try:` lines and fall-backs for older Core versions; CI requires 100 % on two Core versions.
+      The whole suite covers every statement, the bodies of `try:` blocks included. tests/.coveragerc excludes
+      only `pragma: no cover`, type-checking imports and fall-backs for older Core versions; CI requires 100 %
+      on two Core versions.
   # Gold
   devices: done
   diagnostics: done

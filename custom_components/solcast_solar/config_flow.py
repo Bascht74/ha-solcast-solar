@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.config_entries import (
@@ -86,6 +84,7 @@ from .instance import (
     advanced_file_path,
     cache_file_path,
     check_rooftops,
+    entry_rooftops,
     entry_slug,
     entry_title,
     instance_name,
@@ -98,6 +97,12 @@ from .migration import sync_legacy_keys
 from .solcastapi import ConnectionOptions, SolcastApi
 from .state import set_sensitive
 from .validators import (
+    All,
+    Coerce,
+    Optional,
+    Range,
+    Required,
+    Schema,
     validate_api_key,
     validate_api_limit,
     validate_custom_hours_value,
@@ -272,9 +277,9 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(
+                Schema(
                     {
-                        vol.Required(CONF_API_KEY, default=all_config_data[CONF_API_KEY]): str,
+                        Required(CONF_API_KEY, default=all_config_data[CONF_API_KEY]): str,
                     }
                 ),
                 submitted_input if errors else None,
@@ -354,11 +359,11 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reconfigure_confirm",
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(
+                Schema(
                     {
-                        vol.Required(CONF_API_KEY, default=all_config_data[CONF_API_KEY]): str,
-                        vol.Required(API_LIMIT, default=all_config_data[API_LIMIT]): str,
-                        vol.Required(AUTO_UPDATE, default=str(all_config_data[AUTO_UPDATE])): SelectSelector(
+                        Required(CONF_API_KEY, default=all_config_data[CONF_API_KEY]): str,
+                        Required(API_LIMIT, default=all_config_data[API_LIMIT]): str,
+                        Required(AUTO_UPDATE, default=str(all_config_data[AUTO_UPDATE])): SelectSelector(
                             SelectSelectorConfig(options=AUTO_UPDATE_OPTIONS, mode=SelectSelectorMode.DROPDOWN, translation_key=AUTO_UPDATE)
                         ),
                     }
@@ -463,17 +468,17 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                 "exists, defaulting to auto-update off" if solcast_json_exists else "does not exist, defaulting to auto-update on",
             )
             auto_default = str(int(not solcast_json_exists))
-        name_field = vol.Required(INSTANCE_NAME) if name_required else vol.Optional(INSTANCE_NAME, default="")
+        name_field = Required(INSTANCE_NAME) if name_required else Optional(INSTANCE_NAME, default="")
 
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(
+                Schema(
                     {
                         name_field: str,
-                        vol.Required(CONF_API_KEY, default=""): str,
-                        vol.Required(API_LIMIT, default="10"): str,
-                        vol.Required(AUTO_UPDATE, default=auto_default): SelectSelector(
+                        Required(CONF_API_KEY, default=""): str,
+                        Required(API_LIMIT, default="10"): str,
+                        Required(AUTO_UPDATE, default=auto_default): SelectSelector(
                             SelectSelectorConfig(options=AUTO_UPDATE_OPTIONS, mode=SelectSelectorMode.DROPDOWN, translation_key=AUTO_UPDATE)
                         ),
                     }
@@ -698,10 +703,8 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
                         if status != 200:
                             errors[BASE] = EXCEPTION_API_ERROR
                             description_placeholders["error_detail"] = message
-                    elif self._entry.state is ConfigEntryState.LOADED and all_config_data[EXCLUDE_SITES] != self._entry.options.get(
-                        EXCLUDE_SITES, []
-                    ):
-                        rooftops = [site[RESOURCE_ID] for site in self._entry.runtime_data.coordinator.solcast.sites_all]
+                    elif all_config_data[EXCLUDE_SITES] != self._entry.options.get(EXCLUDE_SITES, []):
+                        rooftops = entry_rooftops(self.hass, self._entry)
                     if not errors:
                         all_config_data[EXCLUDE_SITES], error, placeholders = check_rooftops(
                             self.hass,
@@ -770,9 +773,9 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
             site_export_default = []
         if not self._options[AUTO_DAMPEN]:
             damp = {
-                vol.Optional(CONFIG_DAMP, default=False)
+                Optional(CONFIG_DAMP, default=False)
                 if not self._options[SITE_DAMP]
-                else vol.Optional(SITE_DAMP, default=self._options[SITE_DAMP]): bool
+                else Optional(SITE_DAMP, default=self._options[SITE_DAMP]): bool
             }
         else:
             damp = {}
@@ -780,19 +783,19 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(
+                Schema(
                     {
-                        vol.Required(CONF_API_KEY, default=self._options.get(CONF_API_KEY)): str,
-                        vol.Required(API_LIMIT, default=self._options[API_LIMIT]): str,
-                        vol.Required(AUTO_UPDATE, default=str(int(self._options[AUTO_UPDATE]))): SelectSelector(
+                        Required(CONF_API_KEY, default=self._options.get(CONF_API_KEY)): str,
+                        Required(API_LIMIT, default=self._options[API_LIMIT]): str,
+                        Required(AUTO_UPDATE, default=str(int(self._options[AUTO_UPDATE]))): SelectSelector(
                             SelectSelectorConfig(options=update, mode=SelectSelectorMode.DROPDOWN, translation_key=AUTO_UPDATE)
                         ),
-                        vol.Required(KEY_ESTIMATE, default=self._options.get(KEY_ESTIMATE, "estimate")): SelectSelector(
+                        Required(KEY_ESTIMATE, default=self._options.get(KEY_ESTIMATE, "estimate")): SelectSelector(
                             SelectSelectorConfig(options=forecasts, mode=SelectSelectorMode.DROPDOWN, translation_key=KEY_ESTIMATE)
                         ),
-                        vol.Required(CUSTOM_HOURS, default=self._options[CUSTOM_HOURS]): int,
-                        vol.Required(HARD_LIMIT_API, default=self._options.get(HARD_LIMIT_API)): str,
-                        vol.Optional(ATTR_BREAKDOWN, default=breakdown_defaults): SelectSelector(
+                        Required(CUSTOM_HOURS, default=self._options[CUSTOM_HOURS]): int,
+                        Required(HARD_LIMIT_API, default=self._options.get(HARD_LIMIT_API)): str,
+                        Optional(ATTR_BREAKDOWN, default=breakdown_defaults): SelectSelector(
                             SelectSelectorConfig(
                                 options=[SelectOptionDict(label=option, value=option) for option in BREAKDOWN_ATTRIBUTE_OPTIONS],
                                 mode=SelectSelectorMode.DROPDOWN,
@@ -800,22 +803,22 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
                                 translation_key=ATTR_BREAKDOWN,
                             )
                         ),
-                        vol.Optional(EXCLUDE_SITES, default=self._options.get(EXCLUDE_SITES, [])): SelectSelector(
+                        Optional(EXCLUDE_SITES, default=self._options.get(EXCLUDE_SITES, [])): SelectSelector(
                             SelectSelectorConfig(options=exclude, mode=SelectSelectorMode.DROPDOWN, multiple=True)
                         ),
-                        vol.Optional(GET_ACTUALS, default=self._options[GET_ACTUALS]): bool,
-                        vol.Optional(AUTO_DAMPEN, default=self._options[AUTO_DAMPEN]): bool,
-                        vol.Optional(GENERATION_ENTITIES, default=self._options.get(GENERATION_ENTITIES, [])): SelectSelector(
+                        Optional(GET_ACTUALS, default=self._options[GET_ACTUALS]): bool,
+                        Optional(AUTO_DAMPEN, default=self._options[AUTO_DAMPEN]): bool,
+                        Optional(GENERATION_ENTITIES, default=self._options.get(GENERATION_ENTITIES, [])): SelectSelector(
                             SelectSelectorConfig(options=sensors, mode=SelectSelectorMode.DROPDOWN, multiple=True)
                         ),
-                        vol.Optional(SITE_EXPORT_ENTITY, default=site_export_default): SelectSelector(
+                        Optional(SITE_EXPORT_ENTITY, default=site_export_default): SelectSelector(
                             SelectSelectorConfig(options=energy_sensors, mode=SelectSelectorMode.DROPDOWN, multiple=True)
                         ),
-                        vol.Optional(
+                        Optional(
                             SITE_EXPORT_LIMIT,
                             default=self._options.get(SITE_EXPORT_LIMIT, 0.0),
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
-                        vol.Required(USE_ACTUALS, default=str(int(self._options.get(USE_ACTUALS, 0)))): SelectSelector(
+                        ): All(Coerce(float), Range(min=0.0, max=100.0)),
+                        Required(USE_ACTUALS, default=str(int(self._options.get(USE_ACTUALS, 0)))): SelectSelector(
                             SelectSelectorConfig(options=history, mode=SelectSelectorMode.DROPDOWN, translation_key=ENERGY_HISTORY)
                         ),
                     }
@@ -860,10 +863,10 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
 
         return self.async_show_form(
             step_id="dampen",
-            data_schema=vol.Schema(
+            data_schema=Schema(
                 {
-                    vol.Required(f"damp{factor:02d}", description={SUGGESTED_VALUE: extant_factors[f"damp{factor:02d}"]}): vol.All(
-                        vol.Coerce(float), vol.Range(min=0.0, max=1.0)
+                    Required(f"damp{factor:02d}", description={SUGGESTED_VALUE: extant_factors[f"damp{factor:02d}"]}): All(
+                        Coerce(float), Range(min=0.0, max=1.0)
                     )
                     for factor in range(24)
                 }

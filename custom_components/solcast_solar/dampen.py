@@ -101,7 +101,8 @@ _ENERGY_UNIT_FACTORS: Final[dict[str, float]] = {"mWh": 1e-6, "Wh": 0.001, "kWh"
 _SUPPRESSION_ENTITY_ON_STATES: Final[tuple[str, ...]] = ("on", "1", "true", "True")
 _SUPPRESSION_ENTITY_STATES: Final[tuple[str, ...]] = ("on", "off", "1", "0", "true", "false", "True", "False")
 _SITE_EXPORT_INTERVAL_MINUTES: Final[int] = 5
-_GENERATION_GAP_FRACTION: Final[float] = 0.1  # Share of daylight intervals without readings that excludes a generation day
+_GENERATION_GAP_FRACTION: Final[float] = 0.1  # Share of a day's expected energy without readings that excludes a generation day
+_GAP_DAYS_LOGGED: Final[int] = 5  # Days named in the log line of the one-time gap check
 
 _LOGGER = get_logger(__name__)
 
@@ -130,9 +131,11 @@ except ImportError:  # pragma: no cover
 
 
 def _file_mtime(filename: str) -> float:
-    """Return the modification time of a file, or 0 when it does not exist."""
-    path = Path(filename)
-    return path.stat().st_mtime if path.exists() else 0
+    """Return the modification time of a file, or 0 when it does not exist (blocking, run it in the executor)."""
+    try:
+        return Path(filename).stat().st_mtime
+    except FileNotFoundError:
+        return 0
 
 
 def compute_power_intervals(
@@ -330,6 +333,10 @@ class Dampening:
         """Set/clear allow reset granular dampening file to an empty dictionary by options change."""
         self.granular_allow_reset = enable
 
+    def site_actuals(self, site: str) -> list[dict[str, Any]]:
+        """Return a site's estimated actuals, none for a site that has none yet (a new site, or its first fetch failed)."""
+        return self.api.data_actuals[SITE_INFO].get(site, {}).get(FORECASTS, [])
+
     def adjusted_interval_dt(self, interval: dt) -> int:
         """Adjust a datetime as standard time."""
         interval_tz = interval.astimezone(self.api.tz)
@@ -423,7 +430,7 @@ class Dampening:
 
             undampened_interval_pv50: defaultdict[dt, float] = defaultdict(float)
             for site in self.api.sites:
-                for forecast in self.api.data_undampened[SITE_INFO][site[RESOURCE_ID]][FORECASTS]:
+                for forecast in self.api.data_undampened[SITE_INFO].get(site[RESOURCE_ID], {}).get(FORECASTS, []):
                     period_start = forecast[PERIOD_START]
                     if period_start >= self.api.dt_helper.day_start_utc():
                         undampened_interval_pv50[period_start] += forecast[ESTIMATE] * 0.5
@@ -434,7 +441,7 @@ class Dampening:
                 # Load all forecasts.
                 forecasts_undampened_future = [
                     forecast
-                    for forecast in self.api.data_undampened[SITE_INFO][site_id][FORECASTS]
+                    for forecast in self.api.data_undampened[SITE_INFO].get(site_id, {}).get(FORECASTS, [])
                     if forecast[PERIOD_START]
                     >= (
                         self.api.dt_helper.day_start_utc()
@@ -520,11 +527,7 @@ class Dampening:
                 self._format_recovered_periods(periods),
             )
 
-            actuals_undampened = [
-                actual
-                for actual in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS]
-                if actual[PERIOD_START].timestamp() in periods
-            ]
+            actuals_undampened = [actual for actual in self.site_actuals(site[RESOURCE_ID]) if actual[PERIOD_START].timestamp() in periods]
             if not actuals_undampened:
                 continue
 
@@ -587,7 +590,7 @@ class Dampening:
         undampened_interval_pv50: defaultdict[dt, float] = defaultdict(float)
 
         for site in self.api.sites:
-            for forecast in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS]:
+            for forecast in self.site_actuals(site[RESOURCE_ID]):
                 period_start = forecast[PERIOD_START]
                 if period_start in applicable_periods:
                     undampened_interval_pv50[period_start] += forecast[ESTIMATE] * 0.5
@@ -603,7 +606,7 @@ class Dampening:
             {
                 forecast[PERIOD_START]
                 for site in self.api.sites
-                for forecast in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS]
+                for forecast in self.site_actuals(site[RESOURCE_ID])
                 if start <= forecast[PERIOD_START] < end
             }
         )
@@ -616,9 +619,7 @@ class Dampening:
                 end.strftime(DT_DATE_FORMAT),
             )
 
-            actuals_undampened = [
-                actual for actual in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS] if start <= actual[PERIOD_START] < end
-            ]
+            actuals_undampened = [actual for actual in self.site_actuals(site[RESOURCE_ID]) if start <= actual[PERIOD_START] < end]
             if not actuals_undampened:
                 continue
 
@@ -801,20 +802,29 @@ class Dampening:
         day: int,
         entity_registry: er.EntityRegistry,
         recorder_instance: Any,
+        recheck: bool = False,
     ) -> tuple[dict[dt, float], bool]:
-        """Collect one day of PV generation intervals from configured entities, and whether a reading gap spoils the day."""
+        """Collect one day of PV generation intervals from configured entities, and whether a reading gap spoils the day.
+
+        A recheck of a cached day finds a gap only in the readings: an entity missing now says nothing about that day,
+        and a day without readings from any entity may be purged from the recorder.
+        """
         generation_intervals = self._build_float_intervals(prev_start, HALF_HOUR_MINUTES, end=day_start)
         gap = False
+        whole_day = [(prev_start, day_start)]
+        read = silent = 0
 
         for entity in self.api.options.generation_entities:
             r_entity = entity_registry.async_get(entity)
-            if r_entity is None:
-                _LOGGER.error("Generation entity %s is not a valid entity", entity)
-                continue
-            if r_entity.disabled_by is not None:
-                _LOGGER.error("Generation entity %s is disabled, please enable it", entity)
+            if r_entity is None or r_entity.disabled_by is not None:
+                if not recheck:  # The recheck of each cached day would repeat it
+                    _LOGGER.error(
+                        "Generation entity %s is %s", entity, "not a valid entity" if r_entity is None else "disabled, please enable it"
+                    )
+                    gap = gap or self._daylight_gap(whole_day, prev_start, day_start)  # The others give only a part
                 continue
 
+            read += 1
             entity_history = await self._get_entity_history(recorder_instance, prev_start, day_start, entity)
             if entity_history.get(entity) and len(entity_history[entity]) > 4:
                 _LOGGER.debug("Retrieved day %d PV generation data from entity: %s", -1 + day * -1, entity)
@@ -897,7 +907,10 @@ class Dampening:
                     entity,
                     entity_history.get(entity),
                 )
-                gap = gap or self._daylight_gap([(prev_start, day_start)], prev_start, day_start)  # No usable readings all day
+                silent += 1
+                gap = gap or (not recheck and self._daylight_gap(whole_day, prev_start, day_start))  # No usable readings all day
+        if recheck and 0 < silent < read:  # Readings from some entities only
+            gap = gap or self._daylight_gap(whole_day, prev_start, day_start)
 
         for interval_start, generation in generation_intervals.items():
             generation_intervals[interval_start] = round(generation, 3)
@@ -905,14 +918,24 @@ class Dampening:
         return generation_intervals, gap
 
     def _daylight_gap(self, spans: list[tuple[dt, dt]], prev_start: dt, day_start: dt) -> bool:
-        """Return whether spans without readings cover a significant share of the day's daylight intervals."""
-        daylight = [
-            interval
-            for interval in self._build_half_hour_bool_intervals(prev_start, day_start)
-            if self.api.peak_intervals.get(self.adjusted_interval_dt(interval), 0) > 0
-        ]
-        covered = sum(1 for interval in daylight if any(start <= interval < end for start, end in spans))
-        return covered > 0 and covered >= len(daylight) * _GENERATION_GAP_FRACTION
+        """Return whether spans without readings miss a significant share of the day's expected energy.
+
+        Each half hour weighs as much as its peak estimated actual, so a sensor that is unavailable at night or at dusk,
+        when little or nothing is generated, does not spoil a day, while an outage of an hour around noon does.
+        """
+        half_hour = timedelta(minutes=HALF_HOUR_MINUTES)
+        expected = missing = 0.0
+        for interval in self._build_half_hour_bool_intervals(prev_start, day_start):
+            if (weight := self.api.peak_intervals.get(self.adjusted_interval_dt(interval), 0.0)) <= 0:
+                continue
+            expected += weight
+            overlap = sum(
+                (min(end, interval + half_hour) - max(start, interval)) / half_hour
+                for start, end in spans
+                if start < interval + half_hour and end > interval
+            )
+            missing += weight * min(overlap, 1.0)
+        return missing > 0 and missing >= expected * _GENERATION_GAP_FRACTION
 
     async def _apply_suppression_entity_limits(
         self,
@@ -1117,6 +1140,7 @@ class Dampening:
         # Trim, sort and serialise.
         self.data_generation = {
             LAST_UPDATED: dt_util.now(UTC).replace(microsecond=0),
+            VERSION: GENERATION_VERSION,
             GENERATION_ENTITIES: sorted(self.api.options.generation_entities),
             GENERATION: sorted(
                 filter(
@@ -1128,6 +1152,49 @@ class Dampening:
         }
         await self.api.sites_cache.serialise_data(self.data_generation, self.filename_generation)
         _LOGGER.debug("Task get_pv_generation took %.3f seconds", time.time() - start_time)
+
+    async def recheck_generation_gaps(self) -> bool:
+        """Leave out the cached days that have a reading gap, once for a cache written before gaps were checked.
+
+        Only a day the recorder still holds is checked. A day it has purged cannot be read again, so its cached
+        generation is the only copy left and stays.
+
+        Returns:
+            bool: Whether a day was left out.
+        """
+        generation: dict[dt, dict[str, Any]] = {generated[PERIOD_START]: generated for generated in self.data_generation[GENERATION]}
+        entity_registry = er.async_get(self.api.hass)
+        recorder_instance = get_instance(self.api.hass)
+        recorded_since = dt_util.now(UTC) - timedelta(days=recorder_instance.keep_days)
+        await self.prepare_data(only_peaks=True)
+        dropped: list[str] = []
+        day = 0
+        while generation and (day_start := self._bucket_interval_start(self.api.dt_helper.day_start_utc(future=-day))) > min(generation):
+            prev_start = self._bucket_interval_start(self.api.dt_helper.day_start_utc(future=-day - 1))
+            if prev_start < recorded_since:
+                break  # Older days may be purged from the recorder already.
+            intervals = [interval for interval in generation if prev_start <= interval < day_start]
+            if intervals:
+                _, gap = await self._collect_generation_intervals_for_day(
+                    prev_start, day_start, day, entity_registry, recorder_instance, recheck=True
+                )
+                if gap:
+                    dropped.append(prev_start.astimezone(self.api.tz).strftime(DT_DATE_ONLY_FORMAT))
+                    for interval in intervals:
+                        generation.pop(interval)
+            day += 1
+        if dropped:
+            dropped.sort()
+            _LOGGER.debug(
+                "Cached PV generation of %d day(s) has a gap in daylight readings, leaving it out: %s%s",
+                len(dropped),
+                ", ".join(dropped[:_GAP_DAYS_LOGGED]),
+                f" and {len(dropped) - _GAP_DAYS_LOGGED} more" if len(dropped) > _GAP_DAYS_LOGGED else "",
+            )
+        self.data_generation[GENERATION] = sorted(generation.values(), key=itemgetter(PERIOD_START))
+        self.data_generation[VERSION] = GENERATION_VERSION
+        await self.api.sites_cache.serialise_data(self.data_generation, self.filename_generation)
+        return bool(dropped)
 
     async def granular_data(self) -> bool:
         """Read the current granular dampening file.
@@ -1150,13 +1217,12 @@ class Dampening:
 
         error = False
         return_value = False
-        mtime = True
         filename = self.get_filename()
         try:
-            if not await self.api.hass.async_add_executor_job(Path(filename).is_file):
+            # Taken before reading, so a change while reading is seen next time, and before an options update can start.
+            self.factors_mtime = await self.api.hass.async_add_executor_job(_file_mtime, filename)
+            if not self.factors_mtime:
                 self.factors = {}
-                self.factors_mtime = 0
-                mtime = False
                 return option(GRANULAR_DAMPENING_OFF)
             async with aiofiles.open(filename) as file:
                 content = await file.read()
@@ -1173,7 +1239,8 @@ class Dampening:
                     return option(GRANULAR_DAMPENING_OFF, SET_ALLOW_RESET)
                 if content.replace("\n", "").replace("\r", "").strip() != "" and self.factors:
                     first_site_len = 0
-                    known_sites = {ALL, *self.api.site_transfers, *(site[RESOURCE_ID] for site in self.api.sites)}
+                    # An excluded site is still known: its factors stay in the file and apply once it is included again.
+                    known_sites = {ALL, *self.api.site_transfers, *(site[RESOURCE_ID] for site in (*self.api.sites_all, *self.api.sites))}
                     for site, damp_list in self.factors.items():
                         if site not in known_sites or not _valid_factors(damp_list):
                             _LOGGER.error(
@@ -1208,8 +1275,6 @@ class Dampening:
                         return_value = option(GRANULAR_DAMPENING_ON, SET_ALLOW_RESET)
             return return_value
         finally:
-            if mtime:
-                self.factors_mtime = _file_mtime(filename)  # No await here: an options update must not run before this.
             if error:
                 self.factors = {}
 
@@ -1341,6 +1406,7 @@ class Dampening:
         deal_breaker_site = ""
         if not self.data_generation[GENERATION]:
             deal_breaker = "No generation yet"
+            await self._reset_automated_factors()
         else:
             for site in self.api.sites:
                 if self.api.data_actuals[SITE_INFO].get(site[RESOURCE_ID]) is None:
@@ -1351,6 +1417,19 @@ class Dampening:
             _LOGGER.info("Auto-dampening suppressed: %s%s", deal_breaker, f" for {deal_breaker_site}" if deal_breaker_site else "")
             return True
         return False
+
+    async def _reset_automated_factors(self) -> None:
+        """Reset the automated factors to 1.0 when no generation is left to model them from.
+
+        Factors modelled from generation that is gone (other generation entities, or every day left out) would
+        otherwise stay in force until generation is there again.
+        """
+        if not self.api.options.auto_dampen or not any(factor != 1.0 for factor in self.factors.get(ALL, [])):
+            return
+        _LOGGER.warning("Auto-dampening has no PV generation to model from, so its factors are reset to 1.0 until there is")
+        self.factors[ALL] = [1.0] * INTERVALS_PER_DAY
+        await self.serialise_granular()
+        await self.granular_data()
 
     async def model_automated(self, force: bool = False) -> None:
         """Model the automated dampening of the forecast data.
@@ -1787,21 +1866,20 @@ class Dampening:
             self.api.options.auto_dampen or self.api.advanced_options[ADVANCED_GRANULAR_DAMPENING_DELTA_ADJUSTMENT]
         ) and self.api.options.get_actuals:
             for site in self.api.sites:
+                site_history = self.site_actuals(site[RESOURCE_ID])
                 start, end = self.api.query.get_list_slice(
-                    self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS],
+                    site_history,
                     day_end - timedelta(days=model_days),
                     day_end,
                     search_past=True,
                 )
-                site_actuals = {
-                    actual[PERIOD_START]: actual for actual in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS][start:end]
-                }
-                for period_start, actual in site_actuals.items():
+                site_actuals = {actual[PERIOD_START]: actual for actual in site_history[start:end]}
+                for period_start, site_actual in site_actuals.items():
                     extant: float | None = actuals.get(period_start)
                     if extant is not None:
-                        actuals[period_start] += actual[ESTIMATE] * 0.5
+                        actuals[period_start] += site_actual[ESTIMATE] * 0.5
                     else:
-                        actuals[period_start] = actual[ESTIMATE] * 0.5
+                        actuals[period_start] = site_actual[ESTIMATE] * 0.5
 
             # Collect top intervals from the past MODEL_DAYS days.
             self.api.peak_intervals = dict.fromkeys(range(INTERVALS_PER_DAY), 0.0)

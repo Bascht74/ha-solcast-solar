@@ -765,7 +765,7 @@ class ForecastQuery:
         Returns:
             float | None: A splined forecasted value as kW.
         """
-        variant: list[float] | None = self._forecasts_moment[ALL if site is None else site].get(
+        variant: list[float] | None = self._forecasts_moment.get(ALL if site is None else site, {}).get(
             self.api.use_forecast_confidence if forecast_confidence is None else forecast_confidence
         )
         offset = (
@@ -785,7 +785,7 @@ class ForecastQuery:
         Returns:
             float | None: A splined forecasted remaining value as kWh.
         """
-        variant: list[float] | None = self._forecasts_remaining[ALL if site is None else site].get(
+        variant: list[float] | None = self._forecasts_remaining.get(ALL if site is None else site, {}).get(
             self.api.use_forecast_confidence if forecast_confidence is None else forecast_confidence
         )
         offset = (

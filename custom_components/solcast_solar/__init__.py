@@ -13,9 +13,13 @@ import zoneinfo
 import aiofiles
 
 from homeassistant import loader
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import (
+    SIGNAL_CONFIG_ENTRY_CHANGED,
+    ConfigEntry,
+    ConfigEntryChange,
+)
 from homeassistant.const import CONF_API_KEY, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
     ConfigEntryError,
@@ -27,6 +31,7 @@ from homeassistant.helpers import (
     entity_registry as er,
     issue_registry as ir,
 )
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
@@ -441,6 +446,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     """
     register_stub_actions(hass)
+
+    @callback
+    def _entry_changed(_change: ConfigEntryChange, entry: ConfigEntry) -> None:
+        """Count the API limits again when an entry is loaded, fails, is disabled or removed."""
+        if entry.domain == DOMAIN:
+            sync_shared_api_limit_issues(hass)
+
+    async_dispatcher_connect(hass, SIGNAL_CONFIG_ENTRY_CHANGED, _entry_changed)
     return True
 
 

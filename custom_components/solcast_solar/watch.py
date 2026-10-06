@@ -66,10 +66,10 @@ class FileWatcher:
 
         coordinator.tasks[task_name] = cancel
 
-    def _path_exists(self, file_path: str) -> bool:
+    async def _path_exists(self, file_path: str) -> bool:
         """Return whether a path exists, tolerating transient filesystem races."""
         try:
-            return Path(file_path).exists()
+            return await self.coordinator.hass.async_add_executor_job(Path(file_path).exists)
         except OSError:
             return False
 
@@ -125,7 +125,7 @@ class FileWatcher:
         """Watch for file creation and start the handler task when the file appears."""
         coordinator = self.coordinator
 
-        if self._path_exists(file_path):
+        if await self._path_exists(file_path):
             self._start_managed_task(task, lambda handler_stop_event: handler(False, handler_stop_event))
             _LOGGER.debug("Running task %s", task)
 
@@ -139,7 +139,7 @@ class FileWatcher:
                     change_type == Change.added
                     and changed_path == file_path
                     and coordinator.tasks.get(task) is None
-                    and self._path_exists(file_path)
+                    and await self._path_exists(file_path)
                 ):
                     self._start_managed_task(task, lambda handler_stop_event: handler(process_on_add, handler_stop_event))
                     _LOGGER.debug("Running task %s", task)
@@ -188,7 +188,7 @@ class FileWatcher:
                     if change_type == Change.modified:
                         await self._handle_dampening_update(file_path)
                 if deleted:
-                    if self._path_exists(file_path):
+                    if await self._path_exists(file_path):
                         _LOGGER.debug("Granular dampening file recreation detected, continuing to monitor %s", file_path)
                         continue
                     if coordinator.solcast.dampening.granular_serialising:

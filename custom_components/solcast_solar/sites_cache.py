@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 import contextlib
 import copy
 from datetime import UTC, datetime as dt
@@ -34,6 +35,7 @@ from .const import (
     DAILY_FORCED_CONSUMED,
     DAILY_LIMIT,
     DAILY_LIMIT_CONSUMED,
+    DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS,
     DAILY_TYPICAL,
     DAILY_TYPICAL_FORECAST_UPDATES,
     DISMISSAL,
@@ -47,6 +49,7 @@ from .const import (
     FORMAT,
     GENERATION,
     GENERATION_ENTITIES,
+    GENERATION_VERSION,
     INTEGRATION_VERSION,
     ISSUE_UNUSUAL_AZIMUTH_NORTHERN,
     ISSUE_UNUSUAL_AZIMUTH_SOUTHERN,
@@ -119,6 +122,19 @@ _LOGGER = get_logger(__name__)
 _ORIGINAL_KINDS = frozenset(
     ("undampened", "actuals", "actuals-dampened", "advanced", "dampening", "dampening-history", "generation", "sites", "usage")
 )
+# This version counted the estimated actuals calls in the tracked usage, but did not yet mark its usage files so.
+_COUNTED_ACTUALS_UNMARKED: Final[str] = "4.7.0.2"
+
+
+def _cache_version(filename: str) -> str | None:
+    """Return the integration version that last wrote a cache file, if it can be read (blocking)."""
+
+    try:
+        with open(filename, encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, ValueError):
+        return None
+    return data.get(INTEGRATION_VERSION) if isinstance(data, dict) else None
 
 
 class SitesCache:
@@ -135,6 +151,7 @@ class SitesCache:
 
         # Private attributes (alphabetical).
         self._api_used_reset: dict[str, dt | None] = {}
+        self._counted_unmarked: bool | None = None  # Whether the usage files are from a version that did not mark them.
         self._dismissal: dict[str, bool] = {}
         self._extant_sites: defaultdict[str, list[dict[str, Any]]] = defaultdict(list[dict[str, Any]])
         self._extant_usage: defaultdict[str, dict[str, Any]] = defaultdict(dict[str, Any])
@@ -398,7 +415,7 @@ class SitesCache:
                     try:
                         response_json = json.loads(await file.read(), cls=JSONDecoder)
                     except json.decoder.JSONDecodeError:
-                        _LOGGER.error("JSONDecodeError, sites ignored: %s", site)
+                        _LOGGER.error("JSONDecodeError, sites ignored: %s", redact_filename_api_key(site))
                         continue
                     for _site in response_json.get(SITES, []):
                         if _site.get(API_KEY):
@@ -412,7 +429,7 @@ class SitesCache:
                     try:
                         response_json = json.loads(await file.read(), cls=JSONDecoder)
                     except json.decoder.JSONDecodeError:
-                        _LOGGER.error("JSONDecodeError, usage ignored: %s", usage)
+                        _LOGGER.error("JSONDecodeError, usage ignored: %s", redact_filename_api_key(usage))
                         continue
                     match = re.search(rf"{re.escape(self._cache_stem())}-usage-(.+)\.json$", Path(usage).name)
                     if match:
@@ -679,6 +696,15 @@ class SitesCache:
                         _LOGGER.debug("Generation entities changed, reloading generation and dampening history")
                         self.api.dampening.data_generation.update({GENERATION: [], GENERATION_ENTITIES: entities})
                         await self.api.hass.async_add_executor_job(Path(self.api.filename_dampening_history).unlink, True)
+                    if (
+                        self.api.options.auto_dampen
+                        and self.api.options.generation_entities
+                        and self.api.dampening.data_generation[GENERATION]
+                        and self.api.dampening.data_generation.get(VERSION) != GENERATION_VERSION
+                        and await self._without_setup_abort(self.api.dampening.recheck_generation_gaps, "Check of cached generation")
+                    ):
+                        _LOGGER.debug("Generation days left out, so building the dampening history again")
+                        await self.api.hass.async_add_executor_job(Path(self.api.filename_dampening_history).unlink, True)
 
                     # if using adaptive dampening config load the data
                     if (
@@ -693,7 +719,7 @@ class SitesCache:
                         and self.api.options.generation_entities
                         and len(self.api.dampening.data_generation[GENERATION]) == 0
                     ):
-                        await self.api.dampening.get_pv_generation()
+                        await self._without_setup_abort(self.api.dampening.get_pv_generation, "Loading generation")
                     # Check for sites changes.
                     await adds_moves_changes()
                     # Migrate un-dampened history data to the un-dampened cache if needed.
@@ -729,6 +755,29 @@ class SitesCache:
             self.api.status = SolcastApiStatus.DATA_CORRUPT
             await raise_and_record(self.api.hass, self.api.entry, ConfigEntryNotReady, EXCEPTION_INIT_CORRUPT, {"file": file})
         return True
+
+    async def _without_setup_abort(self, task: Callable[[], Awaitable[Any]], description: str) -> Any:
+        """Run a generation task while loading, logging a failure instead of failing the set-up.
+
+        Returns:
+            Any: The task's result, or None when it failed.
+        """
+        try:
+            return await task()
+        except Exception:
+            _LOGGER.exception("%s failed, continuing without it", description)
+            return None
+
+    async def _actuals_counted_unmarked(self) -> bool:
+        """Whether the usage files were written by the version that counted the estimated actuals without marking it.
+
+        That version also wrote the forecast cache after each fetch, so its version tells. Read once, and only when
+        a usage file lacks the mark.
+        """
+        if self._counted_unmarked is None:
+            version = await self.api.hass.async_add_executor_job(_cache_version, self.api.filename)
+            self._counted_unmarked = version == _COUNTED_ACTUALS_UNMARKED
+        return self._counted_unmarked
 
     async def reset_api_usage(self, force: bool = False) -> None:
         """Reset the daily API usage counter.
@@ -825,6 +874,7 @@ class SitesCache:
             DAILY_FORCED_CONSUMED: self.api.api_forced.get(api_key, 0),
             DAILY_ACTUALS_CONSUMED: self.api.api_actuals.get(api_key, 0),
             DAILY_LIMIT_CONSUMED: self.api.api_used[api_key],
+            DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS: True,
             DAILY_TYPICAL: self.api.api_typical.get(api_key, 0),
             DAILY_TYPICAL_FORECAST_UPDATES: self.api.api_typical_forecast_updates.get(api_key),
             RESET: self._api_used_reset[api_key],
@@ -1269,7 +1319,7 @@ class SitesCache:
                         if status in (401, 403):
                             self.api.sites_status = SitesStatus.BAD_KEY
                             break
-                        if status in (429, 420):
+                        if status in (429, 420) or status >= 500:  # Busy or failing for now, so retry later
                             self.api.sites_status = SitesStatus.API_BUSY
                             break
                         self.api.sites_status = SitesStatus.ERROR
@@ -1285,7 +1335,7 @@ class SitesCache:
             for api_key in api_keys:
                 error_text = redact_msg_api_key(error_text, api_key.strip())
             _LOGGER.error("Connection error: %s", error_text)
-            self.api.sites_status = SitesStatus.ERROR
+            self.api.sites_status = SitesStatus.API_BUSY  # A connection error passes, so set-up is retried later
             api_key_in_error = ""
             _LOGGER.error("Error retrieving sites: %s", error_text)
             if use_cache:
@@ -1301,7 +1351,7 @@ class SitesCache:
                         _ = check_rekey(response_json, api_key)
                         self.api.sites_status = SitesStatus.OK
                     else:
-                        self.api.sites_status = SitesStatus.ERROR
+                        self.api.sites_status = SitesStatus.API_BUSY
                         error = True
                         cached_sites_unavailable()
                         api_key_in_error = redact_api_key(api_key)
@@ -1354,6 +1404,10 @@ class SitesCache:
             self.api.api_used[api_key] = usage.get(DAILY_LIMIT_CONSUMED, 0)
             self.api.api_forced[api_key] = usage.get(DAILY_FORCED_CONSUMED, 0)
             self.api.api_actuals[api_key] = usage.get(DAILY_ACTUALS_CONSUMED, 0)
+            if not usage.get(DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS) and not await self._actuals_counted_unmarked():
+                # Written when estimated actuals were not counted yet
+                used = self.api.api_used[api_key]
+                self.api.api_used[api_key] = min(used + self.api.api_actuals[api_key], max(used, usage.get(DAILY_LIMIT, 10)))
             configured_limit = quota.get(api_key, 10)
             allow_exceed = self.api.advanced_options.get(ADVANCED_ALLOW_EXCEED_API_LIMIT_MAXIMUM, False)
             # Seed from the configured limit.  Auto-update can never consume more.
@@ -1386,6 +1440,9 @@ class SitesCache:
             elif DAILY_TYPICAL_FORECAST_UPDATES not in usage:
                 await self.serialise_usage(api_key)
                 _LOGGER.debug("Usage loaded and cache updated with typical forecast updates")
+            elif DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS not in usage:
+                await self.serialise_usage(api_key)
+                _LOGGER.debug("Usage loaded and cache updated to count the estimated actuals calls")
             else:
                 _LOGGER.debug(
                     "Usage loaded%s",

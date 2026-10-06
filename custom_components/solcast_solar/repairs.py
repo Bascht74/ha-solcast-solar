@@ -2,8 +2,6 @@
 
 from typing import Any
 
-import voluptuous as vol
-
 from homeassistant import data_entry_flow
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
 from homeassistant.config_entries import ConfigEntry
@@ -27,6 +25,7 @@ from .const import (
     LEARN_MORE,
 )
 from .log import get_logger
+from .validators import Required, Schema
 
 _LOGGER = get_logger(__name__)
 
@@ -50,10 +49,11 @@ class SolcastRepair(RepairsFlow):
     @callback
     def _async_get_placeholders(self) -> dict[str, str]:
         issue_registry = ir.async_get(self.hass)
-        placeholders: dict[str, Any] = {}
+        placeholders: dict[str, Any] = {"instance": ""}
         if issue := issue_registry.issues.get((DOMAIN, self.issue_id)):
             if issue.learn_more_url:
                 placeholders[LEARN_MORE] = issue.learn_more_url
+            placeholders["instance"] = (issue.translation_placeholders or {}).get("instance", "")  # Names a named entry
 
         return placeholders
 
@@ -87,9 +87,9 @@ class RecordsMissingRepairFlow(SolcastRepair):
         placeholders = self._async_get_placeholders()
         return self.async_show_form(
             step_id="offer_auto",
-            data_schema=vol.Schema(
+            data_schema=Schema(
                 {
-                    vol.Required(AUTO_UPDATE, default="1"): SelectSelector(
+                    Required(AUTO_UPDATE, default="1"): SelectSelector(
                         SelectSelectorConfig(options=AUTO_UPDATE_OPTIONS, mode=SelectSelectorMode.DROPDOWN, translation_key="auto_update")
                     ),
                 }

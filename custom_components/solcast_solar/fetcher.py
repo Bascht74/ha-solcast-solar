@@ -22,6 +22,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
+from homeassistant.util.hass_dict import HassKey
 
 from .const import (
     ADVANCED_API_RAISE_ISSUES,
@@ -99,6 +100,9 @@ async def async_trigger_automation_by_name(hass: HomeAssistant, name: str) -> bo
     return success
 
 
+_OVERSPENT_LOGGED: HassKey[dict[tuple[str | None, str], date]] = HassKey(f"{DOMAIN}_overspent_logged")
+
+
 class _DataCallStatus(Enum):
     """The result of a data call."""
 
@@ -118,7 +122,6 @@ class Fetcher:
         """
         self.api = api
         self._next_update: str | None = None
-        self._overspent_logged: dict[str, date] = {}  # The UTC day a refusal caused by another entry was logged, per API key.
 
     def _log_shared_key_overspent(self, api_key: str) -> None:
         """Log once per UTC day that Solcast refused a call below this entry's limit while another entry uses the same API key."""
@@ -127,9 +130,11 @@ class Fetcher:
         entry_id = self.api.entry.entry_id if self.api.entry is not None else None
         if used >= limit or not (others := api_keys_in_use(self.api.hass, entry_id, api_key)):
             return
-        if self._overspent_logged.get(api_key) == (today := dt_util.utcnow().date()):
+        # Kept beyond this fetcher, so a reload does not log it again the same UTC day.
+        logged = self.api.hass.data.setdefault(_OVERSPENT_LOGGED, {})
+        if logged.get(key := (entry_id, api_key)) == (today := dt_util.utcnow().date()):
             return
-        self._overspent_logged[api_key] = today
+        logged[key] = today
         _LOGGER.warning(
             "Solcast reports the daily limit of API key %s reached at %d of this entry's %d calls; "
             "%s uses the same API key and spent more than its share",
@@ -143,10 +148,21 @@ class Fetcher:
         """Log at warning or error level based on the failure-only advanced option."""
         (_LOGGER.warning if self.api.advanced_options[ADVANCED_LOG_UPDATE_FAILURE_ONLY] else _LOGGER.error)(message, *args)
 
-    def _pop_task_result(self, task_name: str) -> Any | None:
-        """Pop a tracked task and return its result without propagating fetch exceptions."""
-        task = self.api.tasks.pop(task_name, None)
+    def _pop_task_result(self, task_name: str, task: asyncio.Task[Any] | None = None) -> Any | None:
+        """Pop a tracked task and return its result without propagating fetch exceptions.
+
+        Given the task a fetch started, only that task is popped: a newer fetch under the same name (the
+        clear data action starts one while the cancelled fetch ends) stays tracked and keeps its result.
+        """
         if task is None:
+            task = self.api.tasks.pop(task_name, None)
+        elif self.api.tasks.get(task_name) is task:
+            self.api.tasks.pop(task_name)
+        if task is None:
+            return None
+        if not task.done():
+            _LOGGER.debug("Task %s is still running, so cancelling it", task_name)
+            task.cancel()
             return None
         try:
             if task.cancelled():
@@ -229,19 +245,20 @@ class Fetcher:
             new_data: list[dict[str, Any]] = []
 
             act_response: dict[str, Any] | None
-            try:
-                self.api.tasks[TASK_ACTUALS_FETCH] = asyncio.create_task(
-                    self.fetch_data(
-                        hours=168,
-                        path=ESTIMATED_ACTUALS,
-                        site=site[RESOURCE_ID],
-                        api_key=api_key,
-                        force=True,
-                    )
+            task = asyncio.create_task(
+                self.fetch_data(
+                    hours=168,
+                    path=ESTIMATED_ACTUALS,
+                    site=site[RESOURCE_ID],
+                    api_key=api_key,
+                    force=True,
                 )
-                await self.api.tasks[TASK_ACTUALS_FETCH]
+            )
+            self.api.tasks[TASK_ACTUALS_FETCH] = task
+            try:
+                await task
             finally:
-                act_response = self._pop_task_result(TASK_ACTUALS_FETCH)
+                act_response = self._pop_task_result(TASK_ACTUALS_FETCH, task)
             if not isinstance(act_response, dict):
                 _LOGGER.error("No valid data was returned for estimated_actuals so this may cause issues")
                 _LOGGER.debug("API did not return a json object, returned `%s`", act_response)
@@ -329,9 +346,7 @@ class Fetcher:
         status = ""
 
         def next_update():
-            if self._next_update is not None:
-                return f", next auto update at {self._next_update}"
-            return ""
+            return f", next auto update at {self._next_update}" if self._next_update is not None else ""
 
         if last_updated := self.api.last_updated:
             if last_updated + timedelta(seconds=10) > dt_util.now(UTC):
@@ -475,19 +490,20 @@ class Fetcher:
 
             if do_past_hours > 0:
                 act_response: dict[str, Any] | None
-                try:
-                    self.api.tasks[TASK_FORECASTS_FETCH] = asyncio.create_task(
-                        self.fetch_data(
-                            hours=do_past_hours,
-                            path=ESTIMATED_ACTUALS,
-                            site=site,
-                            api_key=api_key,
-                            force=force,
-                        )
+                task = asyncio.create_task(
+                    self.fetch_data(
+                        hours=do_past_hours,
+                        path=ESTIMATED_ACTUALS,
+                        site=site,
+                        api_key=api_key,
+                        force=force,
                     )
-                    await self.api.tasks[TASK_FORECASTS_FETCH]
+                )
+                self.api.tasks[TASK_FORECASTS_FETCH] = task
+                try:
+                    await task
                 finally:
-                    act_response = self._pop_task_result(TASK_FORECASTS_FETCH)
+                    act_response = self._pop_task_result(TASK_FORECASTS_FETCH, task)
                 if not isinstance(act_response, dict):
                     failure = True
                     _LOGGER.error(
@@ -535,19 +551,20 @@ class Fetcher:
             if self.api.tasks.get(TASK_FORECASTS_FETCH) is not None:
                 _LOGGER.warning("A fetch task is already running, so aborting forecast update")
                 return _DataCallStatus.ABORT, "Fetch already running"
-            try:
-                self.api.tasks[TASK_FORECASTS_FETCH] = asyncio.create_task(
-                    self.fetch_data(
-                        hours=hours,
-                        path=FORECASTS,
-                        site=site,
-                        api_key=api_key,
-                        force=force,
-                    )
+            task = asyncio.create_task(
+                self.fetch_data(
+                    hours=hours,
+                    path=FORECASTS,
+                    site=site,
+                    api_key=api_key,
+                    force=force,
                 )
-                await self.api.tasks[TASK_FORECASTS_FETCH]
+            )
+            self.api.tasks[TASK_FORECASTS_FETCH] = task
+            try:
+                await task
             finally:
-                response = self._pop_task_result(TASK_FORECASTS_FETCH)
+                response = self._pop_task_result(TASK_FORECASTS_FETCH, task)
 
             if not isinstance(response, dict):
                 failure = True
@@ -879,7 +896,7 @@ class Fetcher:
                             self.api.api_limits[api_key],
                         )
                         if reserve:
-                            _LOGGER.debug("%d API call(s) kept for today's estimated actuals", reserve)
+                            _LOGGER.debug("%d API call(s) kept for the estimated actuals due before UTC midnight", reserve)
                         return None
 
         except asyncio.exceptions.CancelledError:

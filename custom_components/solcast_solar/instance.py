@@ -186,6 +186,17 @@ def _counted_rooftops(hass: HomeAssistant, entry: ConfigEntry) -> set[str]:
     }
 
 
+def entry_rooftops(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:
+    """Return the sites an entry can fetch: of a loaded entry every site of its keys.
+
+    Of an entry that is not loaded only its excluded sites and its rooftop sensors are known.
+    """
+
+    if entry.state is ConfigEntryState.LOADED:
+        return [site[RESOURCE_ID] for site in entry.runtime_data.coordinator.solcast.sites_all]
+    return sorted({*entry.options.get(EXCLUDE_SITES, []), *_counted_rooftops(hass, entry)})
+
+
 def rooftops_counted_elsewhere(hass: HomeAssistant, entry_id: str | None, rooftops: list[str], excluded: list[str]) -> dict[str, str]:
     """Return the rooftops this entry would count that another entry counts already, with that entry's title.
 

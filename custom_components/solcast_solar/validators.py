@@ -1,6 +1,7 @@
 """Solcast config validation functions."""
 
 import re
+import sys
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass
@@ -13,6 +14,7 @@ from .const import (
     EXCEPTION_API_DUPLICATE,
     EXCEPTION_API_KEY_EMPTY,
     EXCEPTION_API_LOOKS_LIKE_SITE,
+    EXCEPTION_EXPORT_NOT_SENSOR,
     EXCEPTION_GENERATION_MIXED_TYPES,
     EXCEPTION_GENERATION_NOT_SENSOR,
     EXCEPTION_HARD_NOT_POSITIVE_NUMBER,
@@ -28,6 +30,25 @@ from .const import (
     EXCEPTION_LIMIT_ONE_OR_GREATER,
     EXCEPTION_LIMIT_TOO_MANY,
 )
+
+if "probatio" in sys.modules:
+    validator = sys.modules["probatio"]
+else:
+    try:
+        import probatio
+
+        validator = probatio
+    except ImportError:
+        import voluptuous  # noqa: TID251, RUF100
+
+        validator = voluptuous
+
+Schema = validator.Schema
+Required = validator.Required
+Optional = validator.Optional
+All = validator.All
+Coerce = validator.Coerce
+Range = validator.Range
 
 LIKE_SITE_ID = r"^[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$"
 
@@ -224,6 +245,28 @@ def validate_export_limit_value(value: str) -> tuple[float, str | None]:
     return val, None
 
 
+def _sensor_device_class(hass: HomeAssistant, entity_registry: er.EntityRegistry, entity: str) -> str | None:
+    """Return the device class of an energy or power sensor from the entity registry or its state, else None."""
+    registry_entry = entity_registry.async_get(entity)
+    device_class = registry_entry.device_class or registry_entry.original_device_class if registry_entry is not None else None
+    if device_class not in (SensorDeviceClass.ENERGY, SensorDeviceClass.POWER):
+        entity_state = hass.states.get(entity)
+        device_class = entity_state.attributes.get("device_class") if entity_state is not None else None
+    return device_class if device_class in (SensorDeviceClass.ENERGY, SensorDeviceClass.POWER) else None
+
+
+def validate_export_entity(hass: HomeAssistant, entity: str) -> str | None:
+    """Validate a site export entity: an existing energy sensor, as the options flow offers.
+
+    Returns:
+        str | None: The error key or None.
+
+    """
+    if entity.startswith("sensor.") and _sensor_device_class(hass, er.async_get(hass), entity) == SensorDeviceClass.ENERGY:
+        return None
+    return EXCEPTION_EXPORT_NOT_SENSOR
+
+
 def validate_generation_entities(hass: HomeAssistant, entities: list[str]) -> tuple[str | None, str]:
     """Validate generation entities: each an existing energy or power sensor, and not both kinds mixed.
 
@@ -234,12 +277,8 @@ def validate_generation_entities(hass: HomeAssistant, entities: list[str]) -> tu
     entity_registry = er.async_get(hass)
     device_classes: set[str] = set()
     for entity in entities:
-        registry_entry = entity_registry.async_get(entity)
-        device_class = registry_entry.device_class or registry_entry.original_device_class if registry_entry is not None else None
-        if device_class not in (SensorDeviceClass.ENERGY, SensorDeviceClass.POWER):
-            entity_state = hass.states.get(entity)
-            device_class = entity_state.attributes.get("device_class") if entity_state is not None else None
-        if device_class not in (SensorDeviceClass.ENERGY, SensorDeviceClass.POWER):
+        device_class = _sensor_device_class(hass, entity_registry, entity)
+        if device_class is None:
             return EXCEPTION_GENERATION_NOT_SENSOR, entity
         device_classes.add(device_class)
     if len(device_classes) > 1:

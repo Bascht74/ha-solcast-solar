@@ -372,7 +372,7 @@ class DampeningAdaptive:
 
         undampened_interval_pv50: defaultdict[dt, float] = defaultdict(float)
         for site in self.dampening.api.sites:
-            for forecast in self.dampening.api.data_undampened[SITE_INFO][site[RESOURCE_ID]][FORECASTS]:
+            for forecast in self.dampening.api.data_undampened[SITE_INFO].get(site[RESOURCE_ID], {}).get(FORECASTS, []):
                 period_start = forecast[PERIOD_START]
                 if day <= period_start < day_end:
                     undampened_interval_pv50[period_start] += forecast[ESTIMATE] * 0.5
@@ -568,13 +568,14 @@ class DampeningAdaptive:
         )
         actuals: defaultdict[dt, list[float]] = defaultdict(lambda: [0.0] * INTERVALS_PER_DAY)
         for site in self.dampening.api.sites:
+            site_history = self.dampening.site_actuals(site[RESOURCE_ID])
             start, end = self.dampening.api.query.get_list_slice(
-                self.dampening.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS],
+                site_history,
                 earliest_common,
                 self.dampening.api.dt_helper.day_start_utc() - timedelta(minutes=30),
                 search_past=True,
             )
-            for actual in self.dampening.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS][start:end]:
+            for actual in site_history[start:end]:
                 ts: dt = actual[PERIOD_START].astimezone(self.dampening.api.tz)
                 day_start = self.dampening.api.dt_helper.day_start(ts)
 
@@ -971,7 +972,7 @@ class DampeningAdaptive:
         dampening_breadth = [len(combo_dampens[i]) / total_models if total_models > 0 else 0.0 for i in range(INTERVALS_PER_DAY)]
         interval_error_weights = self._build_interval_error_weights(generation_dampening, min_history_days, actuals)
 
-        # Score = (1 - avg_factor) × sqrt(variance) × dampening_breadth, for intervals with adequate
+        # Score = (1 - avg_factor) x sqrt(variance) x dampening_breadth, for intervals with adequate
         # generation only (≥ 10% of peak / _MIN_GEN_FRACTION to exclude pre-dawn/post-dusk).
         # The goal here is dampening quality, not energy magnitude. Where possible, bias this toward
         # intervals where the current dampened forecast is also persistently wrong.
@@ -985,7 +986,7 @@ class DampeningAdaptive:
 
         # Fall back progressively when history-based scoring cannot discriminate.
         if not dampening_impact or max(dampening_impact) == 0.0:
-            # First fallback: drop the variance term — (1 - dampening) × breadth, still generation-gated
+            # First fallback: drop the variance term — (1 - dampening) x breadth, still generation-gated
             dampening_impact = [
                 (1.0 - avg_dampen_factor[i]) * dampening_breadth[i]
                 if normalised_generation[i] >= _MIN_GEN_FRACTION and not interval_has_zero_generation[i]

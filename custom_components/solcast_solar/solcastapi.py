@@ -5,7 +5,8 @@ from collections import OrderedDict, defaultdict
 import contextlib
 import copy
 from dataclasses import dataclass
-from datetime import date, datetime as dt, timedelta, tzinfo
+from datetime import UTC, date, datetime as dt, timedelta, tzinfo
+from hashlib import md5
 from operator import itemgetter
 from pathlib import Path
 import time
@@ -23,6 +24,7 @@ from homeassistant.util import dt as dt_util
 
 from .advanced import AdvancedOptions
 from .const import (
+    ADVANCED_ESTIMATED_ACTUALS_FETCH_DELAY,
     ADVANCED_FORECAST_FUTURE_DAYS,
     ADVANCED_HISTORY_MAX_DAYS,
     ALL,
@@ -91,7 +93,7 @@ from .fetcher import Fetcher
 from .forecast import ForecastQuery
 from .instance import repair_issue_id, repair_placeholders
 from .log import get_logger
-from .redact import redact_api_key
+from .redact import redact_api_key, redact_filename_api_key
 from .sites_cache import FRESH_DATA, SitesCache
 
 CONTIGUOUS = "contiguous"
@@ -335,15 +337,19 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         if source_path.exists():
             for file in source_path.glob("solcast*.json"):
                 target_path = Path(self.config_dir) / file.name
-                _LOGGER.info("Migrating config directory file %s to %s", file.resolve(), target_path)
+                _LOGGER.info(
+                    "Migrating config directory file %s to %s",
+                    redact_filename_api_key(str(file.resolve())),
+                    redact_filename_api_key(str(target_path)),
+                )
                 file.replace(target_path)
 
         unlinked: list[str] = []
         for file in filter(self.sites_cache.is_this_entry_cache, Path(self.config_dir).glob("solcast*.json")):
             if file.stat().st_size == 0:
-                _LOGGER.critical("Removing zero-length file %s", file.resolve())
+                _LOGGER.critical("Removing zero-length file %s", redact_filename_api_key(str(file.resolve())))
                 file.unlink()
-                unlinked.append(str(file.name))
+                unlinked.append(redact_filename_api_key(file.name))
             else:
                 filename = str(file.resolve())
                 for api_key in self.options.api_key.split(","):
@@ -463,29 +469,36 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         """
         return self.data_actuals[LAST_UPDATED].astimezone(self.tz).date() == dt_util.now(self.tz).date()
 
+    def _fetched_key_counts(self, counts: dict[str, int]) -> int:
+        """The highest of per-key success counts (keyed by a hash of the API key) of the keys with a fetched site.
+
+        Returns:
+            int: The highest count, zero when there is none.
+        """
+        fetched = {md5(api_key[-6:].encode()).hexdigest() for api_key in self.api_sites_per_key}
+        return max((count for key, count in counts.items() if key in fetched), default=0)
+
     @property
     def successes_actuals_24h(self) -> int:
         """Number of successful estimated actuals fetches today.
 
-        Uses the maximum across all API keys.
+        Uses the maximum across the API keys with a fetched site.
 
         Returns:
             int: The maximum per-key count of successful estimated actuals site API calls since midnight.
         """
-        actuals = self.data[SUCCESS].get(SUCCESS_ACTUALS, {})
-        return max(actuals.values()) if actuals else 0
+        return self._fetched_key_counts(self.data[SUCCESS].get(SUCCESS_ACTUALS, {}))
 
     @property
     def successes_forced_24h(self) -> int:
         """Number of successful forced updates today.
 
-        Uses the maximum across all API keys.
+        Uses the maximum across the API keys with a fetched site.
 
         Returns:
             int: The maximum per-key count of successful forced site API calls since midnight.
         """
-        forced = self.data[SUCCESS][SUCCESS_FORCED]
-        return max(forced.values()) if forced else 0
+        return self._fetched_key_counts(self.data[SUCCESS][SUCCESS_FORCED])
 
     @property
     def failures_last_24h(self) -> int:
@@ -516,28 +529,28 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
 
     @property
     def api_used_count(self) -> int:
-        """API polling count for this UTC 24hr period (minimum of all API keys).
+        """API polling count for this UTC 24hr period (maximum of the API keys with a fetched site).
 
         A maximum is used because forecasts are polled at the same time for each configured API key. Should
         one API key fail but the other succeed then usage will be misaligned, so the highest usage of all
-        API keys will apply.
+        API keys will apply. A key whose sites are all excluded is not polled.
 
         Returns:
             int: The tracked API usage count.
         """
-        return max(list(self.api_used.values()))
+        return max(self.api_used[api_key] for api_key in self.api_sites_per_key or self.api_used)
 
     @property
     def api_limit(self) -> int:
         """API polling limit for this UTC 24hr period (minimum of all API keys).
 
         A minimum is used because forecasts are polled at the same time, so even if one API key has a
-        higher limit that limit will never be reached.
+        higher limit that limit will never be reached. A key whose sites are all excluded is not polled.
 
         Returns:
-            int: The lowest API limit of all configured API keys.
+            int: The lowest API limit of the API keys with a fetched site, or of all keys when none has one.
         """
-        return min(list(self.api_limits.values()))
+        return min(self.api_limits[api_key] for api_key in self.api_sites_per_key or self.api_limits)
 
     @property
     def api_sites_per_key(self) -> dict[str, int]:
@@ -569,18 +582,38 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
             default=0,
         )
 
+    @property
+    def estimated_actuals_fetches_due(self) -> int:
+        """Estimated actuals fetches still due before UTC midnight, when Solcast's daily count starts again.
+
+        They are fetched once a local day, soon after local midnight, or soon after a start that missed that time.
+        So a UTC day can hold two of them, for example after a restart that missed local midnight, and on the day
+        a clock change moves local midnight in a time zone near UTC.
+
+        Returns:
+            int: The number of fetches due before UTC midnight, zero while estimated actuals are not fetched.
+        """
+        if not self.options.get_actuals:
+            return 0
+        utc_midnight = dt_util.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        delay = timedelta(minutes=self.advanced_options[ADVANCED_ESTIMATED_ACTUALS_FETCH_DELAY])
+        due = int(not self.estimated_actuals_updated_today and self.dt_helper.day_start_utc() + delay < utc_midnight)
+        future = 1
+        while self.dt_helper.day_start_utc(future=future) + delay < utc_midnight:
+            due += 1
+            future += 1
+        return due
+
     def api_actuals_reserve(self, api_key: str) -> int:
-        """Calls of an API key still kept for the estimated actuals fetch of this UTC day.
+        """Calls of an API key kept for the estimated actuals fetches still due before UTC midnight.
 
         Arguments:
             api_key (str): The API key.
 
         Returns:
-            int: One call per fetched site of the key, less the estimated actuals calls made since UTC midnight.
+            int: One call per fetched site of the key for each estimated actuals fetch still due this UTC day.
         """
-        if not self.options.get_actuals:
-            return 0
-        return max(self.api_sites_per_key.get(api_key, 0) - self.api_actuals.get(api_key, 0), 0)
+        return self.api_sites_per_key.get(api_key, 0) * self.estimated_actuals_fetches_due
 
     def apply_site_exclusion(self) -> None:
         """Keep every site in `sites_all`, and fetch, count and show only the sites that are not excluded."""

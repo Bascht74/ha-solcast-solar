@@ -418,10 +418,13 @@ class Updater:
         await self._update_generation_history()
 
     async def _update_generation_history(self, new_day: bool = False, dampen_yesterday: bool = False) -> None:
-        """Update generation using the API."""
+        """Update generation from the generation entities, and let the next day schedule it again also after a failure."""
 
-        await self._coordinator.solcast.dampening.get_pv_generation()
-        if TASK_NEW_DAY_GENERATION in self._coordinator.tasks:
+        try:
+            await self._coordinator.solcast.dampening.get_pv_generation()
+        except Exception:
+            _LOGGER.exception("Update generation data failed")
+        finally:
             self._coordinator.tasks.pop(TASK_NEW_DAY_GENERATION, None)
 
     async def update_estimated_actuals_history(self, new_day: bool = False, dampen_yesterday: bool = False) -> None:

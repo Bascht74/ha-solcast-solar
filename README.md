@@ -400,7 +400,7 @@ The solar forecast has to be associated with a solar generation item in your Ene
 
 Edit a `Solar Panels` `Solar production` item you have previously created (or will create now). Do not add a separate `Solar production` item as things will just get weird.
 
-There can only be a single configuration of the total Solcast PV Forecast in the Energy dashboard covering all sites (arrays) in your Solcast account, it is not possible to split the forecast on the Energy dashboard for different solar arrays/Solcast sites.
+Each Solcast PV Forecast entry provides one forecast in the Energy dashboard, covering all of its sites (arrays) that are not excluded.
 
 > [!IMPORTANT]
 > If you do not have a solar generation sensor in your system then this integration will not work in the Energy dashboard. The graph and adding the forecast integration rely on there being a solar generation sensor set up.
@@ -752,7 +752,7 @@ All diagnostic sensor names are preceded by `Solcast PV Forecast` except for `Ro
 
 * `api_actuals_used`: The count of successful estimated actuals API calls today (also counted in `API Used`, as Solcast counts them).
 * `api_force_used`: The count of successful forced API calls today (those that bypassed the API limit tracked).
-* `daily_typical_forecast_updates`: The integration learns the typical forecast update cadence (excluding actuals updates).
+* `daily_typical_forecast_updates`: The forecast API calls of the previous UTC day, one per site and update, tracked and forced, without the estimated actuals calls (the API limit until the first UTC midnight).
 * `api_used_total_combined`: A simple running total of forecast updates, forced forecast updates and estimated actual updates.
 
 `API Last Polled` attributes include the following:
@@ -925,7 +925,7 @@ The base dampening factor adjustment is done because when there is significant f
 
 Aside from forecasts, the Solcast service also estimates the likely past actual generation during the day for every rooftop site, based on high resolution satellite imagery, weather observations, and how "clear" the air is (vapour/smog). This data is referred to as an "estimated actual", and it is generally quite accurate for a given location.
 
-Getting estimated actual data does require an API call, and that API call will use up API quota for a hobbyist user. One call is used per Solcast rooftop site that is not excluded, per day, and these calls count against the API limit. The integration keeps them free: auto-update plans its forecast updates around them (with a limit of ten and two sites, four updates use eight calls and the estimated actuals the other two), and a forecast update by an automation is refused when it would need one of them. So leave the API limit at the daily quota of your Solcast account.
+Getting estimated actual data does require an API call, and that API call will use up API quota for a hobbyist user. One call is used per Solcast rooftop site that is not excluded, per day, and these calls count against the API limit. The integration keeps them free: auto-update plans its forecast updates around them (with a limit of ten and two sites, four updates use eight calls and the estimated actuals the other two), and a forecast update by an automation is refused when it would need one of them. Solcast counts per UTC day while the estimated actuals are fetched after local midnight, so a UTC day can hold two of these fetches, for example after a restart that missed local midnight; calls are then kept for both. So leave the API limit at the daily quota of your Solcast account.
 
 Past estimated actual data is acquired just after midnight each day local time, randomised to update within 15 minutes. Where automated dampening is enabled, new dampening factors for the day ahead are modelled immediately after the estimated actual update. It is also possible to force an update of the estimated actuals, and this will also attempt to model dampening factors if appropriate.
 

@@ -7,8 +7,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Final
 
-import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_AREA_ID,
@@ -75,6 +73,7 @@ from .const import (
     EXCEPTION_DAMPEN_WITHOUT_GENERATION,
     EXCEPTION_EXPORT_NO_ENTITY,
     EXCEPTION_EXPORT_NO_LIMIT,
+    EXCEPTION_EXPORT_NOT_SENSOR,
     EXCEPTION_INIT_KEY_INVALID,
     EXCEPTION_INSTANCE_REQUIRED,
     EXCEPTION_INSTANCE_UNKNOWN,
@@ -157,10 +156,14 @@ from .util import (
     split_and_strip,
 )
 from .validators import (
+    All,
+    Optional,
+    Required,
     validate_api_key_value,
     validate_api_limit_value,
     validate_auto_update_value,
     validate_custom_hours_value,
+    validate_export_entity,
     validate_export_limit_value,
     validate_generation_entities,
     validate_hard_limit_value,
@@ -169,76 +172,76 @@ from .validators import (
 )
 
 # Every action names its entry by config_entry_id or by a target (device, entity, area, floor, label).
-_ENTRY_FIELDS: Final = {vol.Optional(CONFIG_ENTRY_ID): cv.string, **cv.TARGET_SERVICE_FIELDS}
+_ENTRY_FIELDS: Final = {Optional(CONFIG_ENTRY_ID): cv.string, **cv.TARGET_SERVICE_FIELDS}
 _TARGET_KEYS: Final = (ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_FLOOR_ID, ATTR_LABEL_ID)
 
-SERVICE_DAMP_SCHEMA: Final = vol.All(
+SERVICE_DAMP_SCHEMA: Final = All(
     {
-        vol.Required(DAMP_FACTOR): cv.string,
-        vol.Optional(SITE): cv.string,
+        Required(DAMP_FACTOR): cv.string,
+        Optional(SITE): cv.string,
         **_ENTRY_FIELDS,
     }
 )
-SERVICE_QUERY_ESTIMATE_SCHEMA: Final = vol.All(
+SERVICE_QUERY_ESTIMATE_SCHEMA: Final = All(
     {
-        vol.Optional(EVENT_START_DATETIME): cv.datetime,
-        vol.Optional(EVENT_END_DATETIME): cv.datetime,
-        vol.Optional(DAMPENED): cv.boolean,
-        vol.Optional(SITE): cv.string,
+        Optional(EVENT_START_DATETIME): cv.datetime,
+        Optional(EVENT_END_DATETIME): cv.datetime,
+        Optional(DAMPENED): cv.boolean,
+        Optional(SITE): cv.string,
         **_ENTRY_FIELDS,
     }
 )
-SERVICE_DAMP_GET_SCHEMA: Final = vol.All(
+SERVICE_DAMP_GET_SCHEMA: Final = All(
     {
-        vol.Optional(SITE): cv.string,
+        Optional(SITE): cv.string,
         **_ENTRY_FIELDS,
     }
 )
-SERVICE_QUERY_SCHEMA: Final = vol.All(
+SERVICE_QUERY_SCHEMA: Final = All(
     {
-        vol.Required(EVENT_START_DATETIME): cv.datetime,
-        vol.Required(EVENT_END_DATETIME): cv.datetime,
-        vol.Optional(UNDAMPENED): cv.boolean,
-        vol.Optional(SITE): cv.string,
+        Required(EVENT_START_DATETIME): cv.datetime,
+        Required(EVENT_END_DATETIME): cv.datetime,
+        Optional(UNDAMPENED): cv.boolean,
+        Optional(SITE): cv.string,
         **_ENTRY_FIELDS,
     }
 )
-SERVICE_SET_OPTIONS_SCHEMA: Final = vol.All(
+SERVICE_SET_OPTIONS_SCHEMA: Final = All(
     {
-        vol.Optional(CONF_API_KEY): cv.string,
-        vol.Optional(API_LIMIT): cv.string,
-        vol.Optional(AUTO_UPDATE): cv.string,
-        vol.Optional(KEY_ESTIMATE): cv.string,
-        vol.Optional(CUSTOM_HOURS): cv.string,
-        vol.Optional(HARD_LIMIT): cv.string,
-        vol.Optional(BRK_ESTIMATE): cv.boolean,
-        vol.Optional(BRK_ESTIMATE10): cv.boolean,
-        vol.Optional(BRK_ESTIMATE90): cv.boolean,
-        vol.Optional(BRK_SITE): cv.boolean,
-        vol.Optional(BRK_HALFHOURLY): cv.boolean,
-        vol.Optional(BRK_HOURLY): cv.boolean,
-        vol.Optional(BRK_SITE_DETAILED): cv.boolean,
-        vol.Optional(GET_ACTUALS): cv.boolean,
-        vol.Optional(USE_ACTUALS): cv.string,
-        vol.Optional(AUTO_DAMPEN): cv.boolean,
-        vol.Optional(GENERATION_ENTITIES): cv.string,
-        vol.Optional(EXCLUDE_SITES): cv.string,
-        vol.Optional(SITE_EXPORT_ENTITY): cv.string,
-        vol.Optional(SITE_EXPORT_LIMIT): cv.string,
+        Optional(CONF_API_KEY): cv.string,
+        Optional(API_LIMIT): cv.string,
+        Optional(AUTO_UPDATE): cv.string,
+        Optional(KEY_ESTIMATE): cv.string,
+        Optional(CUSTOM_HOURS): cv.string,
+        Optional(HARD_LIMIT): cv.string,
+        Optional(BRK_ESTIMATE): cv.boolean,
+        Optional(BRK_ESTIMATE10): cv.boolean,
+        Optional(BRK_ESTIMATE90): cv.boolean,
+        Optional(BRK_SITE): cv.boolean,
+        Optional(BRK_HALFHOURLY): cv.boolean,
+        Optional(BRK_HOURLY): cv.boolean,
+        Optional(BRK_SITE_DETAILED): cv.boolean,
+        Optional(GET_ACTUALS): cv.boolean,
+        Optional(USE_ACTUALS): cv.string,
+        Optional(AUTO_DAMPEN): cv.boolean,
+        Optional(GENERATION_ENTITIES): cv.string,
+        Optional(EXCLUDE_SITES): cv.string,
+        Optional(SITE_EXPORT_ENTITY): cv.string,
+        Optional(SITE_EXPORT_LIMIT): cv.string,
         **_ENTRY_FIELDS,
     }
 )
 
 # Deprecated
-SERVICE_HARD_LIMIT_SCHEMA: Final = vol.All(
+SERVICE_HARD_LIMIT_SCHEMA: Final = All(
     {
-        vol.Required(HARD_LIMIT): cv.string,
+        Required(HARD_LIMIT): cv.string,
         **_ENTRY_FIELDS,
     }
 )
-SERVICE_CUSTOM_HOURS_SCHEMA: Final = vol.All(
+SERVICE_CUSTOM_HOURS_SCHEMA: Final = All(
     {
-        vol.Required(HOURS): cv.string,
+        Required(HOURS): cv.string,
         **_ENTRY_FIELDS,
     }
 )
@@ -615,7 +618,7 @@ class ServiceActions:
         """
         _LOGGER.info("Action: Diagnostic")
 
-        return {"data": build_health_check_report(self._hass, self._coordinator, self._solcast)}
+        return {"data": await build_health_check_report(self._hass, self._coordinator, self._solcast)}
 
     async def async_get_dampening(self, call: ServiceCall) -> dict[str, Any] | None:
         """Handle get dampening action.
@@ -755,6 +758,13 @@ class ServiceActions:
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_EXPORT_NO_ENTITY)
         if opt.get(SITE_EXPORT_LIMIT, 0) == 0.0 and opt.get(SITE_EXPORT_ENTITY, ""):
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_EXPORT_NO_LIMIT)
+        # The options flow offers only energy sensors.
+        if SITE_EXPORT_ENTITY in call.data and opt[SITE_EXPORT_ENTITY] and validate_export_entity(self._hass, opt[SITE_EXPORT_ENTITY]):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key=EXCEPTION_EXPORT_NOT_SENSOR,
+                translation_placeholders={"entity": opt[SITE_EXPORT_ENTITY]},
+            )
 
         # Validate new generation entities as the options flow does.
         error, entity = (
@@ -1011,7 +1021,7 @@ def _check_entity_status(
     return check
 
 
-def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoordinator, solcast: SolcastApi) -> dict[str, Any]:
+async def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoordinator, solcast: SolcastApi) -> dict[str, Any]:
     """Build the structured Solcast health report used by diagnostics surfaces."""
     issues: list[str] = []
 
@@ -1075,18 +1085,19 @@ def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoo
     if not solcast.sites:
         issues.append("No sites configured")
 
-    cache_files: dict[str, bool] = {}
-    for label, filepath in (
-        ("forecast", solcast.filename),
-        ("undampened", solcast.filename_undampened),
-        ("actuals", solcast.filename_actuals),
-        ("actuals_dampened", solcast.filename_actuals_dampened),
-        ("dampening", solcast.filename_dampening),
-        ("dampening_history", solcast.filename_dampening_history),
-        ("generation", solcast.filename_generation),
-        ("advanced", solcast.filename_advanced),
-    ):
-        cache_files[label] = Path(filepath).exists()
+    cache_paths = {
+        "forecast": solcast.filename,
+        "undampened": solcast.filename_undampened,
+        "actuals": solcast.filename_actuals,
+        "actuals_dampened": solcast.filename_actuals_dampened,
+        "dampening": solcast.filename_dampening,
+        "dampening_history": solcast.filename_dampening_history,
+        "generation": solcast.filename_generation,
+        "advanced": solcast.filename_advanced,
+    }
+    cache_files: dict[str, bool] = await hass.async_add_executor_job(
+        lambda: {label: Path(filepath).exists() for label, filepath in cache_paths.items()}
+    )
 
     if not cache_files.get("forecast", False):
         issues.append("Forecast cache file missing")
@@ -1172,7 +1183,9 @@ async def _entry_id_for_call(hass: HomeAssistant, call: ServiceCall) -> str:
     """Pick the loaded entry an action applies to.
 
     The config_entry_id field wins, then a target. Without either, the original
-    unnamed entry is used while it is loaded, otherwise the only loaded entry.
+    unnamed entry is used while it is loaded, otherwise the only entry that is
+    not disabled. An entry that failed to load still counts, so an action never
+    reaches another entry than the one the caller may mean.
     """
 
     owners = hass.data.get(_OWNERS, {})
@@ -1192,8 +1205,9 @@ async def _entry_id_for_call(hass: HomeAssistant, call: ServiceCall) -> str:
     unnamed = [entry_id for entry_id in owners if not instance_name(_entry_options(hass, entry_id))]
     if len(unnamed) == 1:
         return unnamed[0]
-    if len(owners) == 1:
-        return next(iter(owners))
+    enabled = [entry.entry_id for entry in hass.config_entries.async_entries(DOMAIN) if entry.disabled_by is None]
+    if len(enabled) == 1 and enabled[0] in owners:
+        return enabled[0]
     raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_REQUIRED)
 
 
