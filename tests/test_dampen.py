@@ -1207,17 +1207,18 @@ async def test_calculate_models_1_to_3_without_elevation_ratio(monkeypatch: pyte
         with tempfile.NamedTemporaryFile() as handle:  # Only the name is used; the file goes when it closes
             setattr(api, attribute, handle.name)
     dampening = Dampening(api)
-    # The first day's sun would give twice the target day's output, the second day's the same.
+    # The first day's sun would give twice the target day's output, the second day's the same, so normalised to the
+    # target day both days have the same estimated actual and match.
     monkeypatch.setattr(dampening, "elevation_adjustment_ratio", lambda past, _target: 2.0 if past.day == 1 else 1.0)
 
     interval = 20  # 10:00 UTC
     timestamps = [dt(2025, 10, 1, 10, 0, tzinfo=datetime.UTC), dt(2025, 10, 2, 10, 0, tzinfo=datetime.UTC)]
-    generation = dict(zip(timestamps, [0.4, 0.6], strict=True))
-    actuals = OrderedDict(zip(timestamps, [1.0, 1.0], strict=True))
+    generation = dict(zip(timestamps, [0.4, 0.9], strict=True))
+    actuals = OrderedDict(zip(timestamps, [1.0, 2.0], strict=True))
     target_day = dt(2025, 10, 3, tzinfo=datetime.UTC)
 
-    # Pairs give 0.4 and 0.6; with the ratio applied to them models 1-3 would give 0.8, 0.7 and 0.6.
-    expected = {0: 0.4, 1: 0.6, 2: 0.5, 3: 0.4}
+    # Pairs give 0.4 and 0.45; with the ratio applied to them models 1-3 would give 0.8, 0.625 and 0.45.
+    expected = {0: 0.45, 1: 0.45, 2: 0.425, 3: 0.4}
     for model, factor in expected.items():
         result = await dampening.calculate({interval: timestamps}, generation, actuals, [], model, target_day=target_day)
         assert result[interval] == pytest.approx(factor), f"Model {model}"
@@ -1228,6 +1229,7 @@ def test_delta_adjustment_model_1_loosens_only_below_peak() -> None:
 
     dampening = Dampening.__new__(Dampening)
     dampening.api = SimpleNamespace(peak_intervals={20: 1.0})  # pyright: ignore[reportAttributeAccessIssue]
+    dampening.target_peak_intervals = None
 
     assert dampening.apply_adjustment(0.5, 0.6, 20, 1) == pytest.approx(0.7)  # 0.6 + 0.4 x 0.5²
     assert dampening.apply_adjustment(1.0, 0.6, 20, 1) == pytest.approx(0.6)

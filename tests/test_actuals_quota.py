@@ -206,8 +206,8 @@ async def test_usage_of_4702_counted_once(recorder_mock: Recorder, hass: HomeAss
     try:
         entry = await async_init_integration(hass, _sued())
         solcast = entry.runtime_data.coordinator.solcast
-        assert solcast.integration_version == "4.7.0.3"
-        assert solcast.headers["User-Agent"] == "ha-solcast-solar-integration/4.7.0.3"
+        assert solcast.integration_version == "4.7.0.4"
+        assert solcast.headers["User-Agent"] == "ha-solcast-solar-integration/4.7.0.4"
 
         usage_file = Path(solcast.sites_cache._get_usage_cache_filename(KEY1))  # pyright: ignore[reportPrivateUsage]
         usage = json.loads(usage_file.read_text(encoding="utf-8"))
@@ -216,7 +216,7 @@ async def test_usage_of_4702_counted_once(recorder_mock: Recorder, hass: HomeAss
         usage_file.write_text(json.dumps(usage), encoding="utf-8")
         data_file = Path(solcast.filename)
         data = json.loads(data_file.read_text(encoding="utf-8"))
-        assert data[INTEGRATION_VERSION] == "4.7.0.3"
+        assert data[INTEGRATION_VERSION] == "4.7.0.4"
         data[INTEGRATION_VERSION] = written_by
         data_file.write_text(json.dumps(data), encoding="utf-8")
 

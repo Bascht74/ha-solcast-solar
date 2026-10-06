@@ -178,8 +178,9 @@ async def test_adaptive_auto_dampen(  # noqa: C901
                     assert "3333-3333-3333-3333" not in solcast.data_actuals[SITE_INFO]
                     assert "Skipping model 2 and delta 0 as history of 2 days" in caplog.text
                     assert "Skipping model 2 and delta 1 as history of 1 days" in caplog.text
-                    assert f"Advanced option '{ADVANCED_AUTOMATED_DAMPENING_DELTA_ADJUSTMENT_MODEL}' set to: 1" in caplog.text
-                    assert f"Advanced option '{ADVANCED_AUTOMATED_DAMPENING_MODEL}' set to: 0" in caplog.text
+                    # 10:00, the interval the models are ranked on, was a 1.0 between 09:30 and 10:30 and now takes 0.920.
+                    assert f"Advanced option '{ADVANCED_AUTOMATED_DAMPENING_DELTA_ADJUSTMENT_MODEL}' set to: 0" in caplog.text
+                    assert f"Advanced option '{ADVANCED_AUTOMATED_DAMPENING_MODEL}' set to: 1" in caplog.text
                     assert "Task serialise_advanced_options took" in caplog.text
                     assert re.search(r"Advanced options file .+ exists", caplog.text) is None, (
                         "Advanced options file existence log should not appear"
