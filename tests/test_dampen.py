@@ -19,9 +19,8 @@ from zoneinfo import ZoneInfo
 from freezegun.api import FrozenDateTimeFactory
 import pytest
 
-from homeassistant.components.recorder import Recorder
+from homeassistant.components.recorder import Recorder, get_instance
 from homeassistant.components.sensor import SensorDeviceClass
-import homeassistant.components.solcast_solar.dampen as dampen_module
 from homeassistant.components.solcast_solar.config_flow import (
     SolcastSolarOptionFlowHandler,
 )
@@ -72,6 +71,7 @@ from homeassistant.components.solcast_solar.const import (
     SITE_INFO,
     USE_ACTUALS,
 )
+import homeassistant.components.solcast_solar.dampen as dampen_module
 from homeassistant.components.solcast_solar.dampen import (
     Dampening,
     compute_energy_intervals,
@@ -85,6 +85,7 @@ from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_registry import RegistryEntryDisabler
+from homeassistant.util import dt as dt_util
 
 from . import (
     DEFAULT_INPUT1,
@@ -108,7 +109,7 @@ from . import (
 from tests.common import MockConfigEntry
 
 ZONE = ZoneInfo(ZONE_RAW)
-NOW = dt.now(ZONE)
+NOW = dt_util.now(ZONE)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -230,7 +231,7 @@ async def test_auto_dampen(
         caplog.clear()
         removed = -5
         value_removed = solcast.data_actuals[SITE_INFO]["1111-1111-1111-1111"][FORECASTS].pop(removed)
-        freezer.move_to((dt.now(solcast.tz) + timedelta(hours=12)).replace(minute=0, second=0, microsecond=0))
+        freezer.move_to((dt_util.now(solcast.tz) + timedelta(hours=12)).replace(minute=0, second=0, microsecond=0))
         await hass.async_block_till_done()
         await wait_for_it(hass, caplog, freezer, "Update generation data", long_time=True)
         await wait_for_it(hass, caplog, freezer, "Estimated actual mean APE", long_time=True)
@@ -252,7 +253,7 @@ async def test_auto_dampen(
 
         # The rolled-over day has no generation readings, so it is a gap and not a day of zero generation that
         # would pull the average (2) and minimum (3) models down. One matched pair remains, so all models agree.
-        ADVANCED_CHECKS = {
+        _advanced_checks = {
             0: {"base": 0.830, "adjusted": [0.858, 0.834]},
             1: {"base": 0.830, "adjusted": [0.858, 0.834]},
             2: {"base": 0.830, "adjusted": [0.858, 0.834]},
@@ -264,7 +265,7 @@ async def test_auto_dampen(
                 caplog.clear()
                 solcast.advanced_options[ADVANCED_AUTOMATED_DAMPENING_MODEL] = model
                 await solcast.dampening.model_automated()
-                assert "Auto-dampen factor for 08:30 is {:.3f}".format(ADVANCED_CHECKS[model]["base"]) in caplog.text
+                assert "Auto-dampen factor for 08:30 is {:.3f}".format(_advanced_checks[model]["base"]) in caplog.text
 
                 for adjustment_model in (0, 1):
                     caplog.clear()
@@ -274,7 +275,7 @@ async def test_auto_dampen(
                     assert (
                         re.search(
                             r"Adjusted granular dampening factor for .+ 08:30:00, {:.3f}".format(
-                                ADVANCED_CHECKS[model]["adjusted"][adjustment_model]
+                                _advanced_checks[model]["adjusted"][adjustment_model]
                             ),
                             caplog.text,
                         )
@@ -294,7 +295,7 @@ async def test_auto_dampen(
         _LOGGER.debug("Rolling over to another tomorrow")
         caplog.clear()
         session_set(MOCK_CORRUPT_ACTUALS)
-        freezer.move_to((dt.now(solcast.tz) + timedelta(days=1)).replace(minute=0, second=0, microsecond=0))  # pyright: ignore[reportOptionalMemberAccess]
+        freezer.move_to((dt_util.now(solcast.tz) + timedelta(days=1)).replace(minute=0, second=0, microsecond=0))  # pyright: ignore[reportOptionalMemberAccess]
         await wait_for_it(hass, caplog, freezer, "Update estimated actuals failed: No valid json returned", long_time=True)
         session_clear(MOCK_CORRUPT_ACTUALS)
         await wait_for_it(hass, caplog, freezer, "Task get_pv_generation took")
@@ -423,7 +424,9 @@ async def test_auto_dampen_issues(
             case ExtraSensors.YES_UNIT_NOT_IN_HISTORY:
                 assert "has no unit_of_measurement, assuming kWh" not in caplog.text
                 assert f"Generation entity {options[GENERATION_ENTITIES][0]} is not a valid entity" in caplog.text  # type: ignore[reportGeneralTypeIssues]
-                assert f"Site export entity {options[SITE_EXPORT_ENTITY]} is disabled, please enable it" in caplog.text
+                # The other entity gives only a part of the generation, so no day is used
+                assert "has a gap in daylight readings" in caplog.text
+                assert solcast.dampening.data_generation[GENERATION] == []
             case ExtraSensors.YES_NO_UNIT:
                 assert "has no unit_of_measurement, assuming kWh" in caplog.text
                 assert f"Generation entity {options[GENERATION_ENTITIES][0]} is disabled, please enable it" in caplog.text  # type: ignore[reportGeneralTypeIssues]
@@ -1151,7 +1154,7 @@ async def test_calculate_elevation_adjustment_applied(monkeypatch: pytest.Monkey
         ADVANCED_AUTOMATED_DAMPENING_ELEVATION_ADJUSTMENT: True,
     }
     for attribute in ("filename_generation", "filename_dampening"):
-        with tempfile.NamedTemporaryFile(delete=False) as handle:
+        with tempfile.NamedTemporaryFile() as handle:  # Only the name is used; the file goes when it closes
             setattr(api, attribute, handle.name)
 
     dampening = Dampening(api)
@@ -1201,7 +1204,7 @@ async def test_calculate_models_1_to_3_without_elevation_ratio(monkeypatch: pyte
         ADVANCED_AUTOMATED_DAMPENING_ELEVATION_ADJUSTMENT: True,
     }
     for attribute in ("filename_generation", "filename_dampening"):
-        with tempfile.NamedTemporaryFile(delete=False) as handle:
+        with tempfile.NamedTemporaryFile() as handle:  # Only the name is used; the file goes when it closes
             setattr(api, attribute, handle.name)
     dampening = Dampening(api)
     # The first day's sun would give twice the target day's output, the second day's the same.
@@ -1293,31 +1296,85 @@ async def test_generation_ignored_jump_keeps_other_entities(
 async def test_generation_entity_without_history_is_a_gap(
     recorder_mock: Recorder,
     hass: HomeAssistant,
+    entity_registry: er.EntityRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test a day on which one of two generation entities has no readings is left out, not counted as partial generation."""
+    """Test a day on which one of two generation entities gives no readings is left out, not counted as partial generation.
+
+    The entity may have no history, be disabled or be missing from the entity registry.
+    """
 
     try:
         entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
         solcast: SolcastApi = entry.runtime_data.coordinator.solcast
         yesterday = solcast.dt_helper.day_start_utc(future=-1)
+        second = _GENERATION_ENTITIES[1]
 
-        for silent in (False, True):
+        for case in ("complete", "silent", "disabled", "missing"):
+            if case == "disabled":
+                entity_registry.async_update_entity(second, disabled_by=er.RegistryEntryDisabler.USER)
+            if case == "missing":
+                entity_registry.async_remove(second)
 
-            async def history(
-                _recorder: Any, start: dt, _end: dt, entity: str, *_args: Any, silent: bool = silent
-            ) -> dict[str, list[State]]:
-                return {} if silent and entity == _GENERATION_ENTITIES[1] else {entity: _energy_readings(entity, start)}
+            async def history(_recorder: Any, start: dt, _end: dt, entity: str, *_args: Any, case: str = case) -> dict[str, list[State]]:
+                return {} if case == "silent" and entity == second else {entity: _energy_readings(entity, start)}
 
             monkeypatch.setattr(solcast.dampening, "_get_entity_history", history)
             solcast.dampening.data_generation[GENERATION] = []
             await solcast.dampening.get_pv_generation()
             generation = {gen[PERIOD_START]: gen[GENERATION] for gen in solcast.dampening.data_generation[GENERATION]}
-            if silent:
-                assert generation == {}
-            else:
+            if case == "complete":
                 assert generation[yesterday + timedelta(hours=12)] == pytest.approx(0.6)
+            else:
+                assert generation == {}, case
 
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_site_export_entity_missing_or_disabled(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    entity_registry: er.EntityRegistry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test a disabled or missing site export entity is reported and limits no interval."""
+
+    try:
+        options = _auto_dampen_options() | {SITE_EXPORT_ENTITY: "sensor.site_export_sensor", SITE_EXPORT_LIMIT: 5.0}
+        entry = await async_init_integration(hass, options, extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        day_start = solcast.dt_helper.day_start_utc()
+        prev_start = day_start - timedelta(days=1)
+
+        entity_registry.async_update_entity("sensor.site_export_sensor", disabled_by=RegistryEntryDisabler.USER)
+        for message in ("is disabled, please enable it", "is not a valid entity"):
+            limiting = solcast.dampening._build_half_hour_bool_intervals(prev_start, day_start)
+            await solcast.dampening._apply_site_export_limits(limiting, prev_start, day_start, entity_registry, get_instance(hass))
+            assert f"Site export entity sensor.site_export_sensor {message}" in caplog.text
+            assert not any(limiting.values())
+            entity_registry.async_remove("sensor.site_export_sensor")
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_corrupt_generation_cache_stops_the_setup(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test a corrupt generation cache stops the setup and names the file, as the other cache files do."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        filename = solcast.filename_generation
+        Path(filename).write_text("{", encoding="utf-8")
+
+        caplog.clear()
+        await reload_integration(hass, entry)
+        assert entry.state is ConfigEntryState.SETUP_RETRY
+        assert f"The cached data in {filename} is corrupt in load_saved_data()" in caplog.text
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 

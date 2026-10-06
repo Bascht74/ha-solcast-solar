@@ -211,12 +211,14 @@ async def test_handle_advanced_update_cancels_pending() -> None:
         assert watcher._pending_restart is cancel_second
 
 
-def test_path_exists_oserror_returns_false() -> None:
-    """Return False when Path.exists() raises OSError (e.g. a transient filesystem race)."""
+async def test_path_exists_oserror_returns_false() -> None:
+    """Return False when Path.exists() raises OSError (e.g. a transient filesystem race), checked in the executor."""
 
     coordinator = unittest.mock.MagicMock()
     coordinator.hass.config.config_dir = "/config"
+    coordinator.hass.async_add_executor_job = unittest.mock.AsyncMock(side_effect=lambda target, *args: target(*args))
     watcher = FileWatcher(coordinator)
 
     with unittest.mock.patch("homeassistant.components.solcast_solar.watch.Path.exists", side_effect=OSError):
-        assert watcher._path_exists("/config/solcast_solar/solcast-dampening.json") is False
+        assert await watcher._path_exists("/config/solcast_solar/solcast-dampening.json") is False
+    coordinator.hass.async_add_executor_job.assert_awaited_once()

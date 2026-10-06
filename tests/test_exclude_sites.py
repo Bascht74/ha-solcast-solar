@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from homeassistant.components.recorder import Recorder
@@ -18,6 +19,7 @@ from homeassistant.components.solcast_solar.const import (
     CONFIG_ENTRY_ID,
     DAILY_ACTUALS_CONSUMED,
     DAILY_LIMIT_CONSUMED,
+    DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS,
     DOMAIN,
     ENTITY_API_COUNTER,
     ESTIMATE,
@@ -33,6 +35,7 @@ from homeassistant.components.solcast_solar.const import (
     SERVICE_SET_OPTIONS,
     SITE_ATTRIBUTE_AZIMUTH,
     SITE_ATTRIBUTE_LATITUDE,
+    SITE_DAMP,
     SITE_EXPORT_ENTITY,
     SITE_INFO,
     SITES,
@@ -44,6 +47,7 @@ from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.util import dt as dt_util
 
 from . import (
     DEFAULT_INPUT1,
@@ -194,16 +198,35 @@ async def test_excluded_site_raises_no_azimuth_repair(
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 
 
+async def test_granular_factors_of_an_excluded_site_are_kept(recorder_mock: Recorder, hass: HomeAssistant) -> None:
+    """Granular dampening factors for an excluded site do not switch off the factors of the fetched site."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1) | {EXCLUDE_SITES: [SITE2]})
+        solcast = entry.runtime_data.coordinator.solcast
+        factors = {SITE1: [0.5] * 24, SITE2: [0.7] * 24}
+        Path(solcast.dampening.get_filename()).write_text(json.dumps(factors), encoding="utf-8")
+
+        assert await solcast.dampening.granular_data()
+        await hass.async_block_till_done()
+        assert entry.options[SITE_DAMP] is True
+        assert solcast.dampening.factors == factors
+        noon = solcast.dt_helper.day_start_utc() + timedelta(hours=12)
+        assert solcast.dampening.get_factor(SITE1, noon, 1.0) == 0.5
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
 @pytest.mark.parametrize(
-    ("options", "updates"),
+    ("options", "updates", "limit"),
     [
-        ({API_LIMIT: "10"}, 4),  # Two sites: 4 x 2 forecast calls + 2 estimated actuals calls
-        ({API_LIMIT: "10", GET_ACTUALS: False}, 5),  # Without estimated actuals nothing is kept
-        ({API_LIMIT: "9", CONF_API_KEY: KEY2}, 8),  # One site: 8 forecast calls + 1 estimated actuals call
-        ({API_LIMIT: "10", EXCLUDE_SITES: [SITE2]}, 9),  # An excluded site frees its calls
-        ({API_LIMIT: "10,9", CONF_API_KEY: f"{KEY1},{KEY2}"}, 4),  # Every key fits: (10 - 2) / 2 and (9 - 1) / 1
-        # A key without fetched sites does not count
-        ({API_LIMIT: "10,9", CONF_API_KEY: f"{KEY1},{KEY2}", EXCLUDE_SITES: [SITE1, SITE2]}, 8),
+        ({API_LIMIT: "10"}, 4, 10),  # Two sites: 4 x 2 forecast calls + 2 estimated actuals calls
+        ({API_LIMIT: "10", GET_ACTUALS: False}, 5, 10),  # Without estimated actuals nothing is kept
+        ({API_LIMIT: "9", CONF_API_KEY: KEY2}, 8, 9),  # One site: 8 forecast calls + 1 estimated actuals call
+        ({API_LIMIT: "10", EXCLUDE_SITES: [SITE2]}, 9, 10),  # An excluded site frees its calls
+        ({API_LIMIT: "10,9", CONF_API_KEY: f"{KEY1},{KEY2}"}, 4, 9),  # Every key fits: (10 - 2) / 2 and (9 - 1) / 1
+        # A key without fetched sites does not count, neither for the plan nor for the API limit shown
+        ({API_LIMIT: "5,9", CONF_API_KEY: f"{KEY1},{KEY2}", EXCLUDE_SITES: [SITE1, SITE2]}, 8, 9),
     ],
 )
 async def test_plan_keeps_calls_for_estimated_actuals(
@@ -212,6 +235,7 @@ async def test_plan_keeps_calls_for_estimated_actuals(
     caplog: pytest.LogCaptureFixture,
     options: dict[str, Any],
     updates: int,
+    limit: int,
 ) -> None:
     """Auto-update plans the forecast updates that leave one call per fetched site a day for estimated actuals."""
 
@@ -219,6 +243,10 @@ async def test_plan_keeps_calls_for_estimated_actuals(
         entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1) | options)
         coordinator = entry.runtime_data.coordinator
         assert coordinator.divisions == updates
+        assert coordinator.solcast.api_limit == limit
+        state = hass.states.get("sensor.solcast_pv_forecast_api_limit")
+        assert state is not None
+        assert state.state == str(limit)
         assert coordinator.updater.get_auto_update_details()["auto_update_divisions"] == updates
         assert ("Auto update keeps one API call per site a day for estimated actuals" in caplog.text) is options.get(GET_ACTUALS, True)
     finally:
@@ -246,6 +274,7 @@ async def test_estimated_actuals_count_in_tracked_usage(
     hass: HomeAssistant,
     issue_registry: ir.IssueRegistry,
     caplog: pytest.LogCaptureFixture,
+    frozen_time: FrozenDateTimeFactory,
 ) -> None:
     """A day of auto-updates and the estimated actuals fetch uses exactly the limit, counted as Solcast counts it."""
 
@@ -268,7 +297,14 @@ async def test_estimated_actuals_count_in_tracked_usage(
         solcast.data[LAST_UPDATED] -= timedelta(minutes=1)
         assert (await solcast.fetcher.get_forecast_update()).outcome == UpdateOutcome.FAILED
         assert f"API polling limit exhausted, not getting forecast for site {SITE1}, API used is 8/10" in caplog.text
-        assert "2 API call(s) kept for today's estimated actuals" in caplog.text
+        assert "2 API call(s) kept for the estimated actuals due before UTC midnight" in caplog.text
+
+        # Just after local midnight, at 14:05 UTC in Brisbane, the fetch of the new local day is the last of this UTC day.
+        # The entry's timers are stopped, so the fetch below is the only one.
+        await coordinator.tasks_cancel()
+        frozen_time.tick(solcast.dt_helper.day_start_utc(future=1) + timedelta(minutes=5) - dt_util.utcnow())
+        assert not solcast.estimated_actuals_updated_today
+        assert solcast.api_actuals_reserve(KEY1) == 2
 
         # The estimated actuals fetch is never refused, and counts in the same daily total as Solcast's.
         caplog.clear()
@@ -300,5 +336,27 @@ async def test_estimated_actuals_count_in_tracked_usage(
         assert issue_registry.async_get_issue(DOMAIN, ISSUE_ACTUALS_QUOTA_TODAY) is None
         sync_actuals_quota_risk_issue(hass, sites, {"key1": 5}, {"key1": 11}, {}, 9, get_actuals=True, api_actuals={"key1": 1})
         assert issue_registry.async_get_issue(DOMAIN, ISSUE_ACTUALS_QUOTA_TODAY) is not None
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+@pytest.mark.parametrize(("consumed", "expected"), [(4, 6), (19, 20)])
+async def test_usage_written_before_actuals_counted(recorder_mock: Recorder, hass: HomeAssistant, consumed: int, expected: int) -> None:
+    """A usage file from before the estimated actuals calls counted in the tracked usage adds today's calls once, up to the limit."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        solcast = entry.runtime_data.coordinator.solcast
+        usage_file = Path(solcast.sites_cache._get_usage_cache_filename(KEY1))  # pyright: ignore[reportPrivateUsage]
+        usage = json.loads(usage_file.read_text(encoding="utf-8"))
+        assert usage.pop(DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS) is True
+        usage[DAILY_LIMIT_CONSUMED], usage[DAILY_ACTUALS_CONSUMED] = consumed, 2
+        usage_file.write_text(json.dumps(usage), encoding="utf-8")
+
+        for _ in range(2):  # Counted once
+            await solcast.sites_cache._sites_usage()  # pyright: ignore[reportPrivateUsage]
+            assert solcast.api_used[KEY1] == expected
+        usage = json.loads(usage_file.read_text(encoding="utf-8"))
+        assert (usage[DAILY_LIMIT_CONSUMED], usage[DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS]) == (expected, True)
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

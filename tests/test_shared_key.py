@@ -20,6 +20,7 @@ from homeassistant.components.solcast_solar.const import (
     API_LIMIT,
     AUTO_UPDATE,
     CONFIG_ENTRY_ID,
+    CONFIG_VERSION,
     DAILY_LIMIT_CONSUMED,
     DOMAIN,
     EXCEPTION_ALL_SITES_EXCLUDED,
@@ -213,7 +214,8 @@ async def test_new_key_shared_with_another_entry(recorder_mock: Recorder, hass: 
             assert west.state is ConfigEntryState.LOADED
             assert [site[RESOURCE_ID] for site in west.runtime_data.coordinator.solcast.sites] == [SITE3]
             assert west.runtime_data.coordinator.solcast.api_sites_per_key == {KEY2: 1}
-            assert issue_registry.async_get_issue(DOMAIN, SHARED_ISSUE) is not None
+            # West fetches nothing with the original's key, so its limit for that key does not add up with the original's.
+            assert issue_registry.async_get_issue(DOMAIN, SHARED_ISSUE) is None
 
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": west.entry_id}, data=west.data
@@ -301,13 +303,77 @@ async def test_refusal_caused_by_another_entry_is_logged(
         assert message in caplog.text
         await _refused(2)
         assert "Solcast reports the daily limit" not in caplog.text
-        west_api.fetcher._overspent_logged[KEY1] = dt_util.utcnow().date() - timedelta(days=1)  # pyright: ignore[reportPrivateUsage]
+
+        # Logged once a UTC day, also when the entry was reloaded in between.
+        assert await hass.config_entries.async_reload(west.entry_id)
+        await hass.async_block_till_done()
+        west_api = west.runtime_data.coordinator.solcast
+        await _refused(2)
+        assert "Solcast reports the daily limit" not in caplog.text
+        logged = hass.data[f"{DOMAIN}_overspent_logged"]
+        logged[(west.entry_id, KEY1)] = dt_util.utcnow().date() - timedelta(days=1)
         await _refused(2)
         assert message in caplog.text
+
         # At its own limit the entry has spent its share; a forced call that Solcast refuses is not blamed on the other entry.
-        west_api.fetcher._overspent_logged.clear()  # pyright: ignore[reportPrivateUsage]
+        logged.clear()
         await _refused(5, force=True)
         assert "Solcast reports the daily limit" not in caplog.text
     finally:
         session_clear(MOCK_OVER_LIMIT)
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_shared_limit_counts_entries_that_fetch_with_the_key(
+    recorder_mock: Recorder, hass: HomeAssistant, issue_registry: ir.IssueRegistry
+) -> None:
+    """An entry counts towards a key's quota while it may fetch with it; disabling one that failed to load is seen at once."""
+
+    try:
+        sued = await async_init_integration(hass, _options("6", **{EXCLUDE_SITES: [SITE2]}))
+        # West counts the other site, but every site it would fetch is excluded, so its set-up fails.
+        west_options = _options("6", **{INSTANCE_NAME: "West", EXCLUDE_SITES: [SITE1, SITE2]})
+        west = MockConfigEntry(domain=DOMAIN, title="Solcast West", data=west_options, options=west_options, version=CONFIG_VERSION)
+        west.add_to_hass(hass)
+        assert not await hass.config_entries.async_setup(west.entry_id)
+        await hass.async_block_till_done()
+        assert west.state is ConfigEntryState.SETUP_ERROR
+
+        # An entry that is not loaded may fetch with every key it has, so its limits count.
+        issue = issue_registry.async_get_issue(DOMAIN, SHARED_ISSUE)
+        assert issue is not None
+        assert issue.translation_placeholders is not None
+        assert issue.translation_placeholders["total"] == "12"
+
+        # Disabling it does not unload anything, yet the repair follows at once.
+        await hass.config_entries.async_set_disabled_by(west.entry_id, ConfigEntryDisabler.USER)
+        await hass.async_block_till_done()
+        assert issue_registry.async_get_issue(DOMAIN, SHARED_ISSUE) is None
+        assert sued.state is ConfigEntryState.LOADED
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_options_of_an_unloaded_entry_check_its_sites(recorder_mock: Recorder, hass: HomeAssistant) -> None:
+    """Including a site again in an entry that is not loaded is refused when another entry fetches it."""
+
+    try:
+        sued = await async_init_integration(hass, _options("5", **{EXCLUDE_SITES: [SITE2]}))
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_API_KEY: KEY1, API_LIMIT: "5", AUTO_UPDATE: "1", INSTANCE_NAME: "West"}
+        )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        await hass.async_block_till_done()
+        assert await hass.config_entries.async_unload(sued.entry_id)
+        await hass.async_block_till_done()
+        assert sued.state is ConfigEntryState.NOT_LOADED
+
+        flow = SolcastSolarOptionFlowHandler(sued)
+        flow.hass = hass
+        result = await flow.async_step_init({**sued.options, SITE_EXPORT_ENTITY: [], EXCLUDE_SITES: []})
+        assert result.get("errors") == {"base": "rooftop_in_use"}
+        assert result.get("description_placeholders", {}).get("rooftops") == SITE2
+        assert sued.options[EXCLUDE_SITES] == [SITE2]
+    finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

@@ -27,6 +27,7 @@ from homeassistant.components.solcast_solar.const import (
     API_KEY,
     API_LIMIT,
     DAILY_LIMIT_CONSUMED,
+    DELAYED_RESTART_ON_CRASH,
     DOMAIN,
     FAILURE,
     FORECASTS,
@@ -46,6 +47,7 @@ from homeassistant.components.solcast_solar.enums import UpdateOutcome, UpdateRe
 import homeassistant.components.solcast_solar.fetcher as fetcher_module
 from homeassistant.components.solcast_solar.fetcher import Fetcher
 from homeassistant.components.solcast_solar.instance import repair_placeholders
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.setup import async_setup_component
@@ -55,8 +57,11 @@ from . import (
     DEFAULT_INPUT1,
     KEY1,
     MOCK_BUSY,
+    MOCK_EXCEPTION,
+    MOCK_NOT_FOUND,
     async_cleanup_integration_tests,
     async_init_integration,
+    async_setup_aioresponses,
     session_clear,
     session_set,
     write_advanced_options,
@@ -693,4 +698,47 @@ async def test_restart_over_utc_midnight_resets_usage_and_rotates_failures(
         assert solcast.sites_cache.missed_midnight_resets == 0
 
     finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_setup_retried_after_a_connection_error_without_cached_sites(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A connection error while no sites are cached retries the set-up, and the sites are fetched again after the crash delay."""
+
+    try:
+        session_set(MOCK_EXCEPTION, exception=ConnectionRefusedError)
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        assert entry.state is ConfigEntryState.SETUP_RETRY
+
+        # The next try fails too and records the time; a try within the crash delay waits without calling Solcast.
+        for _ in range(2):
+            await hass.config_entries.async_reload(entry.entry_id)
+            await hass.async_block_till_done()
+            assert entry.state is ConfigEntryState.SETUP_RETRY
+        assert f"skipping load for {DELAYED_RESTART_ON_CRASH} minutes" in caplog.text
+
+        session_clear(MOCK_EXCEPTION)
+        await async_setup_aioresponses()
+        freezer.tick(timedelta(minutes=DELAYED_RESTART_ON_CRASH + 1))
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.LOADED
+    finally:
+        session_clear(MOCK_EXCEPTION)
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_setup_fails_on_a_client_error_without_cached_sites(recorder_mock: Recorder, hass: HomeAssistant) -> None:
+    """A client error (404) while no sites are cached fails the set-up, as retrying would not help."""
+
+    try:
+        session_set(MOCK_NOT_FOUND)
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        assert entry.state is ConfigEntryState.SETUP_ERROR
+    finally:
+        session_clear(MOCK_NOT_FOUND)
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

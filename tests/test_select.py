@@ -1,7 +1,7 @@
 """Tests for the Solcast Solar select."""
 
 import asyncio
-from datetime import datetime as dt, timedelta
+from datetime import timedelta
 import logging
 
 from freezegun.api import FrozenDateTimeFactory
@@ -20,6 +20,7 @@ from homeassistant.components.solcast_solar.solcastapi import SolcastApi
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 
 from . import DEFAULT_INPUT1, async_cleanup_integration_tests, async_init_integration
 
@@ -49,7 +50,7 @@ async def test_select_change_value(
 
     try:
         entry = await async_init_integration(hass, DEFAULT_INPUT1)
-        freezer.move_to(dt.now() + timedelta(minutes=1))
+        freezer.move_to(dt_util.naive_now() + timedelta(minutes=1))
         async with asyncio.timeout(10):
             while "Start is not stale" not in caplog.text:
                 freezer.tick()
@@ -57,7 +58,7 @@ async def test_select_change_value(
         coordinator: SolcastUpdateCoordinator = entry.runtime_data.coordinator
         solcast: SolcastApi = coordinator.solcast
 
-        freezer.move_to((dt.now(solcast.tz) + timedelta(hours=24)).replace(minute=27, second=27))
+        freezer.move_to((dt_util.now(solcast.tz) + timedelta(hours=24)).replace(minute=27, second=27))
         await hass.async_block_till_done()
 
         assert (

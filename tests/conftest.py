@@ -1,13 +1,15 @@
 """Test configuration for Solcast Solar integration."""
 
 from collections.abc import Generator
-from datetime import datetime as dt
 import logging
+import threading
 from typing import Any
 
 import freezegun
 from freezegun.api import FrozenDateTimeFactory
 import pytest
+
+from homeassistant.util import dt as dt_util
 
 from . import aioresponses_reset
 
@@ -55,10 +57,24 @@ def reset_aioresponses() -> Generator[None]:
 
 
 @pytest.fixture(autouse=True)
+def join_watcher_threads() -> Generator[None]:
+    """Let the worker threads of the file watchers end before Home Assistant's check for lingering threads.
+
+    watchfiles waits for file changes in AnyIO worker threads, which are told to stop when the test task ends and
+    may not be gone yet when the check runs. This fixture is torn down before that check, so it waits for them.
+    """
+    before = set(threading.enumerate())
+    yield
+    for thread in set(threading.enumerate()) - before:
+        if thread.name == "AnyIO worker thread":
+            thread.join(timeout=10)
+
+
+@pytest.fixture(autouse=True)
 def frozen_time() -> Generator[FrozenDateTimeFactory]:
     """Freeze test time."""
 
-    with freezegun.freeze_time(f"{dt.now().date()} 12:27:27", tz_offset=-10) as freeze:
+    with freezegun.freeze_time(f"{dt_util.naive_now().date()} 12:27:27", tz_offset=-10) as freeze:
         yield freeze  # type: ignore[misc]
 
 

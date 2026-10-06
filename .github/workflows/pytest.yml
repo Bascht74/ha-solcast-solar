@@ -19,8 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The latest release and the current beta; raise both when a new one is out.
-        core: ["2026.9.4", "2026.10.0b0"]
+        # The latest release and the current betas; raise them when a new one is out.
+        core: ["2026.9.4", "2026.10.0b0", "2026.10.0b1"]
     env:
       # PyPI tzdata: Ubuntu's zone data inverts the Europe/Dublin DST tests.
       PYTHONTZPATH: ""

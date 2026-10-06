@@ -76,6 +76,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 from homeassistant.util.read_only_dict import ReadOnlyDict
 
 from . import (
@@ -435,7 +436,7 @@ async def test_sensor_states(  # noqa: C901
         write_advanced_options(hass.config.config_dir, {ADVANCED_ENTITY_LOGGING: True})
 
         entry = await async_init_integration(hass, settings)
-        freezer.move_to(dt.now() + timedelta(minutes=1))
+        freezer.move_to(dt_util.naive_now() + timedelta(minutes=1))
         async with asyncio.timeout(10):
             while "Start is not stale" not in caplog.text:
                 freezer.tick()
@@ -455,7 +456,7 @@ async def test_sensor_states(  # noqa: C901
         assert state.attributes.get(API_FORCE_USED) == 0
         assert state.attributes.get(DAILY_TYPICAL_FORECAST_UPDATES) == solcast.api_typical_forecast_updates_count
 
-        freezer.move_to((dt.now(solcast.tz) + timedelta(hours=24)).replace(minute=27, second=27))
+        freezer.move_to((dt_util.now(solcast.tz) + timedelta(hours=24)).replace(minute=27, second=27))
         await hass.async_block_till_done()
 
         # Consolidate breakdowns for the key scenarios
@@ -499,7 +500,7 @@ async def test_sensor_states(  # noqa: C901
             while "Reloading configuration entries because disabled_by changed" not in caplog.text:
                 freezer.tick(0.01)
                 await hass.async_block_till_done()
-        now = dt.now()
+        now = dt_util.naive_now()
 
         # Test number of site sensors that exist.
         assert len(hass.states.async_all("sensor")) == len(sensors) + (3 if key == "2" else 5), (
@@ -660,7 +661,7 @@ async def test_sensor_states(  # noqa: C901
 
         # Simulate date change
         caplog.clear()
-        coordinator._last_day = (dt.now(solcast.options.tz) - timedelta(days=1)).day
+        coordinator._last_day = (dt_util.now(solcast.options.tz) - timedelta(days=1)).day
         await coordinator._update_integration_listeners()
         assert "Date has changed, recalculating splines" in caplog.text
         assert "Previous auto update would have been" in caplog.text

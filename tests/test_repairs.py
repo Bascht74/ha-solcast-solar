@@ -2,8 +2,7 @@
 
 import asyncio
 import copy
-import datetime
-from datetime import datetime as dt, timedelta
+from datetime import timedelta
 import json
 import logging
 from pathlib import Path
@@ -49,6 +48,7 @@ from homeassistant.components.solcast_solar.repairs import async_create_fix_flow
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.util import dt as dt_util
 
 from . import (
     DEFAULT_INPUT1,
@@ -86,9 +86,7 @@ async def test_missing_data_fixable(
                 data = json.loads(data_file.read_text(encoding="utf-8"))
                 # Remove future forecasts from "now" plus six days
                 for site in data[SITE_INFO].values():
-                    site[FORECASTS] = [
-                        f for f in site[FORECASTS] if f[PERIOD_START] < (dt.now(datetime.UTC) + timedelta(days=4)).isoformat()
-                    ]
+                    site[FORECASTS] = [f for f in site[FORECASTS] if f[PERIOD_START] < (dt_util.utcnow() + timedelta(days=4)).isoformat()]
                 data_file.write_text(json.dumps(data), encoding="utf-8")
                 _LOGGER.critical("%s: %s", data_file, len(data[SITE_INFO]["1111-1111-1111-1111"][FORECASTS]))
 
@@ -118,6 +116,7 @@ async def test_missing_data_fixable(
         result = await flow.async_step_init()  # type: ignore[attr-defined]
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "offer_auto"
+        assert result["description_placeholders"]["instance"] == ""  # The unnamed entry adds nothing to the title
 
         result = await flow.async_step_offer_auto({AUTO_UPDATE: "1"})  # type: ignore[attr-defined]
         await hass.async_block_till_done()
@@ -157,9 +156,7 @@ async def test_missing_data_unfixable(
                 data = json.loads(data_file.read_text(encoding="utf-8"))
                 # Remove future forecasts to trigger missing-data detection.
                 for site in data[SITE_INFO].values():
-                    site[FORECASTS] = [
-                        f for f in site[FORECASTS] if f[PERIOD_START] < (dt.now(datetime.UTC) + timedelta(days=4)).isoformat()
-                    ]
+                    site[FORECASTS] = [f for f in site[FORECASTS] if f[PERIOD_START] < (dt_util.utcnow() + timedelta(days=4)).isoformat()]
                 # Simulate recent historical failures so the issue is not auto-fixable.
                 data[FAILURE][LAST_14D] = [1, *[0] * 13]
                 data_file.write_text(json.dumps(data), encoding="utf-8")
@@ -233,11 +230,11 @@ async def test_missing_data_initial(
         assert_issue_present()
 
         caplog.clear()
-        freezer.move_to((dt.now(tz=ZoneInfo(ZONE_RAW))).replace(hour=23, minute=59, second=0, microsecond=0))
+        freezer.move_to((dt_util.now(ZoneInfo(ZONE_RAW))).replace(hour=23, minute=59, second=0, microsecond=0))
         await update_forecast()
 
         caplog.clear()
-        freezer.move_to((dt.now(tz=ZoneInfo(ZONE_RAW)) + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0))
+        freezer.move_to((dt_util.now(ZoneInfo(ZONE_RAW)) + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0))
         await hass.async_block_till_done()
         await update_forecast()
         assert_issue_not_present()

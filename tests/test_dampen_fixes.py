@@ -24,10 +24,12 @@ from homeassistant.components.solcast_solar.const import (
     EXPORT_LIMITING,
     GENERATION,
     GENERATION_ENTITIES,
+    GENERATION_VERSION,
     GET_ACTUALS,
     LAST_UPDATED,
     PERIOD_START,
     USE_ACTUALS,
+    VERSION,
 )
 import homeassistant.components.solcast_solar.dampen as dampen_module
 from homeassistant.components.solcast_solar.dampen import Dampening, _is_number
@@ -199,6 +201,88 @@ async def test_generation_entities_key_written_at_load(
         )
         await hass.async_block_till_done()
         assert "Generation entities changed" in caplog.text
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_cached_gap_days_rechecked_once(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A generation cache from before gaps were checked loses its days with a reading gap once; a purged day stays."""
+
+    entities = ["sensor.solar_export_sensor_1111_1111_1111_1111", "sensor.solar_export_sensor_2222_2222_2222_2222"]
+    try:
+        options = copy.deepcopy(DEFAULT_INPUT2)
+        options[AUTO_UPDATE] = 0
+        options[GET_ACTUALS] = True
+        options[USE_ACTUALS] = 1
+        options[AUTO_DAMPEN] = True
+        options[GENERATION_ENTITIES] = entities
+        entry = await async_init_integration(hass, options, extra_sensors=ExtraSensors.YES)
+        solcast = entry.runtime_data.coordinator.solcast
+        today = solcast.dt_helper.day_start_utc()
+        generation_file = Path(solcast.filename_generation)
+
+        # Days ago: 1 complete, 2 read by one entity only, 3 unknown from 09:00 to 21:00, 9 no longer in the recorder.
+        def day_start(days_ago: int) -> dt:
+            return solcast.dt_helper.day_start_utc(future=-days_ago)
+
+        cached = {
+            LAST_UPDATED: today,
+            GENERATION_ENTITIES: entities,
+            GENERATION: [
+                {PERIOD_START: day_start(days_ago) + timedelta(minutes=30 * i), GENERATION: 0.3, EXPORT_LIMITING: False}
+                for days_ago in (9, 3, 2, 1)
+                for i in range(48)
+            ],
+        }
+        assert await solcast.sites_cache.serialise_data(cached, str(generation_file))
+        calls: list[int] = []
+
+        async def history(_self: Any, _recorder: Any, start: dt, _end: dt, entity: str, *_args: Any) -> dict[str, list[State]]:
+            days_ago = (today - start).days
+            calls.append(days_ago)
+            if days_ago == 9 or (days_ago == 2 and entity == entities[1]):
+                return {}
+            value = 0.0
+            readings: list[State] = []
+            for minute in range(0, 1440, 10):
+                value += 0.1
+                unknown = days_ago == 3 and entity == entities[0] and 540 <= minute < 1260
+                readings.append(
+                    State(
+                        entity,
+                        "unknown" if unknown else f"{value:.1f}",
+                        {"unit_of_measurement": "kWh"},
+                        last_updated=start + timedelta(minutes=minute),
+                    )
+                )
+            return {entity: readings}
+
+        monkeypatch.setattr(Dampening, "_get_entity_history", history)
+        caplog.clear()
+        await reload_integration(hass, entry)
+        solcast = entry.runtime_data.coordinator.solcast
+
+        kept = {gen[PERIOD_START] for gen in solcast.dampening.data_generation[GENERATION]}
+        for days_ago, stays in ((1, True), (2, False), (3, False), (9, True)):
+            assert (day_start(days_ago) in kept) is stays, days_ago
+        assert len(kept) == 96
+        stored = json.loads(generation_file.read_text(encoding="utf-8"))
+        assert stored[VERSION] == GENERATION_VERSION
+        assert len(stored[GENERATION]) == 96
+        assert "Generation days left out, so building the dampening history again" in caplog.text
+        assert sorted(set(calls)) == [1, 2, 3, 9]
+
+        # Checked once: the next start reads no history for the cached days.
+        calls.clear()
+        await reload_integration(hass, entry)
+        assert calls == []
+        assert len(entry.runtime_data.coordinator.solcast.dampening.data_generation[GENERATION]) == 96
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

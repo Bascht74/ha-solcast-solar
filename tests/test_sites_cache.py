@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from datetime import UTC, datetime as dt, timedelta
+from datetime import timedelta
 import json
 import logging
 from pathlib import Path
@@ -30,6 +30,7 @@ from homeassistant.components.solcast_solar.const import (
 )
 from homeassistant.components.solcast_solar.enums import SitesStatus
 from homeassistant.components.solcast_solar.sites_cache import SitesCache
+from homeassistant.components.solcast_solar.solcastapi import SolcastApi
 from homeassistant.components.solcast_solar.util import write_file_atomic
 from homeassistant.util import dt as dt_util
 
@@ -153,8 +154,8 @@ async def test_backup_caches_prunes_old_creates_current(tmp_path: Path) -> None:
     cache_file = tmp_path / "solcast.json"
     cache_file.write_text("{}", encoding="utf-8")
 
-    old_day = (dt.now(UTC) - timedelta(days=1)).strftime("%y%m%d")
-    today = dt.now(UTC).strftime("%y%m%d")
+    old_day = (dt_util.utcnow() - timedelta(days=1)).strftime("%y%m%d")
+    today = dt_util.utcnow().strftime("%y%m%d")
     old_backup = tmp_path / f"solcast-{old_day}.json.bak"
     old_backup.write_text("{}", encoding="utf-8")
     legacy_backup = tmp_path / f"solcast-{today}-auto_backup.json"
@@ -347,9 +348,47 @@ async def test_sites_client_error_does_not_log_api_key(tmp_path: Path, caplog: p
     status, _, _ = await sites_cache._sites_data(prior_crash=False, use_cache=False)
 
     assert status == 999
-    assert api.sites_status is SitesStatus.ERROR
+    assert api.sites_status is SitesStatus.API_BUSY  # Set-up is retried later
     assert "Connection error: 502" in caplog.text
     assert api_key not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("status", "sites_status"), [(503, SitesStatus.API_BUSY), (500, SitesStatus.API_BUSY), (404, SitesStatus.ERROR)])
+async def test_sites_server_error_without_cache(tmp_path: Path, status: int, sites_status: SitesStatus) -> None:
+    """A server error while no sites are cached lets the set-up be retried later, as a busy API does; a client error does not."""
+
+    class _Response:
+        def __init__(self) -> None:
+            self.status = status
+
+        async def text(self) -> str:
+            return ""
+
+    async def respond(*_args: Any, **_kwargs: Any) -> _Response:
+        return _Response()
+
+    api = SimpleNamespace(
+        config_dir=str(tmp_path),
+        filename=str(tmp_path / "solcast.json"),
+        options=SimpleNamespace(api_key="key"),
+        entry_options={API_KEY: "key"},
+        advanced_options={ADVANCED_SOLCAST_URL: "https://api.solcast.com.au", ADVANCED_SOLCAST_PORT: 443},
+        get_solcast_base_url=lambda url, _port: url,
+        aiohttp_session=SimpleNamespace(get=respond),
+        headers={},
+        sites_status=SitesStatus.OK,
+        sites=[],
+        http_status_translate=lambda status: f"{status}",
+        entry=None,
+        hass=_ExecutorHass(),
+    )
+    sites_cache = SitesCache(api)  # pyright: ignore[reportArgumentType]
+
+    result, _, _ = await sites_cache._sites_data(prior_crash=False, use_cache=True)
+
+    assert result != 200
+    assert api.sites_status is sites_status
 
 
 @pytest.mark.asyncio
@@ -380,7 +419,7 @@ async def test_sites_request_times_out(tmp_path: Path, caplog: pytest.LogCapture
     status, _, _ = await sites_cache._sites_data(prior_crash=False, use_cache=False)
 
     assert status == 999
-    assert api.sites_status is SitesStatus.ERROR
+    assert api.sites_status is SitesStatus.API_BUSY  # Set-up is retried later
     assert "Error retrieving sites" in caplog.text
 
 
@@ -401,3 +440,23 @@ def test_write_file_atomic_keeps_old_file_on_failure(tmp_path: Path) -> None:
     write_file_atomic(str(target), '{"new": true}')
     assert json.loads(target.read_text(encoding="utf-8")) == {"new": True}
     assert sorted(path.name for path in tmp_path.iterdir()) == ["blocked.json", "solcast.json"]
+
+
+def test_migrated_and_zero_length_files_do_not_log_api_key(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Moving a key-named cache into the config folder and removing it as empty keeps the key out of logs and the repair."""
+    api_key = "SECRETKEY1234567890"
+    (tmp_path / f"solcast-sites-{api_key}.json").write_text("", encoding="utf-8")
+    api = SimpleNamespace(
+        config_dir=str(tmp_path / "solcast_solar"),
+        options=SimpleNamespace(api_key=api_key),
+        sites_cache=SimpleNamespace(is_this_entry_cache=lambda _file: True),
+    )
+    caplog.set_level(logging.INFO)
+
+    unlinked = SolcastApi._migrate_config_files(api)  # pyright: ignore[reportArgumentType]
+
+    assert unlinked == ["solcast-sites-******567890.json"]
+    assert not (tmp_path / "solcast_solar" / f"solcast-sites-{api_key}.json").exists()
+    assert "Migrating config directory file" in caplog.text
+    assert "Removing zero-length file" in caplog.text
+    assert api_key not in caplog.text

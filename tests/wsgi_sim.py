@@ -44,7 +44,6 @@ This simulator is prepared should this occur.
 
 import argparse
 import copy
-import datetime
 from datetime import datetime as dt, timedelta
 import json
 import logging
@@ -59,6 +58,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from simulator import API_KEY_SITES, SimulatedSolcast
+
+from homeassistant.util import dt as dt_util
 
 simulate = SimulatedSolcast()
 DEFAULT_PORT = 443
@@ -171,7 +172,7 @@ cli.show_server_banner = lambda *x: None  # pyright: ignore[reportAttributeAcces
 app = Flask(__name__)
 app.json = DtJSONProvider(app)
 _LOGGER = app.logger
-counter_last_reset = dt.now(datetime.UTC).replace(hour=0, minute=0, second=0, microsecond=0)  # Previous UTC midnight
+counter_last_reset = dt_util.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)  # Previous UTC midnight
 
 
 class _WerkzeugLogFilter(logging.Filter):
@@ -197,11 +198,11 @@ def validate_call(api_key: str, site_id: str | None = None, counter: bool = True
 
     revert_key = True
 
-    if counter_last_reset.day != dt.now(datetime.UTC).day:
+    if counter_last_reset.day != dt_util.utcnow().day:
         _LOGGER.info("Resetting API usage counter")
         for v in API_KEY_SITES.values():
             v["counter"] = 0
-        counter_last_reset = dt.now(datetime.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        counter_last_reset = dt_util.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
     def error(code: str) -> tuple[int, Any, None]:
         return (
@@ -214,9 +215,9 @@ def validate_call(api_key: str, site_id: str | None = None, counter: bool = True
         return error(ERROR_KEY_REQUIRED)
     if api_key not in API_KEY_SITES:
         return error(ERROR_INVALID_KEY)
-    if dt.now(datetime.UTC).minute in BOMB_429:
+    if dt_util.utcnow().minute in BOMB_429:
         return 429, "", None
-    if dt.now(datetime.UTC).minute in BOMB_KEY:
+    if dt_util.utcnow().minute in BOMB_KEY:
         if API_KEY_SITES.get("1"):
             API_KEY_SITES["4"] = copy.deepcopy(API_KEY_SITES["1"])
             API_KEY_SITES.pop("1")
@@ -371,7 +372,7 @@ def get_site_forecasts_advanced() -> tuple[Any, int]:
     if api_key is None or site_id is None or hours_arg is None:
         return "{}", 500
     _hours = int(hours_arg)
-    period_end = simulate.get_period(dt.now(datetime.UTC), timedelta(minutes=30))
+    period_end = simulate.get_period(dt_util.utcnow(), timedelta(minutes=30))
     response_code, issue, _ = validate_call(api_key, site_id)
     if response_code != 200:
         return jsonify(issue) if issue != "" else "", response_code

@@ -2,6 +2,7 @@
 
 import asyncio
 import copy
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,9 @@ from homeassistant.components.solcast_solar.const import (
     AUTO_DAMPEN,
     AUTO_UPDATE,
     CONFIG_ENTRY_ID,
+    CONFIG_VERSION,
     CUSTOM_HOURS,
+    DAILY_LIMIT_CONSUMED,
     DAMP_FACTOR,
     DOMAIN,
     ENTRY_ID,
@@ -60,7 +63,7 @@ from homeassistant.components.solcast_solar.repairs import (
     async_create_fix_flow,
 )
 from homeassistant.components.solcast_solar.updater import Updater
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.const import (
     ATTR_AREA_ID,
     ATTR_DEVICE_ID,
@@ -252,6 +255,11 @@ async def test_named_entry_through_the_flow(recorder_mock: Recorder, hass: HomeA
         assert named.options[INSTANCE_SLUG] == "dongwugen"
         assert named.unique_id == "dongwugen"
         assert named.runtime_data.coordinator.solcast.filename.endswith("solcast-dongwugen.json")
+        # A new entry counts only its own calls: one site's forecast with the past week, so two.
+        named_solcast = named.runtime_data.coordinator.solcast
+        assert named_solcast.api_used[KEY2] == 2
+        usage_file = Path(named_solcast.sites_cache._get_usage_cache_filename(KEY2))  # pyright: ignore[reportPrivateUsage]
+        assert json.loads(usage_file.read_text(encoding="utf-8"))[DAILY_LIMIT_CONSUMED] == 2
 
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
@@ -424,6 +432,7 @@ async def test_repairs_stay_with_their_entry(recorder_mock: Recorder, hass: Home
         flow.issue_id = fixable
         result = await flow.async_step_init()
         assert result["step_id"] == "offer_auto"
+        assert result["description_placeholders"]["instance"] == " (Solcast West)"
         result = await flow.async_step_offer_auto({AUTO_UPDATE: "2"})
         assert result["type"] is FlowResultType.ABORT
         assert west.options[AUTO_UPDATE] == 2
@@ -483,8 +492,15 @@ async def test_action_routing(
             await hass.services.async_call(DOMAIN, SERVICE_SET_OPTIONS, {CONFIG_ENTRY_ID: west.entry_id}, blocking=True)
         assert raised.value.translation_key == EXCEPTION_SET_OPTIONS_EMPTY
 
-        # With one entry left, an action without field or target goes to it.
+        # An entry that is not loaded still counts, so an action without field or target does not guess.
         assert await hass.config_entries.async_unload(ost.entry_id)
+        with pytest.raises(ServiceValidationError) as raised:
+            await hass.services.async_call(DOMAIN, SERVICE_GET_OPTIONS, {}, blocking=True, return_response=True)
+        assert raised.value.translation_key == EXCEPTION_INSTANCE_REQUIRED
+
+        # With every other entry disabled, an action without field or target goes to the one left.
+        await hass.config_entries.async_set_disabled_by(ost.entry_id, ConfigEntryDisabler.USER)
+        await hass.async_block_till_done()
         assert await _api_key_for(hass, {}) == KEY2
 
         # Home Assistant before 2026.1 takes hass as the first argument of the target helper.
@@ -596,6 +612,7 @@ async def test_entries_together_and_apart(
     recorder_mock: Recorder,
     hass: HomeAssistant,
     hass_storage: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Entries set up at the same time stay apart; unloading or reloading one leaves the others intact."""
 
@@ -603,13 +620,25 @@ async def test_entries_together_and_apart(
     zwei_options = copy.deepcopy(DEFAULT_INPUT1) | {INSTANCE_NAME: "Zwei", EXCLUDE_SITES: ["1111-1111-1111-1111"]}
     try:
         original = await async_init_integration(hass, original_options)
-        zwei = MockConfigEntry(domain=DOMAIN, title="Solcast Zwei", data=zwei_options, options=zwei_options)
-        west = MockConfigEntry(domain=DOMAIN, title="Solcast West", data=_west_options(), options=_west_options())
+        zwei = MockConfigEntry(domain=DOMAIN, title="Solcast Zwei", data=zwei_options, options=zwei_options, version=CONFIG_VERSION)
+        west = MockConfigEntry(domain=DOMAIN, title="Solcast West", data=_west_options(), options=_west_options(), version=CONFIG_VERSION)
         zwei.add_to_hass(hass)
         west.add_to_hass(hass)
         await asyncio.gather(hass.config_entries.async_setup(zwei.entry_id), hass.config_entries.async_setup(west.entry_id))
         await hass.async_block_till_done()
         assert [entry.state for entry in (original, zwei, west)] == [ConfigEntryState.LOADED] * 3
+
+        # Set up at the same time, the two entries of one key keep their exclusions, so each fetches its own site.
+        assert zwei.options[EXCLUDE_SITES] == ["1111-1111-1111-1111"]
+        assert {
+            entry.title: [site[RESOURCE_ID] for site in entry.runtime_data.coordinator.solcast.sites] for entry in (original, zwei, west)
+        } == {
+            original.title: ["1111-1111-1111-1111"],
+            zwei.title: ["2222-2222-2222-2222"],
+            west.title: ["3333-3333-3333-3333"],
+        }
+        assert zwei.runtime_data.coordinator.solcast.api_sites_per_key == {KEY1: 1}
+        assert "is also counted by" not in caplog.text
 
         # The original and Zwei share one key but count different rooftops, so their Energy forecasts differ.
         assert await async_get_solar_forecast(hass, original.entry_id) != await async_get_solar_forecast(hass, zwei.entry_id)

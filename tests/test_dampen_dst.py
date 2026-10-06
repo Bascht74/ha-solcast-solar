@@ -56,7 +56,7 @@ def _make_mock_api(tz: ZoneInfo) -> MagicMock:
     }
     # Use temporary files for test file paths
     for attribute in ("filename_generation", "filename_dampening"):
-        with tempfile.NamedTemporaryFile(delete=False) as handle:
+        with tempfile.NamedTemporaryFile() as handle:  # Only the name is used; the file goes when it closes
             setattr(api, attribute, handle.name)
     return api
 

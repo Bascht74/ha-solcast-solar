@@ -27,6 +27,7 @@ from homeassistant.components.solcast_solar.const import (
     AUTO_UPDATE_DIVISIONS,
     AUTO_UPDATE_NEXT,
     AUTO_UPDATE_QUEUE,
+    DOMAIN,
     EXCLUDE_SITES,
     GENERATION_ENTITIES,
     GET_ACTUALS,
@@ -39,6 +40,7 @@ from homeassistant.components.solcast_solar.coordinator import SolcastUpdateCoor
 from homeassistant.components.solcast_solar.dampen import Dampening
 from homeassistant.components.solcast_solar.dates import DateTimeHelper
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 
 from . import (
     DEFAULT_INPUT1,
@@ -69,7 +71,7 @@ def _make_mock_api(tz: ZoneInfo) -> MagicMock:
         ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR: 0.95,
     }
     for attribute in ("filename_generation", "filename_dampening"):
-        with tempfile.NamedTemporaryFile(delete=False) as handle:
+        with tempfile.NamedTemporaryFile() as handle:  # Only the name is used; the file goes when it closes
             setattr(api, attribute, handle.name)
     return api
 
@@ -346,6 +348,7 @@ async def test_transition_detection(
 async def test_transition_without_missing_data_warning(
     recorder_mock: Recorder,
     hass: HomeAssistant,
+    issue_registry: ir.IssueRegistry,
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
     timezone: str,
@@ -360,6 +363,7 @@ async def test_transition_without_missing_data_warning(
 
         assert f"Transitioning from {expected_msg} time" in caplog.text
         assert "so is missing forecast data" not in caplog.text
+        assert not [issue_id for domain, issue_id in issue_registry.issues if domain == DOMAIN and issue_id.startswith("records_missing")]
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

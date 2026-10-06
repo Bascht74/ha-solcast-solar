@@ -55,6 +55,7 @@ from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_registry import RegistryEntryDisabler
+from homeassistant.util import dt as dt_util
 
 from . import (
     DEFAULT_INPUT1,
@@ -85,7 +86,7 @@ async def test_diagnostics(
 
     try:
         entry = await async_init_integration(hass, DEFAULT_INPUT1)
-        freezer.move_to(dt.now() + timedelta(minutes=1))
+        freezer.move_to(dt_util.naive_now() + timedelta(minutes=1))
         await hass.async_block_till_done()
         coordinator: SolcastUpdateCoordinator = entry.runtime_data.coordinator
         solcast: SolcastApi = coordinator.solcast
