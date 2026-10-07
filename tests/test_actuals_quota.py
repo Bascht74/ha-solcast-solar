@@ -14,6 +14,7 @@ from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from homeassistant.components.recorder import Recorder
+from homeassistant.components.solcast_solar import const as solcast_const
 from homeassistant.components.solcast_solar.const import (
     API_LIMIT,
     DAILY_ACTUALS_CONSUMED,
@@ -40,6 +41,9 @@ from . import (
 )
 
 from tests.common import async_fire_time_changed
+
+# The version of the integration under test, so a version bump needs no test change.
+VERSION = json.loads(Path(solcast_const.__file__).with_name("manifest.json").read_text(encoding="utf-8"))["version"]
 
 SITE2 = "2222-2222-2222-2222"
 SITE3 = "3333-3333-3333-3333"
@@ -206,8 +210,8 @@ async def test_usage_of_4702_counted_once(recorder_mock: Recorder, hass: HomeAss
     try:
         entry = await async_init_integration(hass, _sued())
         solcast = entry.runtime_data.coordinator.solcast
-        assert solcast.integration_version == "4.7.0.5"
-        assert solcast.headers["User-Agent"] == "ha-solcast-solar-integration/4.7.0.5"
+        assert solcast.integration_version == VERSION
+        assert solcast.headers["User-Agent"] == f"ha-solcast-solar-integration/{VERSION}"
 
         usage_file = Path(solcast.sites_cache._get_usage_cache_filename(KEY1))  # pyright: ignore[reportPrivateUsage]
         usage = json.loads(usage_file.read_text(encoding="utf-8"))
@@ -216,7 +220,7 @@ async def test_usage_of_4702_counted_once(recorder_mock: Recorder, hass: HomeAss
         usage_file.write_text(json.dumps(usage), encoding="utf-8")
         data_file = Path(solcast.filename)
         data = json.loads(data_file.read_text(encoding="utf-8"))
-        assert data[INTEGRATION_VERSION] == "4.7.0.5"
+        assert data[INTEGRATION_VERSION] == VERSION
         data[INTEGRATION_VERSION] = written_by
         data_file.write_text(json.dumps(data), encoding="utf-8")
 
