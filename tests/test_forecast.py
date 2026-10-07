@@ -93,3 +93,23 @@ class TestCubicInterp:
         assert result[2] > result[0], f"11h value {result[2]} should exceed 7h value {result[0]} on the rising side"
         # The value at 13h should be higher than at 17h (falling side)
         assert result[3] > result[5], f"13h value {result[3]} should exceed 17h value {result[5]} on the falling side"
+
+
+class TestSanitiseSpline:
+    """Tests for zeroing spline bounce between half hours."""
+
+    def test_missing_morning_does_not_zero_the_afternoon(self) -> None:
+        """A day that starts after midnight must not wipe the afternoon with night zeros."""
+        query = ForecastQuery.__new__(ForecastQuery)
+        gap = 15  # first forecast at 07:30
+        xx = list(range(1800 * gap, 1800 * 50, 300))
+        y = [3.0 if 8 <= 7.5 + i * 0.5 <= 18 else 0.0 for i in range(len(xx) // 6)]
+        confidence = "pv_estimate"
+        spline = {confidence: [1.0] * len(xx)}
+        query._sanitise_spline(spline, confidence, xx, y)
+        # Three leading samples are the half-hour-average shift.
+        def index(seconds: int) -> int:
+            return int(seconds / 300) - int(xx[0] / 300) + 3
+
+        assert spline[confidence][index(15 * 3600)] == 1.0
+        assert spline[confidence][index(22 * 3600 + 30 * 60)] == 0.0
