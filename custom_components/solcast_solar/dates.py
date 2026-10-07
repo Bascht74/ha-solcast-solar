@@ -48,10 +48,11 @@ class DateTimeHelper:
 
         Daylight savings time is not always an hour: Lord Howe Island moves the clocks by half an hour.
         """
-        offset = dt_obj.astimezone(self._tz).dst() or timedelta(0)
-        if self.is_dublin:
-            return timedelta(hours=1) if offset == timedelta(0) else timedelta(0)
-        return max(offset, timedelta(0))
+        local = dt_obj.astimezone(self._tz)
+        # Standard time is the smaller offset of the year. Not tzinfo.dst(): for Dublin, some time zone
+        # databases mark winter (-1 hour) and others summer (+1 hour).
+        offsets = [dt(local.year, month, 1, tzinfo=self._tz).utcoffset() or timedelta(0) for month in (1, 7)]
+        return (local.utcoffset() or timedelta(0)) - min(offsets)
 
     def hour_start_utc(self) -> dt:
         """Return the UTC datetime representing the start of the current hour."""

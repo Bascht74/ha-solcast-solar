@@ -71,6 +71,7 @@ from .const import (
     UNDAMPENED_PERCENTILES,
     VALUE,
 )
+from .dates import DateTimeHelper
 from .enums import AutoUpdate
 from .instance import shared_unique_id
 from .log import get_logger
@@ -350,10 +351,11 @@ class SolcastUpdateCoordinator(DataUpdateCoordinator):
                 if self.solcast.options.auto_dampen:
                     factors: dict[str, dict[str, Any]] = {}
                     now_local = dt.now(self.solcast.options.tz)
+                    dt_helper = DateTimeHelper(self.solcast.options.tz)
                     for i, f in enumerate(self.solcast.dampening.factors.get(ALL, [])):
                         # Factors are in standard time; daylight savings time can also be half an hour (Lord Howe Island).
-                        dst = now_local.replace(hour=i // 2, minute=i % 2 * 30, second=0, microsecond=0).dst() or timedelta(0)
-                        local = i + max(dst, timedelta(0)) // timedelta(minutes=30)
+                        dst = dt_helper.dst_offset(now_local.replace(hour=i // 2, minute=i % 2 * 30, second=0, microsecond=0))
+                        local = i + dst // timedelta(minutes=30)
                         interval = f"{local // 2:02d}:{local % 2 * 30:02d}"
                         factors[interval] = {
                             INTERVAL: interval,

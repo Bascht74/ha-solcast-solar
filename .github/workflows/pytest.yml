@@ -21,9 +21,6 @@ jobs:
       matrix:
         # The latest release and the current betas; raise them when a new one is out.
         core: ["2026.9.4", "2026.10.0b0", "2026.10.0b1"]
-    env:
-      # PyPI tzdata: Ubuntu's zone data inverts the Europe/Dublin DST tests.
-      PYTHONTZPATH: ""
     steps:
       - name: Checkout integration
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
