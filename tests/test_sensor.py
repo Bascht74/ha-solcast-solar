@@ -99,7 +99,7 @@ SENSORS: dict[str, dict[str, Any]] = {
     "forecast_today": {
         "state": {"2": "42.552", "1": "58.509"},
         "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
-        "state_class": SensorStateClass.TOTAL,
+        "state_class": SensorStateClass.MEASUREMENT,
         "attributes": {
             "2": {"estimate": 42.552, "estimate10": 35.46, "estimate90": 47.28},
             "1": {"estimate": 58.509, "estimate10": 48.7575, "estimate90": 65.01},

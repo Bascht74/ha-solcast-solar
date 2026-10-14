@@ -480,22 +480,20 @@ SENSORS: Final[dict[str, dict[str, Any]]] = {
         DESCRIPTION: SensorEntityDescription(
             key=ENTITY_TOTAL_KWH_FORECAST_TODAY,
             translation_key=ENTITY_TOTAL_KWH_FORECAST_TODAY,
-            device_class=SensorDeviceClass.ENERGY,
             native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
             name=NAMES[ENTITY_TOTAL_KWH_FORECAST_TODAY],
             suggested_display_precision=2,
-            state_class=SensorStateClass.TOTAL,
+            state_class=SensorStateClass.MEASUREMENT,
         )
     },
     ENTITY_TOTAL_KWH_FORECAST_TOMORROW: {
         DESCRIPTION: SensorEntityDescription(
             key=ENTITY_TOTAL_KWH_FORECAST_TOMORROW,
             translation_key=ENTITY_TOTAL_KWH_FORECAST_TOMORROW,
-            device_class=SensorDeviceClass.ENERGY,
             native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
             name=NAMES[ENTITY_TOTAL_KWH_FORECAST_TOMORROW],
             suggested_display_precision=2,
-            state_class=SensorStateClass.TOTAL,
+            state_class=SensorStateClass.MEASUREMENT,
         )
     },
 }
@@ -589,12 +587,11 @@ async def async_setup_entry(
             {
                 DESCRIPTION: SensorEntityDescription(
                     key=f"{ENTITY_TOTAL_KWH_FORECAST}_d{forecast_day}",
-                    device_class=SensorDeviceClass.ENERGY,
                     native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
                     translation_key=f"{ENTITY_TOTAL_KWH_FORECAST}_d{forecast_day}",
                     name=f"Forecast D{forecast_day}",
                     suggested_display_precision=2,
-                    state_class=SensorStateClass.TOTAL,
+                    state_class=SensorStateClass.MEASUREMENT,
                 ),
                 ENABLED_BY_DEFAULT: False,
             },
