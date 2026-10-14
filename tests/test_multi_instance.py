@@ -791,6 +791,8 @@ async def test_old_repairs_get_the_entry_name(recorder_mock: Recorder, hass: Hom
 
     def old_issue(domain: str, issue_id: str, files: str) -> None:
         # Straight into the registry, as an older version left it; the test harness refuses the missing placeholder.
+        # Home Assistant 2026.11 adds config_entry_id to IssueEntry.
+        extra = {"config_entry_id": None} if "config_entry_id" in ir.IssueEntry.__dataclass_fields__ else {}
         issue_registry.issues[(domain, issue_id)] = ir.IssueEntry(
             active=True,
             breaks_in_ha_version=None,
@@ -806,6 +808,7 @@ async def test_old_repairs_get_the_entry_name(recorder_mock: Recorder, hass: Hom
             severity=ir.IssueSeverity.ERROR,
             translation_key=ISSUE_CORRUPT_FILE,
             translation_placeholders={"files": files},
+            **extra,
         )
 
     try:
