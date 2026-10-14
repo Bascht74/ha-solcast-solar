@@ -57,6 +57,7 @@ from . import (
     DEFAULT_INPUT1,
     KEY1,
     MOCK_BUSY,
+    MOCK_BUSY_CDN,
     MOCK_EXCEPTION,
     MOCK_NOT_FOUND,
     async_cleanup_integration_tests,
@@ -742,3 +743,38 @@ async def test_setup_fails_on_a_client_error_without_cached_sites(recorder_mock:
     finally:
         session_clear(MOCK_NOT_FOUND)
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_429_from_the_solcast_cdn(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A 429 that Solcast's CDN gave itself is named so, and the last failure shows it until an update succeeds."""
+
+    try:
+        entry = await async_init_integration(hass, DEFAULT_INPUT1)
+        coordinator = entry.runtime_data.coordinator
+        solcast = coordinator.solcast
+
+        session_set(MOCK_BUSY_CDN)
+        solcast.data[LAST_UPDATED] -= timedelta(minutes=20)
+        with mock.patch.object(solcast.fetcher, "_sleep", mock.AsyncMock()):
+            await solcast.fetcher.get_forecast_update()
+        session_clear(MOCK_BUSY_CDN)
+
+        assert "Call status 429/Try again later from the Solcast CDN, before the API key was checked, pausing" in caplog.text
+        reason = "429/Try again later after 10 attempts, all from the Solcast CDN before the API key was checked"
+        assert f"Forecast has not been updated: {reason}" in caplog.text
+        assert coordinator.updater.get_auto_update_details()["last_failure"] == reason
+
+        # The next successful update clears it.
+        solcast.data[LAST_UPDATED] -= timedelta(minutes=20)
+        await solcast.fetcher.get_forecast_update()
+        assert coordinator.updater.get_auto_update_details()["last_failure"] is None
+
+        await solcast.tasks_cancel()
+        await coordinator.tasks_cancel()
+
+    finally:
+        await async_cleanup_integration_tests(hass)

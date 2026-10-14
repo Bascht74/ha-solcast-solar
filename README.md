@@ -760,6 +760,7 @@ All diagnostic sensor names are preceded by `Solcast PV Forecast` except for `Ro
 * `failure_count_today`: The count of failures (like `429/Too busy`) that have occurred since midnight UTC.
 * `failure_count_7_day`: The count of failures that have occurred over the past seven days.
 * `last_attempt`: The date/time of last attempted forecast update. "Currently healthy" is considered last polled >= last attempt.
+* `last_failure`: Why the last forecast update failed, for example `429/Try again later after 10 attempts, all from the Solcast CDN before the API key was checked`. A 429 from the Solcast CDN never reached the API, so it does not count against the API limit. Empty again after the next successful update.
 
 If auto-update is enabled then last polled also features these attributes:
 
