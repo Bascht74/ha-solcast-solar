@@ -410,7 +410,7 @@ class DampeningAdaptive:
                         self.dampening.adjustment_peak(interval) > 0
                         and period_value > 0
                         and dampening[interval] < 1.0
-                        and period_start in actuals
+                        and actuals.get(period_start, 0) > 0
                     ):
                         adjusted_dampening[interval] = ease_insignificant(
                             self.dampening.apply_adjustment(
