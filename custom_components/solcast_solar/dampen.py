@@ -359,8 +359,6 @@ class Dampening:
                 if day in generated:
                     estimated[day] += actual[ESTIMATE] * 0.5
         shares = {day: generated[day] / estimate for day, estimate in estimated.items() if estimate > 0}
-        if not shares:
-            return set()
         usual = percentile(sorted(shares.values()), 75)
         return {day for day, share in shares.items() if share < _CURTAILED_SHARE * usual}
 
