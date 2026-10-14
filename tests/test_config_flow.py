@@ -79,7 +79,7 @@ from homeassistant.components.solcast_solar.const import (
 )
 from homeassistant.components.solcast_solar.coordinator import SolcastUpdateCoordinator
 from homeassistant.components.solcast_solar.enums import HistoryType
-from homeassistant.components.solcast_solar.solcastapi import SitesStatus, SolcastApi
+from homeassistant.components.solcast_solar.solcastapi import LoadStatus, SolcastApi
 from homeassistant.config_entries import ConfigEntryState, ConfigFlowResult
 from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
@@ -1114,7 +1114,7 @@ async def test_presumed_dead_and_full_flow(
         assert "Integration presumed dead, reloading" in caplog.text or "Integration reload already in progress" in caplog.text
         coordinator: SolcastUpdateCoordinator = entry.runtime_data.coordinator
         solcast: SolcastApi = coordinator.solcast
-        assert solcast.sites_status is SitesStatus.OK, f"Expected sites status SitesStatus.OK, got {solcast.sites_status}"
+        assert solcast.sites_status is LoadStatus.OK, f"Expected sites status LoadStatus.OK, got {solcast.sites_status}"
         assert solcast.loaded_data is True, "Solcast data should be loaded"
 
         assert await hass.config_entries.async_unload(entry.entry_id), "Config entry unload failed"

@@ -39,7 +39,7 @@ else:
 
         validator = probatio
     except ImportError:
-        import voluptuous  # noqa: TID251, RUF100
+        import voluptuous  # noqa: TID251
 
         validator = voluptuous
 

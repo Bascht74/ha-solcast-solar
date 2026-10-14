@@ -139,7 +139,7 @@ from .const import (
     USE_ACTUALS,
 )
 from .coordinator import SolcastUpdateCoordinator
-from .enums import AutoUpdate, UsageStatus
+from .enums import AutoUpdate, LoadStatus
 from .instance import (
     check_rooftops,
     instance_name,
@@ -1122,7 +1122,7 @@ async def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpd
 
     usage_health = {
         "status": solcast.usage_status.name,
-        "ok": solcast.usage_status == UsageStatus.OK,
+        "ok": solcast.usage_status == LoadStatus.OK,
     }
 
     forecast_health = _evaluate_forecast_health(coordinator, solcast, issues)

@@ -28,7 +28,7 @@ from homeassistant.components.solcast_solar.const import (
     SITES,
     TOTAL_RECORDS,
 )
-from homeassistant.components.solcast_solar.enums import SitesStatus
+from homeassistant.components.solcast_solar.enums import LoadStatus
 from homeassistant.components.solcast_solar.sites_cache import SitesCache
 from homeassistant.components.solcast_solar.solcastapi import SolcastApi
 from homeassistant.components.solcast_solar.util import write_file_atomic
@@ -217,7 +217,7 @@ async def test_sites_data_uses_combined_extant_match_for_key_collapse(tmp_path: 
         filename=str(tmp_path / "solcast.json"),
         options=SimpleNamespace(api_key="newkey"),
         hass=_ExecutorHass(),
-        sites_status=SitesStatus.OK,
+        sites_status=LoadStatus.OK,
         sites=[],
         http_status_translate=lambda status: f"{status}",
         entry=None,
@@ -276,7 +276,7 @@ async def test_sites_data_uses_combined_extant_match_for_key_collapse(tmp_path: 
         status, _, _ = await sites_cache._sites_data(prior_crash=True, use_cache=True)
 
     assert status == 200
-    assert api.sites_status is SitesStatus.OK
+    assert api.sites_status is LoadStatus.OK
     assert len(api.sites) == 2
     assert all(site[API_KEY] == "newkey" for site in api.sites)
 
@@ -336,7 +336,7 @@ async def test_sites_client_error_does_not_log_api_key(tmp_path: Path, caplog: p
         get_solcast_base_url=lambda url, _port: url,
         aiohttp_session=SimpleNamespace(get=client_error),
         headers={},
-        sites_status=SitesStatus.OK,
+        sites_status=LoadStatus.OK,
         sites=[],
         http_status_translate=lambda status: f"{status}",
         entry=None,
@@ -348,14 +348,14 @@ async def test_sites_client_error_does_not_log_api_key(tmp_path: Path, caplog: p
     status, _, _ = await sites_cache._sites_data(prior_crash=False, use_cache=False)
 
     assert status == 999
-    assert api.sites_status is SitesStatus.API_BUSY  # Set-up is retried later
+    assert api.sites_status is LoadStatus.API_BUSY  # Set-up is retried later
     assert "Connection error: 502" in caplog.text
     assert api_key not in caplog.text
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("status", "sites_status"), [(503, SitesStatus.API_BUSY), (500, SitesStatus.API_BUSY), (404, SitesStatus.ERROR)])
-async def test_sites_server_error_without_cache(tmp_path: Path, status: int, sites_status: SitesStatus) -> None:
+@pytest.mark.parametrize(("status", "sites_status"), [(503, LoadStatus.API_BUSY), (500, LoadStatus.API_BUSY), (404, LoadStatus.ERROR)])
+async def test_sites_server_error_without_cache(tmp_path: Path, status: int, sites_status: LoadStatus) -> None:
     """A server error while no sites are cached lets the set-up be retried later, as a busy API does; a client error does not."""
 
     class _Response:
@@ -377,7 +377,7 @@ async def test_sites_server_error_without_cache(tmp_path: Path, status: int, sit
         get_solcast_base_url=lambda url, _port: url,
         aiohttp_session=SimpleNamespace(get=respond),
         headers={},
-        sites_status=SitesStatus.OK,
+        sites_status=LoadStatus.OK,
         sites=[],
         http_status_translate=lambda status: f"{status}",
         entry=None,
@@ -408,7 +408,7 @@ async def test_sites_request_times_out(tmp_path: Path, caplog: pytest.LogCapture
         get_solcast_base_url=lambda url, _port: url,
         aiohttp_session=SimpleNamespace(get=hang),
         headers={},
-        sites_status=SitesStatus.OK,
+        sites_status=LoadStatus.OK,
         sites=[],
         http_status_translate=lambda status: f"{status}",
         entry=None,
@@ -419,7 +419,7 @@ async def test_sites_request_times_out(tmp_path: Path, caplog: pytest.LogCapture
     status, _, _ = await sites_cache._sites_data(prior_crash=False, use_cache=False)
 
     assert status == 999
-    assert api.sites_status is SitesStatus.API_BUSY  # Set-up is retried later
+    assert api.sites_status is LoadStatus.API_BUSY  # Set-up is retried later
     assert "Error retrieving sites" in caplog.text
 
 

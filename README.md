@@ -1497,6 +1497,7 @@ Latest minor/patch releases.
 
 v4.6.2
 
+* Add DNS timeout retries by @autoSteve
 * Embrace Home Assistant dt_util by @autoSteve
 
 Full Changelog: https://github.com/BJReplay/ha-solcast-solar/compare/v4.6.1...v4.6.2

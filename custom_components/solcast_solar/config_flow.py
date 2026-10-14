@@ -79,7 +79,7 @@ from .const import (
     UNKNOWN,
     USE_ACTUALS,
 )
-from .enums import HistoryType, SitesStatus
+from .enums import HistoryType, LoadStatus
 from .instance import (
     advanced_file_path,
     cache_file_path,
@@ -190,7 +190,7 @@ async def validate_sites(hass: HomeAssistant, user_input: dict[str, Any]) -> tup
         if status in (401, 403):
             return status, f"Bad API key, {message} returned for {api_key_in_error}", []
         return status, f"Error {message} for API key {api_key_in_error}", []
-    if solcast.sites_status == SitesStatus.NO_SITES:
+    if solcast.sites_status == LoadStatus.NO_SITES:
         return 404, f"No sites for the API key {api_key_in_error} are configured at solcast.com", []
     return 200, "", [site[RESOURCE_ID] for site in solcast.sites_all]
 
@@ -281,7 +281,7 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                     {
                         Required(CONF_API_KEY, default=all_config_data[CONF_API_KEY]): str,
                     }
-                ),
+                ),  # pyright: ignore[reportArgumentType]
                 submitted_input if errors else None,
             ),
             description_placeholders=description_placeholders,
@@ -367,7 +367,7 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                             SelectSelectorConfig(options=AUTO_UPDATE_OPTIONS, mode=SelectSelectorMode.DROPDOWN, translation_key=AUTO_UPDATE)
                         ),
                     }
-                ),
+                ),  # pyright: ignore[reportArgumentType]
                 submitted_input if errors else None,
             ),
             description_placeholders=description_placeholders,
@@ -482,7 +482,7 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                             SelectSelectorConfig(options=AUTO_UPDATE_OPTIONS, mode=SelectSelectorMode.DROPDOWN, translation_key=AUTO_UPDATE)
                         ),
                     }
-                ),
+                ),  # pyright: ignore[reportArgumentType]
                 submitted_input if errors else None,
             ),
             description_placeholders=description_placeholders,
@@ -823,7 +823,7 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
                         ),
                     }
                     | damp
-                ),
+                ),  # pyright: ignore[reportArgumentType]
                 submitted_input if errors else None,
             ),
             description_placeholders=description_placeholders,
@@ -870,6 +870,6 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
                     )
                     for factor in range(24)
                 }
-            ),
+            ),  # pyright: ignore[reportArgumentType]
             errors=errors,
         )

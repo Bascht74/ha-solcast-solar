@@ -88,7 +88,7 @@ from .const import (
 )
 from .dampen import Dampening
 from .dates import DateTimeHelper
-from .enums import AutoUpdate, HistoryType, SitesStatus, SolcastApiStatus, UsageStatus
+from .enums import AutoUpdate, HistoryType, LoadStatus, SolcastApiStatus
 from .fetcher import Fetcher
 from .forecast import ForecastQuery
 from .instance import repair_issue_id, repair_placeholders
@@ -292,14 +292,14 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         self.site_transfers: dict[str, str] = {}
         self.sites: list[dict[str, Any]] = []  # The sites this entry fetches.
         self.sites_all: list[dict[str, Any]] = []  # Every site of the API key(s), excluded sites too.
-        self.sites_status: SitesStatus = SitesStatus.UNKNOWN
+        self.sites_status: LoadStatus = LoadStatus.UNKNOWN
         self.status: SolcastApiStatus = SolcastApiStatus.UNKNOWN
         self.status_message: str = ""
         self.suppress_advanced_watchdog_reload: bool = False
         self.tally: dict[str, float | None] = {}
         self.tasks: dict[str, Any] = {}
         self.tz = options.tz
-        self.usage_status: UsageStatus = UsageStatus.UNKNOWN
+        self.usage_status: LoadStatus = LoadStatus.UNKNOWN
         self.use_forecast_confidence = f"pv_{options.key_estimate}"
 
         # Private attributes.
