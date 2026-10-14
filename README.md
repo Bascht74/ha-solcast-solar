@@ -743,7 +743,7 @@ All diagnostic sensor names are preceded by `Solcast PV Forecast` except for `Ro
 | `API Limit` | number | N | `integer` | Total times the API can been called in a 24 hour period[^1]. |
 | `API Used` | number | Y | `integer` | Total times the API has been called today (API counter resets to zero at midnight UTC)[^1]. |
 | `Dampening` | boolean | Y | `bool` | Whether dampening is enabled (disabled by default). |
-| `Accuracy` | number | Y | `%` | Mean Absolute Percentage Error (MAPE) of Solcast forecast vs. actual generation over the configured model period. Requires automated dampening to be enabled for a non-null state. Disabled by default. |
+| `Accuracy` | number | Y | `%` | Mean absolute percentage error (MAPE) of the dampened estimated actuals against actual generation over the configured model period, so lower is better. Days left out of automated dampening are not counted. Requires automated dampening to be enabled for a non-null state. Disabled by default. |
 | `Hard Limit Set` | number | N | `float` or `bool` | `False` if not set, else value in `kilowatts`. |
 | `Hard Limit Set ******AaBbCc` | number | N | `float` | Individual account hard limit. Value in `kilowatts`. |
 | `Rooftop site name` | number | Y | `kWh` | Total forecast for rooftop today (attributes contain the site setup)[^2]. |
