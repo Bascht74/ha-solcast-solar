@@ -106,6 +106,7 @@ _SUPPRESSION_ENTITY_STATES: Final[tuple[str, ...]] = ("on", "off", "1", "0", "tr
 _SITE_EXPORT_INTERVAL_MINUTES: Final[int] = 5
 _GENERATION_GAP_FRACTION: Final[float] = 0.1  # Share of a day's expected energy without readings that excludes a generation day
 _GAP_DAYS_LOGGED: Final[int] = 5  # Days named in the log line of the one-time gap check
+_CURTAILED_SHARE: Final[float] = 0.6  # A day below this share of the usual generation per estimated actual is left out
 
 _LOGGER = get_logger(__name__)
 
@@ -340,6 +341,28 @@ class Dampening:
     def site_actuals(self, site: str) -> list[dict[str, Any]]:
         """Return a site's estimated actuals, none for a site that has none yet (a new site, or its first fetch failed)."""
         return self.api.data_actuals[SITE_INFO].get(site, {}).get(FORECASTS, [])
+
+    def curtailed_days(self) -> set[dt]:
+        """Return the days whose generation is far below the share of the estimated actuals usually generated.
+
+        Curtailment, an inverter outage or snow on the panels would look like heavy shading and dampen the following
+        days too much. The usual share is the upper quartile of the cached days: an entry that is always shaded keeps its
+        days, and several curtailed days in a row do not make a low share look usual.
+        """
+        generated: defaultdict[dt, float] = defaultdict(float)
+        for gen in self.data_generation[GENERATION]:
+            generated[self.api.dt_helper.day_start(gen[PERIOD_START])] += gen[GENERATION]
+        estimated: defaultdict[dt, float] = defaultdict(float)
+        for site in self.api.sites:
+            for actual in self.site_actuals(site[RESOURCE_ID]):
+                day = self.api.dt_helper.day_start(actual[PERIOD_START])
+                if day in generated:
+                    estimated[day] += actual[ESTIMATE] * 0.5
+        shares = {day: generated[day] / estimate for day, estimate in estimated.items() if estimate > 0}
+        if not shares:
+            return set()
+        usual = percentile(sorted(shares.values()), 75)
+        return {day for day, share in shares.items() if share < _CURTAILED_SHARE * usual}
 
     def adjusted_interval_dt(self, interval: dt) -> int:
         """Adjust a datetime as standard time."""
@@ -1489,11 +1512,12 @@ class Dampening:
                 if gen[EXPORT_LIMITING]:
                     export_limited_intervals[self._adjusted_interval(gen)] = True
 
+        curtailed = self.curtailed_days()
         data_generation = copy.deepcopy(self.data_generation)
         generation_dampening: defaultdict[dt, dict[str, Any]] = defaultdict(dict[str, Any])
         generation_dampening_day: defaultdict[dt, float] = defaultdict(float)
         for record in data_generation.get(GENERATION, [])[-model_intervals:]:
-            if record[PERIOD_START] < earliest_start:
+            if record[PERIOD_START] < earliest_start or self.api.dt_helper.day_start(record[PERIOD_START]) in curtailed:
                 continue
 
             interval = self.adjusted_interval_dt(record[PERIOD_START])
@@ -1972,6 +1996,13 @@ class Dampening:
                     generation[gen[PERIOD_START]] = gen[GENERATION]
             elif not gen[EXPORT_LIMITING]:
                 generation[gen[PERIOD_START]] = gen[GENERATION]
+        if curtailed := self.curtailed_days():
+            if until is None:
+                _LOGGER.debug(
+                    "PV generation far below its usual share of the estimated actuals, leaving out: %s",
+                    ", ".join(sorted(day.strftime(DT_DATE_ONLY_FORMAT) for day in curtailed)),
+                )
+            generation = {stamp: kwh for stamp, kwh in generation.items() if self.api.dt_helper.day_start(stamp) not in curtailed}
 
         # Delta adjustment compares a forecast with the peak the default model divides by, with elevation adjustment the
         # peak normalised to the target day's sun.
