@@ -950,7 +950,7 @@ The integration determines the units by inspecting the `unit_of_measurement` att
 >
 > Do not include generation entities for "remote" rooftop sites that have been excluded. Auto-dampening does not work for excluded rooftops.
 
-A whole day is left out of automated dampening, the adaptive history and the accuracy figures when its generation is below 60 % of the share of the estimated actuals the rooftops usually generate, the upper quartile over the cached days. This catches curtailment without an export sensor, an inverter outage or snow on the panels, while a rooftop that is always shaded keeps its days.
+A whole day is left out of automated dampening, the adaptive history and the accuracy figures when its generation is below 60 % of the share of the estimated actuals the rooftops usually generate, the upper quartile over the cached days. This catches curtailment without an export sensor, an inverter outage or snow on the panels, while a rooftop that is always shaded keeps its days. Intervals left out for export limiting or a suppression entity do not count.
 
 ##### Optional input: Site export to the grid, combined with a limit value
 

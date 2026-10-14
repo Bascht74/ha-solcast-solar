@@ -70,3 +70,17 @@ async def test_shaded_roof_keeps_its_days() -> None:
     dampening, _ = _dampening([0.4, 0.4, 0.35, 0.4, 0.4])
 
     assert dampening.curtailed_days() == set()
+
+
+async def test_export_limited_intervals_not_counted() -> None:
+    """A sunny day held at the export limit at noon: only its other interval counts, and that one is normal, so the day stays.
+
+    Counted, the limited half hour (0.1 of 1 kWh) would pull the day to 55 % of its estimated actuals, below the 60 % limit.
+    """
+    dampening, days = _dampening([1.0, 1.0, 1.0, 1.0, 0.1])
+    dampening.data_generation[GENERATION][-1][EXPORT_LIMITING] = True
+    morning = days[4] + NOON - timedelta(minutes=30)
+    dampening.data_generation[GENERATION].append({PERIOD_START: morning, GENERATION: 1.0, EXPORT_LIMITING: False})
+    dampening.api.data_actuals[SITE_INFO]["site"][FORECASTS].append({PERIOD_START: morning, ESTIMATE: 2.0})
+
+    assert dampening.curtailed_days() == set()

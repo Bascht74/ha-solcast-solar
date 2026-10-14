@@ -347,16 +347,20 @@ class Dampening:
 
         Curtailment, an inverter outage or snow on the panels would look like heavy shading and dampen the following
         days too much. The usual share is the upper quartile of the cached days: an entry that is always shaded keeps its
-        days, and several curtailed days in a row do not make a low share look usual.
+        days, and several curtailed days in a row do not make a low share look usual. Export limited intervals do not count.
         """
         generated: defaultdict[dt, float] = defaultdict(float)
+        export_limited: set[dt] = set()
         for gen in self.data_generation[GENERATION]:
+            if gen[EXPORT_LIMITING]:  # Already left out on its own, and would make a sunny day look curtailed
+                export_limited.add(gen[PERIOD_START])
+                continue
             generated[self.api.dt_helper.day_start(gen[PERIOD_START])] += gen[GENERATION]
         estimated: defaultdict[dt, float] = defaultdict(float)
         for site in self.api.sites:
             for actual in self.site_actuals(site[RESOURCE_ID]):
                 day = self.api.dt_helper.day_start(actual[PERIOD_START])
-                if day in generated:
+                if day in generated and actual[PERIOD_START] not in export_limited:
                     estimated[day] += actual[ESTIMATE] * 0.5
         shares = {day: generated[day] / estimate for day, estimate in estimated.items() if estimate > 0}
         usual = percentile(sorted(shares.values()), 75)
