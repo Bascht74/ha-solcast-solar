@@ -616,6 +616,18 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         """
         return self.api_sites_per_key.get(api_key, 0) * self.estimated_actuals_fetches_due
 
+    @property
+    def forecast_update_fits(self) -> bool:
+        """Whether every API key still has a call for each of its sites, after the calls kept for estimated actuals.
+
+        Returns:
+            bool: True when a forecast update of every fetched site would not be refused for the API limit.
+        """
+        return all(
+            self.api_used[api_key] + self.api_actuals_reserve(api_key) + sites <= self.api_limits[api_key]
+            for api_key, sites in self.api_sites_per_key.items()
+        )
+
     def apply_site_exclusion(self) -> None:
         """Keep every site in `sites_all`, and fetch, count and show only the sites that are not excluded."""
 
