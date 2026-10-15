@@ -21,6 +21,8 @@ NOW = dt(2026, 10, 15, 1, 0, tzinfo=UTC)
 YESTERDAY_EVENING = dt(2026, 10, 14, 13, 48, tzinfo=UTC)
 # The last update that was fetched
 YESTERDAY_NOON = dt(2026, 10, 14, 11, 7, tzinfo=UTC)
+# A forecast fetched two days before
+TWO_DAYS_AGO = dt(2026, 10, 13, 11, 7, tzinfo=UTC)
 # An update due after the count started again (all-day updates)
 TODAY_EARLY = dt(2026, 10, 15, 0, 30, tzinfo=UTC)
 
@@ -39,11 +41,11 @@ class FakeActions:
         self.updates += 1
 
 
-def fake_coordinator(interval_just_passed: dt, update_fits: bool = True) -> Any:
-    """Return a coordinator whose last update was fetched yesterday at noon."""
+def fake_coordinator(interval_just_passed: dt, update_fits: bool = True, last_attempt: dt = YESTERDAY_NOON) -> Any:
+    """Return a coordinator whose last update was fetched yesterday at noon, unless told otherwise."""
     solcast = SimpleNamespace(
         options=SimpleNamespace(auto_update=AutoUpdate.DAYLIGHT, tz=UTC),
-        data={AUTO_UPDATED: 4, LAST_ATTEMPT: YESTERDAY_NOON},
+        data={AUTO_UPDATED: 4, LAST_ATTEMPT: last_attempt},
         forecast_update_fits=update_fits,
         latest_period=None,
     )
@@ -63,6 +65,13 @@ async def test_update_due_yesterday_is_not_caught_up(caplog: pytest.LogCaptureFi
     assert await check_missed(fake_coordinator(YESTERDAY_EVENING), actions) is False
     assert actions.updates == 0
     assert "due before the API day started" in caplog.text
+
+
+async def test_forecast_older_than_yesterday_is_caught_up() -> None:
+    """A forecast from before yesterday is fetched, even though the missed update was due yesterday."""
+    actions = FakeActions()
+    assert await check_missed(fake_coordinator(YESTERDAY_EVENING, last_attempt=TWO_DAYS_AGO), actions) is True
+    assert actions.updates == 1
 
 
 async def test_update_due_today_is_caught_up() -> None:

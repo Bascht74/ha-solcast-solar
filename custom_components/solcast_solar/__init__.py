@@ -272,9 +272,9 @@ async def __check_auto_update_missed(coordinator: SolcastUpdateCoordinator, serv
             api_day_start = dt_util.now(dt_util.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
             if interval_just_passed is None or coordinator.solcast.data[LAST_ATTEMPT] >= interval_just_passed:
                 _LOGGER.debug("Auto update forecast is fresh")
-            elif interval_just_passed < api_day_start:
-                # Solcast counts calls per UTC day. An update due before the count started again belongs to that
-                # earlier day: fetching it now would take a call from today's updates, so wait for the next one.
+            elif interval_just_passed < api_day_start and coordinator.solcast.data[LAST_ATTEMPT] >= api_day_start - timedelta(days=1):
+                # Solcast counts calls per UTC day. When only the last updates of the previous UTC day are missing,
+                # fetching one now would take a call from today's updates, so wait for the next one.
                 _LOGGER.debug("Previous auto update was due before the API day started, waiting for the next one")
             elif not coordinator.solcast.forecast_update_fits:
                 _LOGGER.debug("Previous auto update was missed, but no API call is left for it, waiting for the next one")
