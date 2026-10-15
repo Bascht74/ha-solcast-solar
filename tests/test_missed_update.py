@@ -1,90 +1,115 @@
-"""Catching up a missed automated forecast update at start.
+"""Catching up a missed automated forecast update when Home Assistant starts.
 
-Solcast counts API calls per UTC day. These tests start the integration at 03:00 local time (01:00 UTC,
-Europe/Berlin in summer time), one hour after the count started again.
+Most examples are in Berlin with four updates a day, at 07:44, 10:26, 13:07 and 15:48.
+Each test restarts at a given time and counts the forecast updates the start check fetches.
 """
 
-from datetime import UTC, datetime as dt
+from datetime import datetime as dt
 import logging
 from types import SimpleNamespace
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from homeassistant.components import solcast_solar
 from homeassistant.components.solcast_solar.const import AUTO_UPDATED, LAST_ATTEMPT
+from homeassistant.components.solcast_solar.dates import DateTimeHelper
 from homeassistant.components.solcast_solar.enums import AutoUpdate
 
-NOW = dt(2026, 10, 15, 1, 0, tzinfo=UTC)
-# 15:48 local, the last update of yesterday
-YESTERDAY_EVENING = dt(2026, 10, 14, 13, 48, tzinfo=UTC)
-# The last update that was fetched
-YESTERDAY_NOON = dt(2026, 10, 14, 11, 7, tzinfo=UTC)
-# A forecast fetched two days before
-TWO_DAYS_AGO = dt(2026, 10, 13, 11, 7, tzinfo=UTC)
-# An update due after the count started again (all-day updates)
-TODAY_EARLY = dt(2026, 10, 15, 0, 30, tzinfo=UTC)
+BERLIN = ZoneInfo("Europe/Berlin")
+SYDNEY = ZoneInfo("Australia/Sydney")
 
-check_missed = getattr(solcast_solar, "__check_auto_update_missed")
+check_missed_update = getattr(solcast_solar, "__check_auto_update_missed")
 
 
-class FakeActions:
-    """Record forecast updates instead of fetching."""
+async def start(
+    freezer: FrozenDateTimeFactory,
+    restart: dt,
+    last_update: dt,
+    missed_update: dt,
+    call_left: bool = True,
+) -> int:
+    """Restart at `restart` and return how many forecast updates the start check fetched."""
+    freezer.move_to(restart)
+    updates = []
 
-    def __init__(self) -> None:
-        """Start with no updates."""
-        self.updates = 0
+    async def update_forecast(**kwargs: Any) -> None:
+        updates.append(kwargs)
 
-    async def async_update_forecast(self, **kwargs: Any) -> None:
-        """Count an update."""
-        self.updates += 1
-
-
-def fake_coordinator(interval_just_passed: dt, update_fits: bool = True, last_attempt: dt = YESTERDAY_NOON) -> Any:
-    """Return a coordinator whose last update was fetched yesterday at noon, unless told otherwise."""
     solcast = SimpleNamespace(
-        options=SimpleNamespace(auto_update=AutoUpdate.DAYLIGHT, tz=UTC),
-        data={AUTO_UPDATED: 4, LAST_ATTEMPT: last_attempt},
-        forecast_update_fits=update_fits,
+        options=SimpleNamespace(auto_update=AutoUpdate.DAYLIGHT, tz=restart.tzinfo),
+        dt_helper=DateTimeHelper(restart.tzinfo),
+        data={AUTO_UPDATED: 4, LAST_ATTEMPT: last_update},
+        forecast_update_fits=call_left,
         latest_period=None,
     )
-    return SimpleNamespace(solcast=solcast, divisions=4, interval_just_passed=interval_just_passed)
+    coordinator = SimpleNamespace(solcast=solcast, divisions=4, interval_just_passed=missed_update)
+    await check_missed_update(coordinator, SimpleNamespace(async_update_forecast=update_forecast))
+    return len(updates)
 
 
 @pytest.fixture(autouse=True)
-def frozen_now(freezer: FrozenDateTimeFactory, caplog: pytest.LogCaptureFixture) -> None:
-    """Freeze the time at 03:00 local and record debug logs."""
-    freezer.move_to(NOW)
+def debug_logs(caplog: pytest.LogCaptureFixture) -> None:
+    """Record the debug lines of the start check."""
     caplog.set_level(logging.DEBUG)
 
 
-async def test_update_due_yesterday_is_not_caught_up(caplog: pytest.LogCaptureFixture) -> None:
-    """Yesterday's evening update is not fetched at night: it would take a call from today's updates."""
-    actions = FakeActions()
-    assert await check_missed(fake_coordinator(YESTERDAY_EVENING), actions) is False
-    assert actions.updates == 0
-    assert "due before the API day started" in caplog.text
+async def test_yesterdays_update_is_not_caught_up_at_night(freezer: FrozenDateTimeFactory, caplog: pytest.LogCaptureFixture) -> None:
+    """A restart at 03:00 leaves yesterday's 15:48 update to today's first update at 07:44."""
+    fetched = await start(
+        freezer,
+        restart=dt(2026, 10, 15, 3, 0, tzinfo=BERLIN),
+        last_update=dt(2026, 10, 14, 13, 7, tzinfo=BERLIN),
+        missed_update=dt(2026, 10, 14, 15, 48, tzinfo=BERLIN),
+    )
+    assert fetched == 0
+    assert "due yesterday" in caplog.text
 
 
-async def test_forecast_older_than_yesterday_is_caught_up() -> None:
-    """A forecast from before yesterday is fetched, even though the missed update was due yesterday."""
-    actions = FakeActions()
-    assert await check_missed(fake_coordinator(YESTERDAY_EVENING, last_attempt=TWO_DAYS_AGO), actions) is True
-    assert actions.updates == 1
+async def test_todays_missed_update_is_caught_up(freezer: FrozenDateTimeFactory) -> None:
+    """A restart at 12:00 fetches the 10:26 update it missed."""
+    fetched = await start(
+        freezer,
+        restart=dt(2026, 10, 15, 12, 0, tzinfo=BERLIN),
+        last_update=dt(2026, 10, 15, 7, 44, tzinfo=BERLIN),
+        missed_update=dt(2026, 10, 15, 10, 26, tzinfo=BERLIN),
+    )
+    assert fetched == 1
 
 
-async def test_update_due_today_is_caught_up() -> None:
-    """An update due after the count started again is still fetched."""
-    actions = FakeActions()
-    assert await check_missed(fake_coordinator(TODAY_EARLY), actions) is True
-    assert actions.updates == 1
+async def test_forecast_from_before_yesterday_is_caught_up(freezer: FrozenDateTimeFactory) -> None:
+    """A forecast from two days ago is fetched at once, even at night."""
+    fetched = await start(
+        freezer,
+        restart=dt(2026, 10, 15, 3, 0, tzinfo=BERLIN),
+        last_update=dt(2026, 10, 13, 13, 7, tzinfo=BERLIN),
+        missed_update=dt(2026, 10, 14, 15, 48, tzinfo=BERLIN),
+    )
+    assert fetched == 1
 
 
-async def test_update_without_a_call_left_is_not_caught_up(caplog: pytest.LogCaptureFixture) -> None:
-    """With no call left for the update, nothing is tried and no warning is logged."""
-    actions = FakeActions()
-    assert await check_missed(fake_coordinator(TODAY_EARLY, update_fits=False), actions) is False
-    assert actions.updates == 0
+async def test_morning_update_is_caught_up_after_utc_midnight(freezer: FrozenDateTimeFactory) -> None:
+    """In Sydney the UTC day starts at 11:00. A restart at 11:10 still fetches the 10:00 update of the same morning."""
+    fetched = await start(
+        freezer,
+        restart=dt(2026, 10, 15, 11, 10, tzinfo=SYDNEY),
+        last_update=dt(2026, 10, 15, 6, 30, tzinfo=SYDNEY),
+        missed_update=dt(2026, 10, 15, 10, 0, tzinfo=SYDNEY),
+    )
+    assert fetched == 1
+
+
+async def test_missed_update_without_a_call_left_is_not_caught_up(freezer: FrozenDateTimeFactory, caplog: pytest.LogCaptureFixture) -> None:
+    """With no API call left there is nothing to fetch, and no warning is logged."""
+    fetched = await start(
+        freezer,
+        restart=dt(2026, 10, 15, 12, 0, tzinfo=BERLIN),
+        last_update=dt(2026, 10, 15, 7, 44, tzinfo=BERLIN),
+        missed_update=dt(2026, 10, 15, 10, 26, tzinfo=BERLIN),
+        call_left=False,
+    )
+    assert fetched == 0
     assert "no API call is left" in caplog.text
     assert "WARNING" not in caplog.text
