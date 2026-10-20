@@ -10,7 +10,7 @@ from datetime import datetime as dt, timedelta
 from importlib import resources
 import tempfile
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from freezegun.api import FrozenDateTimeFactory
@@ -23,6 +23,7 @@ from homeassistant.components.solcast_solar.const import (
     ADVANCED_AUTOMATED_DAMPENING_MINIMUM_MATCHING_INTERVALS,
     ADVANCED_AUTOMATED_DAMPENING_PRESERVE_UNMATCHED_FACTORS,
     ADVANCED_ENTITY_LOGGING,
+    API_KEY,
     AUTO_DAMPEN,
     AUTO_UPDATE,
     AUTO_UPDATE_DIVISIONS,
@@ -33,6 +34,7 @@ from homeassistant.components.solcast_solar.const import (
     GENERATION_ENTITIES,
     GET_ACTUALS,
     PERIOD_START,
+    RESOURCE_ID,
     SITE_EXPORT_ENTITY,
     SITE_EXPORT_LIMIT,
     USE_ACTUALS,
@@ -426,6 +428,43 @@ async def test_updater_scheduling_across_dst(
             assert interval.tzinfo is not None, f"Interval {interval} is not tz-aware"
         assert updater.divisions > 0, f"Auto-update divisions should be positive for {description}"
         assert "Sun rise / set today" in caplog.text, f"Missing sunrise/sunset log for {description}"
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+@pytest.mark.parametrize(
+    ("freeze_at", "expected_hours"),
+    [
+        pytest.param("2026-10-20T00:30:00+02:00", 313, id="00:30, one day less"),
+        pytest.param("2026-10-20T01:30:00+02:00", 336, id="01:30, all 14 days"),
+    ],
+)
+async def test_forecast_hours_before_the_clocks_go_back(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    freeze_at: str,
+    expected_hours: int,
+) -> None:
+    """Test a forecast fetch asks for at most 336 hours, the most Solcast allows, when the clocks go back within 14 days.
+
+    Berlin goes from summer time back to winter time on 25 October 2026, so that day has 25 hours. On 20 October
+    midnight 14 days ahead is 14 x 24 + 1 hours away, less the time since midnight: at 00:30 that is 336.5 hours,
+    rounded up 337, so the fetch stops a day earlier (13 x 24 + 1 - 0.5 = 312.5, rounded up 313). At 01:30 it is
+    335.5 hours, rounded up 336, which is allowed.
+    """
+
+    try:
+        freezer.move_to(freeze_at)
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1), timezone="Europe/Berlin")
+        solcast = entry.runtime_data.coordinator.solcast
+        site = solcast.sites[0]
+
+        with patch.object(solcast.fetcher, "fetch_data", wraps=solcast.fetcher.fetch_data) as fetch_data:
+            await solcast.fetcher.http_data_call(site=site[RESOURCE_ID], api_key=site[API_KEY], force=True)
+
+        assert fetch_data.call_args.kwargs["hours"] == expected_hours
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
