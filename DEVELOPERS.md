@@ -14,7 +14,7 @@ Or as a core component, which is preferred. To run tests the integration must be
 
 ```
   "mounts": [
-    "source=${localEnv:HOME}/Documents/GitHub/ha-solcast-solar/custom_components/solcast_solar,target=${containerWorkspaceFolder}/homeassistant/components/solcast_solar,type=bind",
+    "source=${localEnv:HOME}/Documents/GitHub/ha-solcast-solar/custom_components/solcast_solar,target=${containerWorkspaceFolder}/custom_components/solcast_solar,type=bind",
     "source=${localEnv:HOME}/Documents/GitHub/ha-solcast-solar/tests,target=${containerWorkspaceFolder}/tests/components/solcast_solar,type=bind"
   ],
 ```
@@ -22,7 +22,7 @@ Or as a core component, which is preferred. To run tests the integration must be
 Symbolic link creation... If an empty solcast_solar folder exists at the target then that folder will need to be removed before creating the link.
 
 ```
-ln -s /workspaces/homeAssistant-core/homeassistant/components/solcast_solar \
+ln -s /workspaces/homeAssistant-core/custom_components/solcast_solar \
       /workspaces/homeAssistant-core/config/custom_components/solcast_solar
 ```
 
@@ -38,7 +38,7 @@ To get the WSGI simulator to work an advanced integration option (`solcast_url`)
 
 Re-building the dev container will require `/etc/hosts` to be modified again if that approach has been used. Using the advanced option persists a re-build, and even more so if a mount of the config folder has been done.
 
-The tests will show up at `tests/components/solcast_solar`. `cd` to there and execute `pytest -n auto` for all, or `pytest test_xxxx.py` for just one test module. To inspect logging, `pytest -o log_cli=true --log-cli-level=DEBUG [module.py ...]`. For a test coverage report, `pytest -n auto --cov=homeassistant.components.solcast_solar --cov-report term-missing -v` using `xdist` parallelism (drop `-n auto` for a serialised run).
+The tests will show up at `tests/components/solcast_solar`. `cd` to there and execute `pytest -n auto` for all, or `pytest test_xxxx.py` for just one test module. To inspect logging, `pytest -o log_cli=true --log-cli-level=DEBUG [module.py ...]`. For a test coverage report, `pytest -n auto --cov=custom_components.solcast_solar --cov-report term-missing -v` using `xdist` parallelism (drop `-n auto` for a serialised run).
 
 Adding `--dist=worksteal` will likely reduce test runtime. Also if running the dev container on Apple silicon then limiting `xdist` to `-n {performance_cores}` will likely yield consistently fast test runtime (e.g. M2 Max use `-n 8`); the Linux test environment has no way of knowing which core is a performance core, so let MacOS work it out, because `-n auto` would choose 12 worker threads and end up running tests on efficiency cores.
 
