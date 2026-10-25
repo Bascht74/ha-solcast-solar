@@ -220,9 +220,9 @@ You probably **do not** want to do this! Use the HACS method above unless you kn
 
 Beta versions may be available that fix issues.
 
-Check https://github.com/BJReplay/ha-solcast-solar/releases to see if an issue has already been resolved. If so, enable the `Solcast PV Pre-release` entity to enable beta upgrade (or for HACS v1 turn on `Show beta versions` when re-downloading).
+Check https://github.com/Bascht74/ha-solcast-solar/releases to see if an issue has already been resolved. If so, turn on pre-releases as described in [BETA.md](BETA.md#turn-on-pre-releases).
 
-Your feedback from testing betas is most welcome in the repository [discussions](https://github.com/BJReplay/ha-solcast-solar/discussions), where a discussion will exist for any active beta.
+Your feedback from testing betas is most welcome as an issue with the template `Pre-release feedback`.
 
 ## Configuration
 

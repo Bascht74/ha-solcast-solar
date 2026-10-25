@@ -4,6 +4,9 @@ name: Auto release
 # solcast_solar.zip as release.yml does, and create the release v<version> with the notes from
 # .github/release-notes/<version>.md. A release created with GITHUB_TOKEN starts no other workflow,
 # so release.yml does not build the ZIP a second time.
+# A .github/release-notes/<version>.pre-release.md next to the notes makes the release a pre-release
+# with that text before the notes; promote-release.yml later releases the same tag for everyone.
+# While the newest release is a pre-release, a later version is released only as a pre-release.
 
 on:
   workflow_run:  # zizmor: ignore[dangerous-triggers] only a successful push to main of this repository is released
@@ -97,6 +100,22 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          notes=".github/release-notes/$VERSION.md"
+          pre=".github/release-notes/$VERSION.pre-release.md"
+          pre_release=false
+          if [ -s "$pre" ]; then
+            pre_release=true
+            { cat "$pre"; echo; cat "$notes"; } > "$RUNNER_TEMP/notes.md"
+            notes="$RUNNER_TEMP/notes.md"
+          fi
+          if [ "$pre_release" = false ]; then
+            open=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 1 \
+              --json tagName,isPrerelease --jq '.[0] | select(.isPrerelease) | .tagName')
+            if [ -n "$open" ]; then
+              echo "::error::$open is still a pre-release. Release $TAG as a pre-release too, or promote $open before raising the version"
+              exit 1
+            fi
+          fi
           gh release create "$TAG" custom_components/solcast_solar/solcast_solar.zip \
             --repo "$GITHUB_REPOSITORY" --target "$SHA" --title "$TAG" \
-            --notes-file ".github/release-notes/$VERSION.md"
+            --notes-file "$notes" --prerelease="$pre_release"

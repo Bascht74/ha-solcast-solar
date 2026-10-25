@@ -1,0 +1,47 @@
+name: Promote the pre-release
+
+# Release the pre-release of the version in manifest.json for everyone: the same tag and ZIP,
+# without the pre-release mark, set as the latest release, with the notes from
+# .github/release-notes/<version>.md alone. Testers who installed it see no update, everyone else
+# gets it as an update. The release is edited with GITHUB_TOKEN, so release.yml does not build the
+# ZIP again.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: promote-release
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Release the pre-release for everyone
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write  # Edit the release
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Release the pre-release for everyone
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(jq -r '.version' custom_components/solcast_solar/manifest.json)
+          tag="v$version"
+          notes=".github/release-notes/$version.md"
+          pre_release=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
+            --json isPrerelease --jq .isPrerelease)
+          if [ "$pre_release" != true ]; then
+            echo "::error::$tag is not a pre-release, so there is nothing to promote"
+            exit 1
+          fi
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
+            --prerelease=false --latest --notes-file "$notes"
