@@ -1373,8 +1373,10 @@ class Dampening:
         """Applies selected delta_adjustment_model to past dampening factor."""
         match delta_adjustment_model:
             case 1:
-                # Adjust the factor based on forecast vs. peak interval using squared ratio
-                factor = max(factor, factor + ((1.0 - factor) * ((1.0 - (interval_pv50 / self.api.peak_intervals[interval])) ** 2)))
+                # Adjust the factor based on how far the forecast falls short of the peak interval, squared.
+                # A forecast at or above the peak keeps the factor, and the factor never exceeds 1.0.
+                shortfall = max(0.0, 1.0 - (interval_pv50 / self.api.peak_intervals[interval]))
+                factor = max(factor, min(1.0, factor + ((1.0 - factor) * (shortfall**2))))
             case _:
                 # Adjust the factor based on forecast vs. peak interval delta-logarithmically.
                 factor = max(
