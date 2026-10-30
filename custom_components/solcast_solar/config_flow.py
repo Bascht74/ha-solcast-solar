@@ -85,6 +85,8 @@ from .enums import HistoryType, LoadStatus
 from .instance import (
     advanced_file_path,
     cache_file_path,
+    check_rooftops,
+    entry_rooftops,
     entry_slug,
     entry_title,
     instance_name,
@@ -141,7 +143,7 @@ async def _async_is_allow_exceed_api_limit(hass: HomeAssistant, options: Mapping
     return await async_is_allow_exceed_api_limit(hass, advanced_file)
 
 
-async def validate_sites(hass: HomeAssistant, user_input: dict[str, Any]) -> tuple[int, str]:
+async def validate_sites(hass: HomeAssistant, user_input: dict[str, Any]) -> tuple[int, str, list[str]]:
     """Validate the keys and sites with an API call.
 
     Arguments:
@@ -149,7 +151,7 @@ async def validate_sites(hass: HomeAssistant, user_input: dict[str, Any]) -> tup
         user_input (dict[str, Any]): The user input.
 
     Returns:
-        tuple[int, str]: The test HTTP status and non-blank message for failures.
+        tuple[int, str, list[str]]: The test HTTP status, non-blank message for failures, and the rooftop IDs of the keys.
 
     """
     set_log_instance(instance_name(user_input))
@@ -189,11 +191,11 @@ async def validate_sites(hass: HomeAssistant, user_input: dict[str, Any]) -> tup
     status, message, api_key_in_error = await solcast.sites_cache.get_sites_and_usage(prior_crash=False, use_cache=False)
     if status != 200:
         if status in (401, 403):
-            return status, f"Bad API key, {message} returned for {api_key_in_error}"
-        return status, f"Error {message} for API key {api_key_in_error}"
+            return status, f"Bad API key, {message} returned for {api_key_in_error}", []
+        return status, f"Error {message} for API key {api_key_in_error}", []
     if solcast.sites_status == LoadStatus.NO_SITES:
-        return 404, f"No sites for the API key {api_key_in_error} are configured at solcast.com"
-    return 200, ""
+        return 404, f"No sites for the API key {api_key_in_error} are configured at solcast.com", []
+    return 200, "", [site[RESOURCE_ID] for site in solcast.sites_all]
 
 
 @config_entries.HANDLERS.register(DOMAIN)
@@ -244,12 +246,23 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
             if not errors:
                 key_changed = api_key != all_config_data[CONF_API_KEY]
                 all_config_data[CONF_API_KEY] = api_key
-                status, message = await validate_sites(self.hass, all_config_data)
+                status, message, rooftops = await validate_sites(self.hass, all_config_data)
                 if status != 200:
                     errors[BASE] = EXCEPTION_API_ERROR
                     description_placeholders["error_detail"] = message
-                elif key_changed and self._entry is not None:
-                    await set_sensitive(self.hass, self._entry)
+                else:
+                    all_config_data[EXCLUDE_SITES], error, placeholders = check_rooftops(
+                        self.hass,
+                        self._entry.entry_id if self._entry is not None else None,
+                        rooftops,
+                        all_config_data.get(EXCLUDE_SITES, []),
+                        key_changed,
+                    )
+                    if error is not None:
+                        errors[BASE] = error
+                        description_placeholders.update(placeholders)
+                    elif key_changed and self._entry is not None:
+                        await set_sensitive(self.hass, self._entry)
             if not errors:
                 result = self.async_abort(reason=EXCEPTION_INTERNAL_ERROR)
                 if self._entry is not None:
@@ -314,12 +327,23 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                 all_config_data[AUTO_UPDATE] = int(user_input[AUTO_UPDATE])
 
                 if key_changed:
-                    status, message = await validate_sites(self.hass, all_config_data)
+                    status, message, rooftops = await validate_sites(self.hass, all_config_data)
                     if status != 200:
                         errors[BASE] = EXCEPTION_API_ERROR
                         description_placeholders["error_detail"] = message
-                    elif self._entry is not None:
-                        await set_sensitive(self.hass, self._entry)
+                    else:
+                        all_config_data[EXCLUDE_SITES], error, placeholders = check_rooftops(
+                            self.hass,
+                            self._entry.entry_id if self._entry is not None else None,
+                            rooftops,
+                            all_config_data.get(EXCLUDE_SITES, []),
+                            True,
+                        )
+                        if error is not None:
+                            errors[BASE] = error
+                            description_placeholders.update(placeholders)
+                        elif self._entry is not None:
+                            await set_sensitive(self.hass, self._entry)
             if not errors:
                 result = self.async_abort(reason=EXCEPTION_INTERNAL_ERROR)
                 if self._entry is not None:
@@ -422,11 +446,17 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                 # A second flow for the same name aborts while this one is still open.
                 await self.async_set_unique_id(slug or DOMAIN)
 
-                status, message = await validate_sites(self.hass, options)
+                status, message, rooftops = await validate_sites(self.hass, options)
                 if status != 200:
                     errors[BASE] = EXCEPTION_API_ERROR
                     description_placeholders["error_detail"] = message
                 else:
+                    # A key shared with another entry: the sites that entry fetches stay excluded here.
+                    options[EXCLUDE_SITES], error, placeholders = check_rooftops(self.hass, None, rooftops, [], True)
+                    if error is not None:
+                        errors[BASE] = error
+                        description_placeholders.update(placeholders)
+                if not errors:
                     return self.async_create_entry(
                         title=entry_title(options), data={}, options=options | {f"damp{factor:02d}": 1.0 for factor in range(24)}
                     )
@@ -679,11 +709,26 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
 
                     self._all_config_data = all_config_data
 
+                    rooftops: list[str] = []
                     if all_config_data[CONF_API_KEY] != _old_api_key:
-                        status, message = await validate_sites(self.hass, all_config_data)
+                        status, message, rooftops = await validate_sites(self.hass, all_config_data)
                         if status != 200:
                             errors[BASE] = EXCEPTION_API_ERROR
                             description_placeholders["error_detail"] = message
+                    elif all_config_data[EXCLUDE_SITES] != self._entry.options.get(EXCLUDE_SITES, []):
+                        rooftops = entry_rooftops(self.hass, self._entry)
+                    if not errors:
+                        all_config_data[EXCLUDE_SITES], error, placeholders = check_rooftops(
+                            self.hass,
+                            self._entry.entry_id,
+                            rooftops,
+                            all_config_data[EXCLUDE_SITES],
+                            all_config_data[CONF_API_KEY] != _old_api_key,
+                        )
+                        if error is not None:
+                            errors[BASE] = error
+                            description_placeholders.update(placeholders)
+                            _LOGGER.debug("Options validation failed: %s", errors[BASE])
 
                 if not errors:
                     self._api_key_changed = all_config_data[CONF_API_KEY] != _old_api_key

@@ -21,6 +21,7 @@
       "instance_name_invalid": "名前には文字または数字を含める必要があります。",
       "instance_name_duplicate": "その名前はすでに使用されています。",
       "instance_name_reserved": "その名前は最初のエントリのファイル用に予約されています。別の名前を選んでください。",
+      "rooftop_in_use": "サイト {rooftops} はすでに {entries} で集計されています。このエントリまたはもう一方のエントリで除外してください。",
       "all_sites_excluded": "すべてのサイトが除外されています。少なくとも1つのサイトを残してください。"
     },
     "step": {
@@ -310,6 +311,9 @@
     "remove_cache_failed": {
       "message": "すべてのSolcastデータのクリアに失敗しました。"
     },
+    "rooftop_in_use": {
+      "message": "サイト {rooftops} はすでに {entries} で集計されています。このエントリまたはもう一方のエントリで除外してください。"
+    },
     "set_options_empty": {
       "message": "少なくとも1つのオプションを指定する必要があります。"
     },
@@ -416,6 +420,7 @@
       "limit_not_number": "APIリミットは数字ではありません",
       "limit_one_or_greater": "APIリミットは1以上である必要があります",
       "limit_too_many": "入力されたAPIリミットの数がキーの数より多いです",
+      "rooftop_in_use": "サイト {rooftops} はすでに {entries} で集計されています。このエントリまたはもう一方のエントリで除外してください。",
       "all_sites_excluded": "すべてのサイトが除外されています。少なくとも1つのサイトを残してください。"
     },
     "step": {

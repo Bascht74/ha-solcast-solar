@@ -434,7 +434,7 @@ async def test_reauth_unchanged_key_retries_setup_without_key_change(hass: HomeA
     result = await entry.start_reauth_flow(hass)
 
     with (
-        patch("custom_components.solcast_solar.config_flow.validate_sites", return_value=(200, "")) as mock_validate_sites,
+        patch("custom_components.solcast_solar.config_flow.validate_sites", return_value=(200, "", [])) as mock_validate_sites,
         patch("custom_components.solcast_solar.config_flow.set_sensitive") as mock_set_sensitive,
         patch.object(SolcastSolarFlowHandler, "_mark_reset_old_key") as mock_mark_reset_old_key,
         patch.object(hass.config_entries, "async_update_entry") as mock_update_entry,
@@ -710,7 +710,7 @@ async def test_options_api_key_change_sets_sensitive(hass: HomeAssistant) -> Non
     options[SITE_EXPORT_ENTITY] = []
 
     with (
-        patch("custom_components.solcast_solar.config_flow.validate_sites", return_value=(200, "")),
+        patch("custom_components.solcast_solar.config_flow.validate_sites", return_value=(200, "", [])),
         patch("custom_components.solcast_solar.config_flow.set_sensitive") as mock_set_sensitive,
     ):
         await flow.async_step_init(options)
@@ -730,7 +730,7 @@ async def test_options_api_key_change_defers_sensitive_until_dampen_commit(hass:
     options[SITE_EXPORT_ENTITY] = []
 
     with (
-        patch("custom_components.solcast_solar.config_flow.validate_sites", return_value=(200, "")),
+        patch("custom_components.solcast_solar.config_flow.validate_sites", return_value=(200, "", [])),
         patch("custom_components.solcast_solar.config_flow.set_sensitive") as mock_set_sensitive,
         patch.object(hass.config_entries, "async_update_entry") as mock_update_entry,
         patch.object(flow, "check_dead") as mock_check_dead,

@@ -11,15 +11,22 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
 
 from .const import (
     CONFIG_DISCRETE_NAME,
     CONFIG_FOLDER_DISCRETE,
+    DOMAIN,
+    EXCEPTION_ALL_SITES_EXCLUDED,
+    EXCEPTION_ROOFTOP_IN_USE,
+    EXCLUDE_SITES,
     INSTANCE_NAME,
     INSTANCE_SLUG,
     INTEGRATION,
+    RESOURCE_ID,
     TITLE,
 )
 from .log import get_logger
@@ -148,3 +155,73 @@ def repair_placeholders(entry: Any, extra: Mapping[str, str] | None = None) -> d
     if entry is not None and is_named_instance(entry.options):
         instance = f" ({str(entry.title or '').strip() or device_name_for(entry.options)})"
     return {"instance": instance, **(extra or {})}
+
+
+def _counted_rooftops(hass: HomeAssistant, entry: ConfigEntry) -> set[str]:
+    """Return the rooftops of an entry: the loaded sites, or else its rooftop sensors in the entity registry."""
+
+    if entry.state is ConfigEntryState.LOADED:
+        return {site[RESOURCE_ID] for site in entry.runtime_data.coordinator.solcast.sites}
+    prefix = "solcast_solcast_api_"
+    return {
+        entity.unique_id.removeprefix(prefix)
+        for entity in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+        if entity.domain == "sensor" and entity.unique_id.startswith(prefix)
+    }
+
+
+def entry_rooftops(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:
+    """Return the sites an entry can fetch: of a loaded entry every site of its keys.
+
+    Of an entry that is not loaded only its excluded sites and its rooftop sensors are known.
+    """
+
+    if entry.state is ConfigEntryState.LOADED:
+        return [site[RESOURCE_ID] for site in entry.runtime_data.coordinator.solcast.sites_all]
+    return sorted({*entry.options.get(EXCLUDE_SITES, []), *_counted_rooftops(hass, entry)})
+
+
+def rooftops_counted_elsewhere(hass: HomeAssistant, entry_id: str | None, rooftops: list[str], excluded: list[str]) -> dict[str, str]:
+    """Return the rooftops this entry would count that another entry counts already, with that entry's title.
+    Every entry of the domain is checked, also one that is not loaded, failed to set up or is disabled.
+    """
+
+    clash: dict[str, str] = {}
+    for other in hass.config_entries.async_entries(DOMAIN):
+        if other.entry_id == entry_id:
+            continue
+        other_excluded = other.options.get(EXCLUDE_SITES, [])
+        for resource_id in _counted_rooftops(hass, other):
+            if resource_id in rooftops and resource_id not in excluded and resource_id not in other_excluded:
+                clash[resource_id] = other.title
+    return clash
+
+
+def rooftop_placeholders(clash: dict[str, str]) -> dict[str, str]:
+    """Placeholders for the rooftop_in_use error."""
+
+    return {"rooftops": ", ".join(sorted(clash)), "entries": ", ".join(sorted(set(clash.values())))}
+
+
+def check_rooftops(
+    hass: HomeAssistant, entry_id: str | None, rooftops: list[str], excluded: list[str], new_key: bool
+) -> tuple[list[str], str | None, dict[str, str]]:
+    """Check the sites an entry would fetch against the other entries; several entries may share an API key.
+
+    With a new API key, its sites that another entry fetches are excluded here. Otherwise including a site that
+    another entry fetches is refused. Every entry keeps at least one site to fetch.
+
+    Returns:
+        tuple[list[str], str | None, dict[str, str]]: The excluded sites, and an error key with placeholders or None.
+    """
+
+    clash = rooftops_counted_elsewhere(hass, entry_id, rooftops, excluded)
+    if new_key and clash:
+        excluded = sorted({*excluded, *clash})
+    if clash and (not new_key or set(rooftops) <= set(excluded)):
+        return excluded, EXCEPTION_ROOFTOP_IN_USE, rooftop_placeholders(clash)
+    if rooftops and set(rooftops) <= set(excluded):
+        return excluded, EXCEPTION_ALL_SITES_EXCLUDED, {}
+    if clash:
+        _LOGGER.debug("Site(s) %s fetched by %s, so excluded here", ", ".join(sorted(clash)), ", ".join(sorted(set(clash.values()))))
+    return excluded, None, {}

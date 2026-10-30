@@ -21,6 +21,7 @@
       "instance_name_invalid": "De naam moet een letter of een cijfer bevatten.",
       "instance_name_duplicate": "Die naam is al in gebruik.",
       "instance_name_reserved": "Die naam is gereserveerd voor de bestanden van de eerste vermelding. Kies een andere naam.",
+      "rooftop_in_use": "Site(s) {rooftops} al geteld door {entries}. Sluit ze uit in deze vermelding of in de andere.",
       "all_sites_excluded": "Alle sites zijn uitgesloten. Behoud ten minste één site."
     },
     "step": {
@@ -307,6 +308,9 @@
     "remove_cache_failed": {
       "message": "Alle Solcast gegevens wissen mislukt."
     },
+    "rooftop_in_use": {
+      "message": "Site(s) {rooftops} al geteld door {entries}. Sluit ze uit in deze vermelding of in de andere."
+    },
     "set_options_empty": {
       "message": "Er moet minimaal één optie worden opgegeven."
     },
@@ -416,6 +420,7 @@
       "limit_one_or_greater": "API-limiet moet één of meer zijn",
       "limit_too_many": "Er zijn meer API-limietwaarden ingevoerd dan API-sleutels",
       "limit_exceeds_maximum": "De API-limiet mag niet hoger zijn dan 50 (en zou waarschijnlijk 10 of minder moeten zijn).",
+      "rooftop_in_use": "Site(s) {rooftops} al geteld door {entries}. Sluit ze uit in deze vermelding of in de andere.",
       "all_sites_excluded": "Alle sites zijn uitgesloten. Behoud ten minste één site."
     },
     "step": {

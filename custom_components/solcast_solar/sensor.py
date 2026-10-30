@@ -14,7 +14,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_API_KEY, EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
@@ -55,6 +55,7 @@ from .const import (
     ENTITY_TOTAL_KWH_FORECAST,
     ENTITY_TOTAL_KWH_FORECAST_TODAY,
     ENTITY_TOTAL_KWH_FORECAST_TOMORROW,
+    EXCLUDE_SITES,
     FACTORS,
     HARD_LIMIT,
     HARD_LIMIT_API,
@@ -534,6 +535,29 @@ def get_sensor_update_policy(key: str) -> SensorUpdatePolicy:
     return SensorUpdatePolicy.DEFAULT
 
 
+def _warn_duplicate_rooftops(hass: HomeAssistant, entry: ConfigEntry, sites: list[dict[str, Any]]) -> None:
+    """Log a rooftop that another loaded Solcast entry counts too, which doubles it in the totals."""
+
+    own_ids = {site[RESOURCE_ID] for site in sites} - set(entry.options.get(EXCLUDE_SITES, []))
+    if not own_ids:
+        return
+    for other in hass.config_entries.async_entries(DOMAIN):
+        if other.entry_id == entry.entry_id or other.state is not ConfigEntryState.LOADED:
+            continue
+        runtime = other.runtime_data
+        if runtime is None:
+            continue
+        try:
+            other_sites = runtime.coordinator.solcast.sites
+        except AttributeError:
+            continue
+        shared = own_ids & {site[RESOURCE_ID] for site in other_sites} - set(other.options.get(EXCLUDE_SITES, []))
+        for resource_id in sorted(shared):
+            _LOGGER.warning(
+                "Rooftop %s is also counted by Solcast entry %s; exclude it in one of the two entries", resource_id, other.title
+            )
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -610,6 +634,7 @@ async def async_setup_entry(
         ]
 
     # Site sensors
+    _warn_duplicate_rooftops(hass, entry, coordinator.solcast.sites)
     for site in coordinator.solcast.sites:
         k = {
             DESCRIPTION: SensorEntityDescription(

@@ -21,6 +21,7 @@
       "instance_name_invalid": "Názov musí obsahovať písmeno alebo číslicu.",
       "instance_name_duplicate": "Tento názov sa už používa.",
       "instance_name_reserved": "Tento názov je vyhradený pre súbory prvého záznamu. Vyberte iný názov.",
+      "rooftop_in_use": "Stránky {rooftops} už započítava {entries}. Vylúčte ich v tomto zázname alebo v druhom.",
       "all_sites_excluded": "Všetky lokality sú vylúčené. Ponechajte aspoň jednu lokalitu."
     },
     "step": {
@@ -307,6 +308,9 @@
     "remove_cache_failed": {
       "message": "Vymazanie všetkých údajov Solcast zlyhalo."
     },
+    "rooftop_in_use": {
+      "message": "Stránky {rooftops} už započítava {entries}. Vylúčte ich v tomto zázname alebo v druhom."
+    },
     "set_options_empty": {
       "message": "Musí byť špecifikovaná aspoň jedna možnosť."
     },
@@ -416,6 +420,7 @@
       "limit_one_or_greater": "Limit API musí byť jeden alebo väčší",
       "limit_too_many": "Je zadaných viac limitov API ako kľúčov",
       "limit_exceeds_maximum": "Limit API nemôže prekročiť 50 (a pravdepodobne by mal byť 10 alebo menej).",
+      "rooftop_in_use": "Stránky {rooftops} už započítava {entries}. Vylúčte ich v tomto zázname alebo v druhom.",
       "all_sites_excluded": "Všetky lokality sú vylúčené. Ponechajte aspoň jednu lokalitu."
     },
     "step": {

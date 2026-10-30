@@ -21,7 +21,8 @@
       "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
-      "limit_too_many": "There are more API limit counts entered than keys"
+      "limit_too_many": "There are more API limit counts entered than keys",
+      "rooftop_in_use": "Site(s) {rooftops} already counted by {entries}. Exclude them in this entry or in the other one."
     },
     "step": {
       "reauth_confirm": {
@@ -319,6 +320,9 @@
     "remove_cache_failed": {
       "message": "Clear all Solcast data failed."
     },
+    "rooftop_in_use": {
+      "message": "Site(s) {rooftops} already counted by {entries}. Exclude them in this entry or in the other one."
+    },
     "set_options_empty": {
       "message": "At least one option must be specified."
     }
@@ -419,7 +423,8 @@
       "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
-      "limit_too_many": "There are more API limit counts entered than keys"
+      "limit_too_many": "There are more API limit counts entered than keys",
+      "rooftop_in_use": "Site(s) {rooftops} already counted by {entries}. Exclude them in this entry or in the other one."
     },
     "step": {
       "dampen": {
