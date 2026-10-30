@@ -125,7 +125,7 @@ This value must be less than or equal to the minimum matching intervals or the n
 
 Possible values: integer `1`..`21` (default `2`)
 
-Dampening modelling will skip intervals where there are a low number of matching past intervals. A low number of matches are generally seen at the beginning and end of each day, and these are ignored by default.
+Dampening modelling will skip intervals where there are a low number of matching past intervals. A low number of matches are generally seen at the beginning and end of each day. A skipped interval takes the straight line between the nearest modelled intervals before and after it, and stays at 1.0 where there is none on one side (see `automated_dampening_preserve_unmatched_factors`).
 
 This value must be greater than or equal to the minimum matching generation, or higher than the number of past days considered for automated dampening.
 
@@ -171,7 +171,7 @@ Set this option to `true` to prevent this behaviour.
 
 Possible values: boolean `true`/`false` (default `false`)
 
-Default behaviour when calculating base dampening factors is that any interval with insufficient matching intervals or generation (see `automated_dampening_minimum_matching_generation` and `automated_dampening_minimum_matching_intervals`) will have a dampening factor of 1.0.  This can be an issue if there is a sustained period of poor solar generation (e.g. a sustained cloudy spell) when previously calculated dampening factors for these intervals may be reset to 1.0 leading to a higher generation forecast until sufficient 'good' intervals are recorded and the dampening factors can be recalculated.
+Default behaviour when calculating base dampening factors is that any interval with insufficient matching intervals or generation (see `automated_dampening_minimum_matching_generation` and `automated_dampening_minimum_matching_intervals`) takes the straight line between the nearest modelled intervals before and after it, or a dampening factor of 1.0 when there is none on one side, as at the start and end of the day. A factor of 1.0 between two dampened intervals, for example where generation reached the peak, takes the higher of its neighbours.  This can be an issue if there is a sustained period of poor solar generation (e.g. a sustained cloudy spell) when previously calculated dampening factors for these intervals may be reset to 1.0 leading to a higher generation forecast until sufficient 'good' intervals are recorded and the dampening factors can be recalculated.
 
 Setting this option to `true` will retain the previously calculated factor for such an interval, with factors reverting to 1.0 when all recent estimated actuals for the interval are 0.
 

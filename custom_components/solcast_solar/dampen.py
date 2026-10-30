@@ -1594,6 +1594,8 @@ class Dampening:
         """Applies selected dampening_model to passed data to calculate list of dampening factors."""
 
         dampening = [1.0] * INTERVALS_PER_DAY  # Initialise dampening factors
+        known = [False] * INTERVALS_PER_DAY  # A factor modelled from data (1.0 included) or preserved
+        unknown: list[int] = []  # Matched intervals with too few samples for a factor of their own
 
         apply_elevation_adjustment = bool(self.api.advanced_options.get(ADVANCED_AUTOMATED_DAMPENING_ELEVATION_ADJUSTMENT, False))
         if apply_elevation_adjustment and target_day is None:
@@ -1618,14 +1620,7 @@ class Dampening:
             if self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_PRESERVE_UNMATCHED_FACTORS]:
                 prior_factor = self.factors[ALL][interval] if self.factors.get(ALL) is not None else 1.0
 
-            dst_offset = (
-                1
-                if self.api.dt_helper.dst(
-                    dt_util.now(self.api.tz).replace(hour=interval // 2, minute=30 * (interval % 2), second=0, microsecond=0)
-                )
-                else 0
-            )
-            interval_time = f"{interval // 2 + (dst_offset):02}:{30 * (interval % 2):02}"
+            interval_time = self._interval_time(interval)
             if interval in ignored_intervals:
                 if verbose_log:
                     _LOGGER.debug("Interval %s is intentionally ignored, skipping", interval_time)
@@ -1707,6 +1702,7 @@ class Dampening:
                                     else:
                                         msg = f"Auto-dampen factor for {interval_time} is {factor:.3f}"
                                     dampening[interval] = factor
+                                    known[interval] = True
                                 msg = (
                                     f"Mismatched sample lengths for {interval_time}: {len(actual_samples)} actuals vs {len(generation_samples)} generations"
                                     if len(actual_samples) != len(generation_samples)
@@ -1735,6 +1731,7 @@ class Dampening:
                                     else:
                                         msg = f"Auto-dampen factor for {interval_time} is {factor:.3f}"
                                     dampening[interval] = round(factor, 3)
+                                    known[interval] = True
                                 else:
                                     msg = f"Not enough reliable generation samples for {interval_time} to determine dampening ({len(generation_samples)})"
                                     preserve_this_interval = self.api.advanced_options[
@@ -1742,6 +1739,7 @@ class Dampening:
                                     ]
                             else:
                                 log_msg = False
+                                known[interval] = True  # Generation reached the peak: a measured 1.0
 
                 if not preserve_this_interval:
                     msg = (
@@ -1756,12 +1754,53 @@ class Dampening:
 
                 if preserve_this_interval:
                     dampening[interval] = prior_factor
+                    known[interval] = True
                     msg = msg + f", preserving prior factor {prior_factor:.3f}" if prior_factor != 1.0 else msg
+                elif not known[interval]:
+                    unknown.append(interval)
 
                 if log_msg and msg != "" and verbose_log:
                     _LOGGER.debug(msg)
 
-        return dampening
+        return self._smooth_factors(dampening, known, unknown, verbose_log)
+
+    def _smooth_factors(self, dampening: list[float], known: list[bool], unknown: list[int], verbose_log: bool) -> list[float]:
+        """Fill matched intervals that lack samples from their neighbours, then remove a 1.0 between dampened neighbours.
+
+        An interval with too few samples would otherwise stay at 1.0 between dampened neighbours, and one sample day more
+        or less flips it, so the dampened forecast jumps between half hours. It takes the straight line between the nearest
+        modelled intervals on both sides; without one on both sides it stays at 1.0, so nothing is extended beyond them.
+        A 1.0 between two dampened neighbours, from generation that reached the peak or an insignificant factor, takes the
+        median of the three, the higher neighbour. Other factors keep their value, so shading measured in a single
+        interval stays. Intervals without matches (night) or ignored ones neither change nor count as neighbours.
+        """
+        filled = list(known)
+        modelled = [interval for interval, is_known in enumerate(known) if is_known]
+        for interval in unknown:
+            before = [i for i in modelled if i < interval]
+            after = [i for i in modelled if i > interval]
+            if before and after:
+                left, right = before[-1], after[0]
+                dampening[interval] = round(dampening[left] + (dampening[right] - dampening[left]) * (interval - left) / (right - left), 3)
+                filled[interval] = True
+                if verbose_log:
+                    _LOGGER.debug("Interpolated factor for %s is %.3f", self._interval_time(interval), dampening[interval])
+
+        smoothed = list(dampening)
+        for interval in range(1, INTERVALS_PER_DAY - 1):
+            if dampening[interval] == 1.0 and filled[interval - 1] and filled[interval] and filled[interval + 1]:
+                smoothed[interval] = max(dampening[interval - 1], dampening[interval + 1])
+                if verbose_log and smoothed[interval] != 1.0:
+                    _LOGGER.debug("Smoothed factor for %s is %.3f (was 1.000)", self._interval_time(interval), smoothed[interval])
+        return smoothed
+
+    def _interval_time(self, interval: int) -> str:
+        """Return the local time of a standard-time interval today, for the log."""
+        offset = self.api.dt_helper.dst_offset(
+            dt_util.now(self.api.tz).replace(hour=interval // 2, minute=30 * (interval % 2), second=0, microsecond=0)
+        )
+        local = interval + offset // timedelta(minutes=HALF_HOUR_MINUTES)
+        return f"{local // 2:02}:{30 * (local % 2):02}"
 
     @staticmethod
     def _get_earliest_estimate_after(data: list[dict[str, Any]], after: dt, dampened: bool = False) -> dt | None:
