@@ -1,7 +1,6 @@
 """Issue registry helpers for Solcast Solar."""
 
 from collections import defaultdict
-from collections.abc import Mapping
 from datetime import datetime as dt
 from hashlib import sha256
 from typing import Any
@@ -15,12 +14,8 @@ from .const import (
     ACTUALS_COST,
     API_LIMIT,
     API_USED,
-    AUTO_UPDATE,
-    CONFIGURED_VALUE,
     DOMAIN,
     DT_DATE_ONLY_FORMAT,
-    GET_ACTUALS,
-    ISSUE_ACTUALS_API_LIMIT,
     HOBBYIST_DAILY_QUOTA,
     ISSUE_ACTUALS_QUOTA_TODAY,
     ISSUE_ADVANCED_DEPRECATED,
@@ -33,9 +28,7 @@ from .const import (
     OPTION,
     PROBLEMS,
     STOPS_WORKING,
-    SUGGESTED_VALUE,
 )
-from .enums import AutoUpdate
 from .instance import (
     api_key_limits,
     is_named_instance,
@@ -43,7 +36,6 @@ from .instance import (
     scoped_issue_id,
 )
 from .log import get_logger
-from .util import split_and_strip
 from .redact import redact_api_key
 
 _LOGGER = get_logger(__name__)
@@ -78,85 +70,6 @@ def check_unusual_azimuth(latitude: float, azimuth: float) -> tuple[bool, str, i
             unusual = True
             proposal = -180 - int(azimuth)
     return unusual, issue_key, proposal
-
-
-def sync_actuals_api_limit_issue(hass: HomeAssistant, options: Mapping[str, Any], sites: list[dict[str, Any]]) -> None:
-    """Raise or remove warning issue when estimated actuals consume auto-update API calls."""
-
-    issue_registry = ir.async_get(hass)
-
-    def _remove_issue() -> None:
-        if issue_registry.async_get_issue(DOMAIN, ISSUE_ACTUALS_API_LIMIT) is not None:
-            _LOGGER.debug("Remove issue for %s", ISSUE_ACTUALS_API_LIMIT)
-            ir.async_delete_issue(hass, DOMAIN, ISSUE_ACTUALS_API_LIMIT)
-
-    try:
-        auto_update = int(options.get(AUTO_UPDATE, AutoUpdate.NONE))
-    except (TypeError, ValueError):
-        _remove_issue()
-        return
-
-    if auto_update == AutoUpdate.NONE or not options.get(GET_ACTUALS, False):
-        _remove_issue()
-        return
-
-    api_keys = split_and_strip(str(options.get(CONF_API_KEY, "")))
-    api_limits = split_and_strip(str(options.get(API_LIMIT, "")))
-    if not api_keys or not api_limits:
-        _remove_issue()
-        return
-
-    original_limit_count = len(api_limits)
-    while len(api_limits) < len(api_keys):
-        api_limits.append(api_limits[-1])
-    api_limits = api_limits[: len(api_keys)]
-
-    try:
-        configured_limits = [int(lim) for lim in api_limits]
-    except ValueError:
-        _remove_issue()
-        return
-
-    if not configured_limits or not all(limit in (10, 50) for limit in configured_limits):
-        _remove_issue()
-        return
-
-    sites_per_key = dict.fromkeys(api_keys, 0)
-    for site in sites:
-        if (site_key := site.get(CONF_API_KEY)) in sites_per_key:
-            sites_per_key[site_key] += 1
-
-    suggested_limits = [max(lim - sites_per_key.get(key, 0), 1) for lim, key in zip(configured_limits, api_keys, strict=True)]
-
-    if all(c <= s for c, s in zip(configured_limits, suggested_limits, strict=True)):
-        _remove_issue()
-        return
-
-    if original_limit_count == 1:
-        configured_value = str(configured_limits[0])
-        suggested_value = str(min(suggested_limits))
-    else:
-        configured_value = ",".join(str(limit) for limit in configured_limits)
-        suggested_value = ",".join(str(limit) for limit in suggested_limits)
-    _LOGGER.debug(
-        "Raise issue `%s` for configured API limits %s, suggested %s",
-        ISSUE_ACTUALS_API_LIMIT,
-        configured_value,
-        suggested_value,
-    )
-    ir.async_create_issue(
-        hass,
-        DOMAIN,
-        ISSUE_ACTUALS_API_LIMIT,
-        is_fixable=False,
-        is_persistent=False,
-        severity=ir.IssueSeverity.WARNING,
-        translation_key=ISSUE_ACTUALS_API_LIMIT,
-        translation_placeholders={
-            CONFIGURED_VALUE: configured_value,
-            SUGGESTED_VALUE: suggested_value,
-        },
-    )
 
 
 def _scoped(issue_id: str, entry: ConfigEntry | None) -> str:
@@ -259,8 +172,12 @@ def sync_actuals_quota_risk_issue(
     get_actuals: bool,
     allow_exceed_api_limit_maximum: bool = False,
     entry: ConfigEntry | None = None,
+    api_actuals: dict[str, int] | None = None,
 ) -> None:
-    """Raise or remove warning issue when typical daily API usage may exhaust quota if actuals are fetched."""
+    """Raise or remove warning issue when typical daily API usage may exhaust quota if actuals are fetched.
+
+    The tracked usage counts the estimated actuals calls too, so they are taken off today's running total.
+    """
 
     issue_registry = ir.async_get(hass)
     issue_id = _scoped(ISSUE_ACTUALS_QUOTA_TODAY, entry)
@@ -294,7 +211,7 @@ def sync_actuals_quota_risk_issue(
         """Return today's running total or the persisted typical, whichever is higher."""
         return max(
             api_typical.get(key, inferred_quota),
-            api_used.get(key, 0) + api_forced.get(key, 0),
+            api_used.get(key, 0) - (api_actuals or {}).get(key, 0) + api_forced.get(key, 0),
         )
 
     at_risk_items = [

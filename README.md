@@ -260,7 +260,7 @@ Make sure you use your `API Key` and not your rooftop ID created in Solcast. You
 
 The default for new installations is automatic scheduled forecast update.
 
-Using auto-update will get forecast updates that are automatically spread across hours when the sun is up, or alternatively over a 24-hour period. It calculates the number of daily updates that will occur according to the number of Solcast rooftop sites and the API limit that is configured, or lowest possible number of updates for all sites in the case of multiple API keys.
+Using auto-update will get forecast updates that are automatically spread across hours when the sun is up, or alternatively over a 24-hour period. It calculates the number of daily updates that will occur according to the number of Solcast rooftop sites that are not excluded and the API limit that is configured, keeping one call per site free for the daily estimated actuals when these are fetched, or lowest possible number of updates for all sites in the case of multiple API keys.
 
 Should it be desired to fetch an update outside of these hours, then the API limit in the integration configuration may be reduced, and an automation may then be set up to call the action `solcast_solar.force_update_forecasts` at the desired time of day. (Note that calling the action `solcast_solar.update_forecasts` will be refused if auto-update is enabled, so use force update instead.)
 
@@ -582,7 +582,7 @@ YAML:
 | --- | --- |
 | `solcast_solar.update_forecasts` | Update the forecast data (refused if auto-update is enabled). |
 | `solcast_solar.force_update_forecasts` | Force update the forecast data (performs an update regardless of API usage tracking or auto-update setting, and does not increment the API use counter, refused if auto-update is not enabled.) |
-| `solcast_solar.force_update_estimates` | Force update the estimated actual data (does not increment the API use counter, refused if get estimated actuals is not enabled.) |
+| `solcast_solar.force_update_estimates` | Force update the estimated actual data (performs an update regardless of API usage tracking, and increments the API use counter by one per site, refused if get estimated actuals is not enabled.) |
 | `solcast_solar.clear_all_solcast_data` | Deletes cached data, and initiates an immediate fetch of new past actual and forecast values. |
 | `solcast_solar.query_forecast_data` | Return a list of forecast data using a datetime range start - end. |
 | `solcast_solar.query_estimate_data` | Return a list of estimated actual data using a datetime range start - end. |
@@ -751,9 +751,9 @@ All diagnostic sensor names are preceded by `Solcast PV Forecast` except for `Ro
 
 `API Used` attributes include the following:
 
-* `api_actuals_used`: The count of successful estimated actuals API calls today (always untracked).
+* `api_actuals_used`: The count of successful estimated actuals API calls today (also counted in `API Used`, as Solcast counts them).
 * `api_force_used`: The count of successful forced API calls today (those that bypassed the API limit tracked).
-* `daily_typical_forecast_updates`: The integration learns the typical forecast update cadence (excluding actuals updates).
+* `daily_typical_forecast_updates`: The forecast API calls of the previous UTC day, one per site and update, tracked and forced, without the estimated actuals calls (the API limit until the first UTC midnight).
 * `api_used_total_combined`: A simple running total of forecast updates, forced forecast updates and estimated actual updates.
 
 `API Last Polled` attributes include the following:
@@ -926,7 +926,7 @@ The base dampening factor adjustment is done because when there is significant f
 
 Aside from forecasts, the Solcast service also estimates the likely past actual generation during the day for every rooftop site, based on high resolution satellite imagery, weather observations, and how "clear" the air is (vapour/smog). This data is referred to as an "estimated actual", and it is generally quite accurate for a given location.
 
-Getting estimated actual data does require an API call, and that API call will use up API quota for a hobbyist user. You will need to factor API call consumption for this purpose when taking advantage of automated dampening, with one call used per configured Solcast rooftop site per day per API key. (Reduce the API limit for forecast updates in options by one for a single rooftop site, or by two for two sites.)
+Getting estimated actual data does require an API call, and that API call will use up API quota for a hobbyist user. One call is used per Solcast rooftop site that is not excluded, per day, and these calls count against the API limit. The integration keeps them free: auto-update plans its forecast updates around them (with a limit of ten and two sites, four updates use eight calls and the estimated actuals the other two), and a forecast update by an automation is refused when it would need one of them. Solcast counts per UTC day while the estimated actuals are fetched after local midnight, so a UTC day can hold two of these fetches, for example after a restart that missed local midnight; calls are then kept for both. So leave the API limit at the daily quota of your Solcast account.
 
 Past estimated actual data is acquired just after midnight each day local time, randomised to update within 15 minutes. Where automated dampening is enabled, new dampening factors for the day ahead are modelled immediately after the estimated actual update. It is also possible to force an update of the estimated actuals, and this will also attempt to model dampening factors if appropriate.
 

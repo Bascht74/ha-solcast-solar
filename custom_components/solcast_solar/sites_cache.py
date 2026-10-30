@@ -36,6 +36,7 @@ from .const import (
     DAILY_FORCED_CONSUMED,
     DAILY_LIMIT,
     DAILY_LIMIT_CONSUMED,
+    DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS,
     DAILY_TYPICAL,
     DAILY_TYPICAL_FORECAST_UPDATES,
     DISMISSAL,
@@ -849,6 +850,7 @@ class SitesCache:
             DAILY_FORCED_CONSUMED: self.api.api_forced.get(api_key, 0),
             DAILY_ACTUALS_CONSUMED: self.api.api_actuals.get(api_key, 0),
             DAILY_LIMIT_CONSUMED: self.api.api_used[api_key],
+            DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS: True,
             DAILY_TYPICAL: self.api.api_typical.get(api_key, 0),
             DAILY_TYPICAL_FORECAST_UPDATES: self.api.api_typical_forecast_updates.get(api_key),
             RESET: self._api_used_reset[api_key],
@@ -1381,6 +1383,10 @@ class SitesCache:
             self.api.api_used[api_key] = usage.get(DAILY_LIMIT_CONSUMED, 0)
             self.api.api_forced[api_key] = usage.get(DAILY_FORCED_CONSUMED, 0)
             self.api.api_actuals[api_key] = usage.get(DAILY_ACTUALS_CONSUMED, 0)
+            if not usage.get(DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS):
+                # Written when estimated actuals were not counted yet
+                used = self.api.api_used[api_key]
+                self.api.api_used[api_key] = min(used + self.api.api_actuals[api_key], max(used, usage.get(DAILY_LIMIT, 10)))
             configured_limit = quota.get(api_key, 10)
             allow_exceed = self.api.advanced_options.get(ADVANCED_ALLOW_EXCEED_API_LIMIT_MAXIMUM, False)
             # Seed from the configured limit.  Auto-update can never consume more.
@@ -1413,6 +1419,7 @@ class SitesCache:
             elif DAILY_TYPICAL_FORECAST_UPDATES not in usage:
                 await self.serialise_usage(api_key)
                 _LOGGER.debug("Usage loaded and cache updated with typical forecast updates")
+            elif DAILY_LIMIT_CONSUMED_INCLUDES_ACTUALS not in usage:
                 await self.serialise_usage(api_key)
                 _LOGGER.debug("Usage loaded and cache updated to count the estimated actuals calls")
             else:

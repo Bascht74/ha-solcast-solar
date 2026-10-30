@@ -213,7 +213,7 @@ Inside the json structure there is a `forecasts` key for each rooftop site, whic
 
 Solcast removed an API call to get API quota usage, so the answer is because _**you**_ told it to.
 
-To answer a question with a question, is the API quota set correctly in the integration configuration? If not, then set it to 50 or as appropriate, given you may be using calls for estimated actuals or forced updates as well.
+To answer a question with a question, is the API quota set correctly in the integration configuration? If not, then set it to 50 or as appropriate, given you may be using calls for forced updates as well. (Calls for estimated actuals count against the limit, and auto-update keeps them free.)
 
 ### Q: What polls to Solcast happen, when do they happen, and are they important?
 

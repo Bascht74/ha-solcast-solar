@@ -1667,6 +1667,7 @@ async def test_scenarios(
         caplog.clear()
 
         # Test start with stale data
+        auto_divisions = coordinator.divisions
         data_file = Path(f"{config_dir}/solcast.json")
         data_file_undampened = Path(f"{config_dir}/solcast-undampened.json")
         original_data = json.loads(data_file.read_text(encoding="utf-8"))
@@ -1679,7 +1680,7 @@ async def test_scenarios(
             data = json.loads(data_file.read_text(encoding="utf-8"))
             data[LAST_UPDATED] = (dt_util.utcnow() - timedelta(days=5)).isoformat()
             data[LAST_ATTEMPT] = data[LAST_UPDATED]
-            data[AUTO_UPDATED] = 10
+            data[AUTO_UPDATED] = auto_divisions
             # Remove forecasts today up to "now"
             for site in data[SITE_INFO].values():
                 site[FORECASTS] = [f for f in site[FORECASTS] if f[PERIOD_START] > dt_util.utcnow().isoformat()]
@@ -1691,7 +1692,7 @@ async def test_scenarios(
                 data = json.loads(d_file.read_text(encoding="utf-8"))
                 data[LAST_UPDATED] = (dt_util.utcnow() - timedelta(days=DEFAULT_FORECAST_DAYS + 1)).isoformat()
                 data[LAST_ATTEMPT] = data[LAST_UPDATED]
-                data[AUTO_UPDATED] = 10
+                data[AUTO_UPDATED] = auto_divisions
                 # Shift all forecast intervals back nine days
                 for site in data[SITE_INFO].values():
                     site[FORECASTS] = [
@@ -1710,7 +1711,7 @@ async def test_scenarios(
             data = json.loads(data_file.read_text(encoding="utf-8"))
             data[LAST_UPDATED] = last_update
             data[LAST_ATTEMPT] = data[LAST_UPDATED]
-            data[AUTO_UPDATED] = 10
+            data[AUTO_UPDATED] = auto_divisions
             data_file.write_text(json.dumps(data), encoding="utf-8")
 
         def restore_data():

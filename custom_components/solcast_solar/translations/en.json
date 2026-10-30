@@ -42,7 +42,7 @@
         },
         "data_description": {
           "api_key": "Enter one or more Solcast API keys, separated by commas. Another entry may use the same key; the sites that entry fetches are then excluded here",
-          "api_limit": "Enter a forecast update daily limit, comma separated when using multiple keys",
+          "api_limit": "Enter the daily API call limit, estimated actuals included, comma separated when using multiple keys. Solcast counts the calls per API key: the limits of all entries that use the same key must add up to no more than the daily quota of the account",
           "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)"
         },
         "description": "Solcast Account Details\n\n(If not using auto-update then an automation is required - see the integration documentation)"
@@ -56,7 +56,7 @@
         },
         "data_description": {
           "api_key": "Enter one or more Solcast API keys, separated by commas. Another entry may use the same key; the sites that entry fetches are then excluded here",
-          "api_limit": "Enter a forecast update daily limit, comma separated when using multiple keys",
+          "api_limit": "Enter the daily API call limit, estimated actuals included, comma separated when using multiple keys. Solcast counts the calls per API key: the limits of all entries that use the same key must add up to no more than the daily quota of the account",
           "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)",
           "instance_name": "Name of this plant, for example West. Leave empty only for the first entry. Further entries need a name so their files and sensors stay separate."
         },
@@ -347,10 +347,6 @@
       "description": "The `{deprecated_action}` action is deprecated and will be removed in a future release. Use the `{new_action}` action instead.",
       "title": "Deprecated action{instance}"
     },
-    "actuals_api_limit": {
-      "description": "Auto-update and estimated actuals are enabled while API limit is configured at hobbyist maximum value (`{configured_value}`). Estimated actuals are collected just after midnight and use one API call per rooftop site for each configured API key. Reduce your API limit to `{suggested_value}` to reserve calls for estimated actuals.",
-      "title": "Adjust API limit for estimated actuals"
-    },
     "actuals_quota_today": {
       "description": "Estimated actuals fetching has been enabled. Based on typical daily forecast update API usage ({api_used} calls) and the inferred {api_limit} call account quota, adding the {actuals_cost} call(s) needed for the estimated actuals fetch would exceed the quota on a typical day. The fetch will still be attempted just after midnight, but it (or a subsequent forecast update) may fail with a `429 Too Many Requests` response.\n\nThis warning may appear while the typical usage counter is still being seeded from real data. The typical count reflects auto-update/automation update and forced forecast calls only. Review your configured API limit and any force-update automations if you want to use estimated actuals.",
       "title": "Estimated actuals fetch may exceed daily API quota{instance}"
@@ -523,7 +519,7 @@
         },
         "data_description": {
           "api_key": "Enter one or more Solcast API keys, separated by commas. Another entry may use the same key; the sites that entry fetches are then excluded here",
-          "api_limit": "Enter a forecast update daily limit, comma separated when using multiple keys",
+          "api_limit": "Enter the daily API call limit, estimated actuals included, comma separated when using multiple keys. Solcast counts the calls per API key: the limits of all entries that use the same key must add up to no more than the daily quota of the account",
           "attr_breakdown": "Select which breakdowns are enabled",
           "auto_dampen": "Requires estimated actuals and a PV generation entity \u2014 see the integration documentation",
           "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)",
@@ -531,7 +527,7 @@
           "custom_hours": "Number of hours for the custom sensor (minimum 1, maximum 144)",
           "exclude_sites": "An excluded site is not fetched from Solcast: no forecast, no estimated actuals, no API calls and no site sensor",
           "generation_entities": "For automated dampening: energy (Wh/kWh/MWh, total increasing) or power (W/kW/MW, instantaneous)",
-          "get_actuals": "Uses one API call per site per day \u2014 see the integration documentation; a reduced API limit is recommended",
+          "get_actuals": "Uses one API call per site per day, which auto-update keeps free \u2014 see the integration documentation",
           "hard_limit_api": "See the integration documentation; comma separate multiple values for each key",
           "key_estimate": "",
           "site_damp": "Granular dampening is set \u2014 clear to revert to overall hourly dampening",

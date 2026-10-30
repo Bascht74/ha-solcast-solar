@@ -125,9 +125,12 @@ class Updater:
     def _calculate_forecast_updates(self, init: bool = False) -> None:
         """Calculate all automated forecast update UTC events for the day.
 
-        This is an even spread between sunrise and sunset.
+        This is an even spread between sunrise and sunset. While estimated actuals are fetched, one call per
+        fetched site and day stays free for them.
         """
-        self.divisions = int(self._coordinator.solcast.api_limit / self._coordinator.solcast.api_maximum_sites)
+        self.divisions = self._coordinator.solcast.forecast_updates_per_day
+        if self._coordinator.solcast.options.get_actuals:
+            _LOGGER.debug("Auto update keeps one API call per site a day for estimated actuals")
         if self.divisions == 0:
             _LOGGER.warning("The API limit leaves no automated forecast update, so none is scheduled")
 
@@ -366,6 +369,7 @@ class Updater:
             get_actuals,
             allow_exceed_api_limit_maximum=self._coordinator.solcast.advanced_options.get(ADVANCED_ALLOW_EXCEED_API_LIMIT_MAXIMUM, False),
             entry=self._coordinator.entry,
+            api_actuals=self._coordinator.solcast.api_actuals,
         )
 
         scheduled = False

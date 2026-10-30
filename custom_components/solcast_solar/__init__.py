@@ -96,7 +96,7 @@ from .instance import (
     is_reserved_slug,
     shared_unique_id,
 )
-from .issues import refresh_issue_placeholders, sync_actuals_api_limit_issue, sync_shared_api_limit_issues
+from .issues import refresh_issue_placeholders, sync_shared_api_limit_issues
 from .log import get_logger, set_log_instance
 from .redact import redact_filename_api_key
 from .solcastapi import ConnectionOptions, SolcastApi
@@ -394,8 +394,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         case _:
             pass
 
-    sync_actuals_api_limit_issue(hass, entry.options, solcast.sites)
-
     await __get_granular_dampening(hass, entry, solcast)
 
     if await solcast.sites_cache.load_saved_data():
@@ -632,7 +630,6 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     else:
         determination = "Refresh sensors only" + (", with spline recalculate" if recalculate_splines else "")
     _LOGGER.debug("Options updated, action: %s", determination)
-    sync_actuals_api_limit_issue(hass, entry.options, coordinator.solcast.sites)
     if not reload:
         await coordinator.solcast.set_options(entry.options)
         if recalculate_and_refresh:

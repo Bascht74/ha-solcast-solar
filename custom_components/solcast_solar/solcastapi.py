@@ -5,7 +5,7 @@ from collections import OrderedDict, defaultdict
 import contextlib
 import copy
 from dataclasses import dataclass
-from datetime import date, datetime as dt, timedelta, tzinfo
+from datetime import UTC, date, datetime as dt, timedelta, tzinfo
 from hashlib import md5
 from operator import itemgetter
 from pathlib import Path
@@ -24,6 +24,7 @@ from homeassistant.util import dt as dt_util
 
 from .advanced import AdvancedOptions
 from .const import (
+    ADVANCED_ESTIMATED_ACTUALS_FETCH_DELAY,
     ADVANCED_FORECAST_FUTURE_DAYS,
     ADVANCED_HISTORY_MAX_DAYS,
     ALL,
@@ -568,15 +569,55 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         return dict(api_key_sites)
 
     @property
-    def api_maximum_sites(self) -> int:
-        """API maximum sites for all API keys.
+    def forecast_updates_per_day(self) -> int:
+        """Forecast updates a day that the API limit of every key allows.
 
-        Used principally when determining auto-update frequency.
+        Each update fetches every site this entry fetches. Solcast counts every call per API key and UTC day,
+        so while estimated actuals are fetched one call per fetched site is kept for their daily fetch.
 
         Returns:
-            int: The highest number of sites for all configured API keys.
+            int: The number of forecast updates a day, zero when a limit leaves none.
         """
-        return max(self.api_sites_per_key.values(), default=1)
+        return min(
+            (
+                max((self.api_limits[api_key] - (sites if self.options.get_actuals else 0)) // sites, 0)
+                for api_key, sites in self.api_sites_per_key.items()
+            ),
+            default=0,
+        )
+
+    @property
+    def estimated_actuals_fetches_due(self) -> int:
+        """Estimated actuals fetches still due before UTC midnight, when Solcast's daily count starts again.
+
+        They are fetched once a local day, soon after local midnight, or soon after a start that missed that time.
+        So a UTC day can hold two of them, for example after a restart that missed local midnight, and on the day
+        a clock change moves local midnight in a time zone near UTC.
+
+        Returns:
+            int: The number of fetches due before UTC midnight, zero while estimated actuals are not fetched.
+        """
+        if not self.options.get_actuals:
+            return 0
+        utc_midnight = dt_util.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        delay = timedelta(minutes=self.advanced_options[ADVANCED_ESTIMATED_ACTUALS_FETCH_DELAY])
+        due = int(not self.estimated_actuals_updated_today and self.dt_helper.day_start_utc() + delay < utc_midnight)
+        future = 1
+        while self.dt_helper.day_start_utc(future=future) + delay < utc_midnight:
+            due += 1
+            future += 1
+        return due
+
+    def api_actuals_reserve(self, api_key: str) -> int:
+        """Calls of an API key kept for the estimated actuals fetches still due before UTC midnight.
+
+        Arguments:
+            api_key (str): The API key.
+
+        Returns:
+            int: One call per fetched site of the key for each estimated actuals fetch still due this UTC day.
+        """
+        return self.api_sites_per_key.get(api_key, 0) * self.estimated_actuals_fetches_due
 
     def apply_site_exclusion(self) -> None:
         """Keep every site in `sites_all`, and fetch, count and show only the sites that are not excluded."""

@@ -43,7 +43,7 @@
         "description": "Dane konta Solcast\n\n(Jeśli nie ma automatycznej aktualizacji, wymagana jest automatyzacja - zobacz dokumentację integracji)",
         "data_description": {
           "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami. Inny wpis może używać tego samego klucza; witryny pobierane przez ten wpis są wtedy tutaj wykluczone",
-          "api_limit": "Wprowadź dzienny limit aktualizacji prognozy, rozdzielony przecinkami przy użyciu wielu kluczy",
+          "api_limit": "Wprowadź dzienny limit wywołań API, łącznie z szacowanymi wartościami rzeczywistymi, rozdzielony przecinkami przy użyciu wielu kluczy. Solcast liczy wywołania dla każdego klucza API: limity wszystkich wpisów używających tego samego klucza nie mogą łącznie przekraczać dziennego limitu konta",
           "auto_update": "Jeśli nie używasz automatycznej aktualizacji, utwórz automatyzację, która okresowo wywołuje akcję \"solcast_solar.update_forecasts\", przestrzegając zalecanego przez Solcast maksymalnego łącznego limitu (zwykle łącznie dziesięć razy dziennie dla jednego miejsca dachowego, a przy dwóch miejscach pięć razy dziennie)"
         }
       },
@@ -57,7 +57,7 @@
         "description": "Dane konta Solcast\n\n(Jeśli nie ma automatycznej aktualizacji, wymagana jest automatyzacja - zobacz dokumentację integracji)\n\nAPI Solcast musi być dostępne, aby wstępnie skonfigurować tę integrację. Jeśli otrzymasz komunikat o stanie '429 / Try again later', API jest niedostępne i konfiguracja nie może zostać ukończona. Musisz poczekać. Należy pamiętać, że strona stanu API pod adresem status.solcast.com prawie na pewno nie pokaże żadnych problemów z API. Przyczyną jest najprawdopodobniej pojedynczy nieodpowiedzialny użytkownik API, który wpływa na dostępność dla wszystkich hobbystów.",
         "data_description": {
           "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami. Inny wpis może używać tego samego klucza; witryny pobierane przez ten wpis są wtedy tutaj wykluczone",
-          "api_limit": "Wprowadź dzienny limit aktualizacji prognozy, rozdzielony przecinkami przy użyciu wielu kluczy",
+          "api_limit": "Wprowadź dzienny limit wywołań API, łącznie z szacowanymi wartościami rzeczywistymi, rozdzielony przecinkami przy użyciu wielu kluczy. Solcast liczy wywołania dla każdego klucza API: limity wszystkich wpisów używających tego samego klucza nie mogą łącznie przekraczać dziennego limitu konta",
           "auto_update": "Jeśli nie używasz automatycznej aktualizacji, utwórz automatyzację, która okresowo wywołuje akcję \"solcast_solar.update_forecasts\", przestrzegając zalecanego przez Solcast maksymalnego łącznego limitu (zwykle łącznie dziesięć razy dziennie dla jednego miejsca dachowego, a przy dwóch miejscach pięć razy dziennie)",
           "instance_name": "Nazwa tej instalacji, na przykład Zachód. Pozostaw puste tylko dla pierwszego wpisu. Kolejne wpisy wymagają nazwy, aby ich pliki i czujniki pozostały oddzielne."
         }
@@ -356,10 +356,6 @@
       "description": "Podczas aktualizacji Solcast API wielokrotnie zgłaszało status `429 / Try again later`. Oznacza to, że Solcast API jest zajęte i aktywnie blokuje żądania kont hobbystów.\n\n* Witryna solcast.com nie jest dotknięta problemem, ale API jest tymczasowo niedostępne dla ciebie.\n* Strona stanu API pod adresem status.solcast.com prawie na pewno nie wskaże żadnego problemu.\n* Nie próbuj rozwiązać tej sytuacji.\n* Nie zmieniaj klucza API.\n* Nie próbuj aktualizować integracji.\n* Unikaj ponownego uruchamiania integracji.\n* Integracja będzie nadal dostarczać ostatnią prognozę słoneczną pobraną z Solcast.\n* To nie jest problem z integracją i rozwiąże się samoczynnie. Nic nie zmieniaj.\n\n(Aby wyciszyć ten problem, utwórz zaawansowana opcja konfiguracji api_raise_issues i ustaw ją na false.)",
       "title": "Solcast API tymczasowo niedostępne{instance}"
     },
-    "actuals_api_limit": {
-      "description": "Automatyczna aktualizacja i szacowane wartości rzeczywiste są włączone, podczas gdy limit API jest skonfigurowany na maksymalną wartość dla hobbystów (`{configured_value}`). Szacowane wartości rzeczywiste są zbierane tuż po północy i wykorzystują jedno wywołanie API na każdą instalację dachową dla każdego skonfigurowanego klucza API. Zmniejsz limit API do `{suggested_value}`, aby zarezerwować wywołania dla szacowanych wartości rzeczywistych.",
-      "title": "Dostosuj limit API dla szacowanych wartości rzeczywistych"
-    },
     "actuals_quota_today": {
       "title": "Pobieranie szacowanych wartości rzeczywistych może przekroczyć dzienny limit API{instance}",
       "description": "Pobieranie szacowanych wartości rzeczywistych zostało włączone. Na podstawie typowego dziennego użycia API do aktualizacji prognozy ({api_used} wywołań) i wywnioskowanego limitu konta {api_limit} wywołań, dodanie {actuals_cost} wywołania/wywołań potrzebnych do pobrania szacowanych wartości rzeczywistych przekroczyłoby limit w typowym dniu. Pobieranie zostanie mimo to podjęte tuż po północy, ale ono (lub kolejna aktualizacja prognozy) może zakończyć się niepowodzeniem z odpowiedzią `429 Too Many Requests`.\n\nTo ostrzeżenie może pojawić się, gdy licznik typowego użycia jest jeszcze inicjowany rzeczywistymi danymi. Typowy licznik uwzględnia wyłącznie automatyczne aktualizacje/aktualizacje automatyzacji i wymuszone wywołania prognozy. Sprawdź skonfigurowany limit API i wszelkie automatyzacje wymuszonych aktualizacji, jeśli chcesz korzystać z szacowanych wartości rzeczywistych."
@@ -521,7 +517,7 @@
         "description": "Opcje konfiguracji Solcast",
         "data_description": {
           "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami. Inny wpis może używać tego samego klucza; witryny pobierane przez ten wpis są wtedy tutaj wykluczone",
-          "api_limit": "Wprowadź dzienny limit aktualizacji prognozy, rozdzielony przecinkami przy użyciu wielu kluczy",
+          "api_limit": "Wprowadź dzienny limit wywołań API, łącznie z szacowanymi wartościami rzeczywistymi, rozdzielony przecinkami przy użyciu wielu kluczy. Solcast liczy wywołania dla każdego klucza API: limity wszystkich wpisów używających tego samego klucza nie mogą łącznie przekraczać dziennego limitu konta",
           "attr_breakdown": "Wybierz, które podziały są włączone",
           "auto_dampen": "Wymaga szacowanych wartości rzeczywistych i encji generacji fotowoltaicznej — patrz dokumentacja integracji",
           "auto_update": "Jeśli nie używasz automatycznej aktualizacji, utwórz automatyzację, która okresowo wywołuje akcję \"solcast_solar.update_forecasts\", przestrzegając zalecanego przez Solcast maksymalnego łącznego limitu (zwykle łącznie dziesięć razy dziennie dla jednego miejsca dachowego, a przy dwóch miejscach pięć razy dziennie)",
@@ -529,7 +525,7 @@
           "custom_hours": "Liczba godzin dla niestandardowego czujnika (minimum 1, maksimum 144)",
           "exclude_sites": "Wykluczona witryna nie jest pobierana z Solcast: brak prognozy, brak szacowanych wartości rzeczywistych, brak wywołań API i brak czujnika witryny",
           "generation_entities": "Do automatycznego tłumienia: energia (Wh/kWh/MWh, sumarycznie rosnąca) lub moc (W/kW/MW, chwilowa)",
-          "get_actuals": "Używa jednego wywołania API na witrynę dziennie — patrz dokumentacja integracji; zalecany jest obniżony limit API",
+          "get_actuals": "Używa jednego wywołania API na witrynę dziennie, które automatyczna aktualizacja pozostawia wolne — patrz dokumentacja integracji",
           "hard_limit_api": "Patrz dokumentacja integracji; oddziel przecinkami wiele wartości dla każdego klucza",
           "key_estimate": "",
           "site_damp": "Szczegółowe tłumienie jest ustawione — wyczyść, aby powrócić do ogólnego tłumienia godzinowego",

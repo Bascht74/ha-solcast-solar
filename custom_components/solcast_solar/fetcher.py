@@ -309,6 +309,7 @@ class Fetcher:
             )
             _LOGGER.debug("Estimated actuals dictionary for site %s length %s", site[RESOURCE_ID], len(actuals))
             self.increment_success_count(force=False, api_key=api_key, actuals=True)
+            await self.api.sites_cache.serialise_usage(api_key)
 
         if status == _DataCallStatus.SUCCESS and dampen_yesterday:
             # Backfill recovered historical actuals with the latest dampening factors if needed, then
@@ -662,14 +663,20 @@ class Fetcher:
         Arguments:
             force (bool): True if the update was a forced forecast update (quota not consumed).
             api_key (str): The API key used for the site fetch.
-            actuals (bool): True if the call was an estimated actuals fetch (tracked separately from forced forecast updates).
+            actuals (bool): True if the call was an estimated actuals fetch (counted in the tracked usage, as Solcast counts it).
         """
         key = md5(api_key[-6:].encode()).hexdigest()
         if actuals:
             self.api.api_actuals[api_key] = self.api.api_actuals.get(api_key, 0) + 1
+            self.api.api_used[api_key] += 1
             actuals_data = self.api.data[SUCCESS].setdefault(SUCCESS_ACTUALS, {})
             actuals_data[key] = actuals_data.get(key, 0) + 1
-            _LOGGER.debug("Actuals API counter for %s incremented to %d", redact_api_key(api_key), actuals_data[key])
+            _LOGGER.debug(
+                "Actuals API counter for %s incremented to %d, tracked API counter to %d",
+                redact_api_key(api_key),
+                actuals_data[key],
+                self.api.api_used[api_key],
+            )
         elif force:
             self.api.api_forced[api_key] = self.api.api_forced.get(api_key, 0) + 1
             forced = self.api.data[SUCCESS][SUCCESS_FORCED]
@@ -722,7 +729,8 @@ class Fetcher:
                 async with asyncio.timeout(900):
                     issue_registry = ir.async_get(self.api.hass)
 
-                    if self.api.api_used[api_key] < self.api.api_limits[api_key] or force:
+                    reserve = 0 if force else self.api.api_actuals_reserve(api_key)
+                    if force or self.api.api_used[api_key] + reserve < self.api.api_limits[api_key]:
                         base_url = self.api.get_solcast_base_url(
                             self.api.advanced_options[ADVANCED_SOLCAST_URL],
                             self.api.advanced_options[ADVANCED_SOLCAST_PORT],
@@ -893,6 +901,8 @@ class Fetcher:
                             self.api.api_used[api_key],
                             self.api.api_limits[api_key],
                         )
+                        if reserve:
+                            _LOGGER.debug("%d API call(s) kept for the estimated actuals due before UTC midnight", reserve)
                         return None
 
         except asyncio.exceptions.CancelledError:

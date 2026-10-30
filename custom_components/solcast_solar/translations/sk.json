@@ -43,7 +43,7 @@
         "description": "Podrobnosti o účte Solcast\n\n(Ak nie je automatická aktualizácia, potom je potrebná automatizácia – pozrite si integračnú dokumentáciu)",
         "data_description": {
           "api_key": "Zadajte jeden alebo viac kľúčov API Solcast, oddelených čiarkami. Iný záznam môže používať rovnaký kľúč; lokality, ktoré tento záznam načítava, sa tu potom vylúčia",
-          "api_limit": "Zadajte denný limit aktualizácií predpovede, oddelený čiarkami pri použití viacerých kľúčov",
+          "api_limit": "Zadajte denný limit volaní API vrátane odhadovaných skutočných hodnôt, oddelený čiarkami pri použití viacerých kľúčov. Solcast počíta volania pre každý kľúč API: limity všetkých záznamov s rovnakým kľúčom nesmú spolu prekročiť denný limit účtu",
           "auto_update": "Ak nepoužívate automatickú aktualizáciu, vytvorte automatizáciu, ktorá pravidelne volá akciu \"solcast_solar.update_forecasts\", pričom dodržujte Solcastom odporúčaný maximálny celkový limit (zvyčajne spolu desaťkrát denne pre jedno strešné miesto, alebo pri dvoch miestach päťkrát denne)"
         }
       },
@@ -57,7 +57,7 @@
         "description": "Podrobnosti o účte Solcast\n\n(Ak nie je automatická aktualizácia, potom je potrebná automatizácia – pozrite si integračnú dokumentáciu)\n\nAPI Solcast musí byť dostupné na počiatočnú konfiguráciu tejto integrácie. Ak dostanete stavovú správu '429 / Try again later', API nie je dostupné a konfiguráciu nie je možné dokončiť. Musíte počkať. Všimnite si, že stránka stavu API na status.solcast.com takmer určite neukáže žiadne problémy s API. Príčina spočíva s najväčšou pravdepodobnosťou v jedinom problematickom používateľovi API, ktorý ovplyvňuje dostupnosť pre všetkých hobbistov.",
         "data_description": {
           "api_key": "Zadajte jeden alebo viac kľúčov API Solcast, oddelených čiarkami. Iný záznam môže používať rovnaký kľúč; lokality, ktoré tento záznam načítava, sa tu potom vylúčia",
-          "api_limit": "Zadajte denný limit aktualizácií predpovede, oddelený čiarkami pri použití viacerých kľúčov",
+          "api_limit": "Zadajte denný limit volaní API vrátane odhadovaných skutočných hodnôt, oddelený čiarkami pri použití viacerých kľúčov. Solcast počíta volania pre každý kľúč API: limity všetkých záznamov s rovnakým kľúčom nesmú spolu prekročiť denný limit účtu",
           "auto_update": "Ak nepoužívate automatickú aktualizáciu, vytvorte automatizáciu, ktorá pravidelne volá akciu \"solcast_solar.update_forecasts\", pričom dodržujte Solcastom odporúčaný maximálny celkový limit (zvyčajne spolu desaťkrát denne pre jedno strešné miesto, alebo pri dvoch miestach päťkrát denne)",
           "instance_name": "Názov tohto zariadenia, napríklad Západ. Prázdny nechajte len pri prvom zázname. Ďalšie záznamy potrebujú názov, aby ich súbory a senzory zostali oddelené."
         }
@@ -356,10 +356,6 @@
       "description": "Počas aktualizácie Solcast API opakovane hlásilo stav `429 / Try again later`. To znamená, že Solcast API je zaneprázdnené a aktívne blokuje požiadavky pre hobby účty.\n\n* Webová stránka solcast.com nie je ovplyvnená, ale API je dočasne nedostupné pre vás.\n* Stránka stavu API na status.solcast.com takmer určite neukáže žiadny problém.\n* Nesnažte sa túto situáciu riešiť.\n* Nezmeňte svoj kľúč API.\n* Nesnažte sa aktualizovať integráciu.\n* Vyhnite sa reštartovaniu integrácie.\n* Integrácia bude naďalej poskytovať poslednú predpoveď solárneho žiarenia získanú zo Solcastu.\n* Nie je to problém s integráciou a vyrieši sa to samo. Nič nemeňte.\n\n(Ak chcete tento problém potlačiť, vytvorte možnosť pokročilej konfigurácie api_raise_issues a nastavte ju na false.)",
       "title": "Solcast API dočasne nedostupné{instance}"
     },
-    "actuals_api_limit": {
-      "description": "Automatická aktualizácia a odhadované skutočné hodnoty sú povolené, pričom limit API je nakonfigurovaný na maximálnu hodnotu pre hobby používateľov (`{configured_value}`). Odhadované skutočné hodnoty sú zbierané tesne po polnoci a využívajú jedno volanie API pre každú strešnú inštaláciu pre každý nakonfigurovaný kľúč API. Znížte limit API na `{suggested_value}`, aby ste rezervovali volania pre odhadované skutočné hodnoty.",
-      "title": "Upraviť limit API pre odhadované skutočné hodnoty"
-    },
     "actuals_quota_today": {
       "title": "Načítanie odhadovaných skutočných hodnôt môže prekročiť denný limit API{instance}",
       "description": "Načítanie odhadovaných skutočných hodnôt bolo povolené. Na základe typického denného využitia API pre aktualizácie predpovede ({api_used} volaní) a odvodeného limitu účtu {api_limit} volaní, pridanie {actuals_cost} volania/volaní potrebných na načítanie odhadovaných skutočných hodnôt by v typický deň prekročilo kvótu. Načítanie bude napriek tomu pokúsené tesne po polnoci, ale môže zlyhať (alebo následná aktualizácia predpovede) s odpoveďou `429 Too Many Requests`.\n\nToto upozornenie sa môže objaviť, kým sa počítadlo typického využitia ešte inicializuje skutočnými údajmi. Typický počet zahŕňa iba automatické aktualizácie/aktualizácie automatizácie a vynútené volania predpovede. Skontrolujte nakonfigurovaný limit API a všetky automatizácie vynútenej aktualizácie, ak chcete používať odhadované skutočné hodnoty."
@@ -521,7 +517,7 @@
         "description": "Solcast možnosti konfigurácie",
         "data_description": {
           "api_key": "Zadajte jeden alebo viac kľúčov API Solcast, oddelených čiarkami. Iný záznam môže používať rovnaký kľúč; lokality, ktoré tento záznam načítava, sa tu potom vylúčia",
-          "api_limit": "Zadajte denný limit aktualizácií predpovede, oddelený čiarkami pri použití viacerých kľúčov",
+          "api_limit": "Zadajte denný limit volaní API vrátane odhadovaných skutočných hodnôt, oddelený čiarkami pri použití viacerých kľúčov. Solcast počíta volania pre každý kľúč API: limity všetkých záznamov s rovnakým kľúčom nesmú spolu prekročiť denný limit účtu",
           "attr_breakdown": "Vyberte, ktoré rozdelenia sú povolené",
           "auto_dampen": "Vyžaduje odhadované skutočné hodnoty a entitu výroby FV — pozrite si dokumentáciu integrácie",
           "auto_update": "Ak nepoužívate automatickú aktualizáciu, vytvorte automatizáciu, ktorá pravidelne volá akciu \"solcast_solar.update_forecasts\", pričom dodržujte Solcastom odporúčaný maximálny celkový limit (zvyčajne spolu desaťkrát denne pre jedno strešné miesto, alebo pri dvoch miestach päťkrát denne)",
@@ -529,7 +525,7 @@
           "custom_hours": "Počet hodín pre vlastný senzor (minimum 1, maximum 144)",
           "exclude_sites": "Vylúčená lokalita sa zo Solcastu nenačítava: žiadna predpoveď, žiadne odhadované skutočné hodnoty, žiadne volania API a žiadny senzor lokality",
           "generation_entities": "Pre automatické tlmenie: energia (Wh/kWh/MWh, celkovo rastúca) alebo výkon (W/kW/MW, okamžitý)",
-          "get_actuals": "Používa jedno volanie API na lokalitu za deň — pozrite si dokumentáciu integrácie; odporúča sa znížený limit API",
+          "get_actuals": "Používa jedno volanie API na lokalitu za deň, ktoré automatická aktualizácia necháva voľné — pozrite si dokumentáciu integrácie",
           "hard_limit_api": "Pozrite si dokumentáciu integrácie; oddeľte viacero hodnôt pre každý kľúč čiarkami",
           "key_estimate": "",
           "site_damp": "Granulárne tlmenie je nastavené — vymazať na obnovenie celkového hodinového tlmenia",

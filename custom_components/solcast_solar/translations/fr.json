@@ -43,7 +43,7 @@
         "description": "Détails du compte Solcast\n\n(S'il n'y a pas de mise à jour automatique, une automatisation est requise - voir la documentation d'intégration)",
         "data_description": {
           "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules. Une autre entrée peut utiliser la même clé ; les sites que cette entrée récupère sont alors exclus ici",
-          "api_limit": "Entrez une limite quotidienne de mises à jour des prévisions, séparées par des virgules en cas de clés multiples",
+          "api_limit": "Entrez la limite quotidienne d'appels API, valeurs réelles estimées comprises, séparées par des virgules en cas de clés multiples. Solcast compte les appels par clé API : les limites de toutes les entrées utilisant la même clé ne doivent pas dépasser ensemble le quota quotidien du compte",
           "auto_update": "Si vous n'utilisez pas la mise à jour automatique, créez une automatisation qui appelle périodiquement l'action \"solcast_solar.update_forecasts\", tout en respectant la limite totale maximale conseillée par Solcast (généralement dix fois au total par jour pour un site sur toit, ou avec deux sites cinq fois par jour)"
         }
       },
@@ -57,7 +57,7 @@
         "description": "Détails du compte Solcast\n\n(S'il n'y a pas de mise à jour automatique, une automatisation est requise - voir la documentation d'intégration)\n\nL'API Solcast doit être disponible pour configurer cette intégration pour la première fois. Si vous recevez le message de statut '429 / Try again later', l'API est indisponible et la configuration ne peut pas être complétée. Vous devez patienter. Notez que la page de statut de l'API sur status.solcast.com n'indiquera presque certainement aucun problème d'API. La cause réside très probablement dans un seul mauvais utilisateur de l'API qui affecte la disponibilité pour tous les amateurs.",
         "data_description": {
           "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules. Une autre entrée peut utiliser la même clé ; les sites que cette entrée récupère sont alors exclus ici",
-          "api_limit": "Entrez une limite quotidienne de mises à jour des prévisions, séparées par des virgules en cas de clés multiples",
+          "api_limit": "Entrez la limite quotidienne d'appels API, valeurs réelles estimées comprises, séparées par des virgules en cas de clés multiples. Solcast compte les appels par clé API : les limites de toutes les entrées utilisant la même clé ne doivent pas dépasser ensemble le quota quotidien du compte",
           "auto_update": "Si vous n'utilisez pas la mise à jour automatique, créez une automatisation qui appelle périodiquement l'action \"solcast_solar.update_forecasts\", tout en respectant la limite totale maximale conseillée par Solcast (généralement dix fois au total par jour pour un site sur toit, ou avec deux sites cinq fois par jour)",
           "instance_name": "Nom de cette installation, par exemple Ouest. Ne le laissez vide que pour la première entrée. Les entrées suivantes ont besoin d'un nom pour que leurs fichiers et capteurs restent séparés."
         }
@@ -356,10 +356,6 @@
       "description": "L'API Solcast a signalé à plusieurs reprises le statut `429 / Try again later` lors d'une mise à jour. Cela signifie que l'API Solcast est occupée et bloque activement les requêtes des comptes amateurs.\n\n* Le site solcast.com n'est pas affecté, mais l'API est temporairement indisponible pour vous.\n* La page de statut de l'API sur status.solcast.com n'indiquera presque certainement aucun problème.\n* N'essayez pas de résoudre cette situation.\n* Ne changez pas votre clé API.\n* N'essayez pas de mettre à jour l'intégration.\n* Évitez de redémarrer l'intégration.\n* L'intégration continuera à fournir la dernière prévision solaire récupérée depuis Solcast.\n* Ce n'est pas un problème d'intégration et cela se résoudra de lui-même. Ne changez rien.\n\n(Pour supprimer ce problème, créez une option de configuration avancée api_raise_issues et définissez-la sur false.)",
       "title": "API Solcast temporairement indisponible{instance}"
     },
-    "actuals_api_limit": {
-      "description": "La mise à jour automatique et les valeurs réelles estimées sont activées alors que la limite d'API est configurée à la valeur maximale pour les amateurs (`{configured_value}`). Les valeurs réelles estimées sont collectées juste après minuit et utilisent un appel API par installation en toiture pour chaque clé API configurée. Réduisez votre limite d'API à `{suggested_value}` pour réserver des appels pour les valeurs réelles estimées.",
-      "title": "Ajuster la limite d'API pour les valeurs réelles estimées"
-    },
     "actuals_quota_today": {
       "title": "La récupération des valeurs réelles estimées peut dépasser le quota API quotidien{instance}",
       "description": "La récupération des valeurs réelles estimées a été activée. Sur la base de l'utilisation quotidienne typique de l'API pour les mises à jour de prévisions ({api_used} appels) et du quota de compte déduit de {api_limit} appels, l'ajout des {actuals_cost} appel(s) nécessaires à la récupération des valeurs réelles estimées dépasserait le quota lors d'une journée typique. La récupération sera tout de même tentée juste après minuit, mais elle (ou une mise à jour ultérieure des prévisions) peut échouer avec une réponse `429 Too Many Requests`.\n\nCet avertissement peut apparaître pendant que le compteur d'utilisation typique est encore initialisé avec des données réelles. Le compteur typique reflète uniquement les mises à jour automatiques/mises à jour d'automatisation et les appels de prévision forcés. Vérifiez votre limite API configurée et toutes les automatisations de mise à jour forcée si vous souhaitez utiliser les valeurs réelles estimées."
@@ -521,7 +517,7 @@
         "description": "Options de configuration Solcast",
         "data_description": {
           "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules. Une autre entrée peut utiliser la même clé ; les sites que cette entrée récupère sont alors exclus ici",
-          "api_limit": "Entrez une limite quotidienne de mises à jour des prévisions, séparées par des virgules en cas de clés multiples",
+          "api_limit": "Entrez la limite quotidienne d'appels API, valeurs réelles estimées comprises, séparées par des virgules en cas de clés multiples. Solcast compte les appels par clé API : les limites de toutes les entrées utilisant la même clé ne doivent pas dépasser ensemble le quota quotidien du compte",
           "attr_breakdown": "Choisissez les répartitions activées",
           "auto_dampen": "Nécessite des valeurs réelles estimées et une entité de production PV — voir la documentation d'intégration",
           "auto_update": "Si vous n'utilisez pas la mise à jour automatique, créez une automatisation qui appelle périodiquement l'action \"solcast_solar.update_forecasts\", tout en respectant la limite totale maximale conseillée par Solcast (généralement dix fois au total par jour pour un site sur toit, ou avec deux sites cinq fois par jour)",
@@ -529,7 +525,7 @@
           "custom_hours": "Nombre d'heures pour le capteur personnalisé (minimum 1, maximum 144)",
           "exclude_sites": "Un site exclu n'est pas interrogé auprès de Solcast : pas de prévision, pas de valeurs réelles estimées, pas d'appels API et pas de capteur de site",
           "generation_entities": "Pour l'amortissement automatisé : énergie (Wh/kWh/MWh, total croissant) ou puissance (W/kW/MW, instantanée)",
-          "get_actuals": "Utilise un appel API par site par jour — voir la documentation d'intégration ; une limite d'API réduite est recommandée",
+          "get_actuals": "Utilise un appel API par site par jour, que la mise à jour automatique garde libre — voir la documentation d'intégration",
           "hard_limit_api": "Voir la documentation d'intégration ; séparez plusieurs valeurs pour chaque clé par des virgules",
           "key_estimate": "",
           "site_damp": "Amortissement granulaire défini — effacer pour revenir à l'amortissement horaire global",

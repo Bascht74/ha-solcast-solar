@@ -433,9 +433,8 @@ class SolcastUpdateCoordinator(DataUpdateCoordinator):
             ret[API_FORCE_USED] = self.solcast.successes_forced_24h
             ret[API_ACTUALS_USED] = self.solcast.successes_actuals_24h
             ret[DAILY_TYPICAL_FORECAST_UPDATES] = self.solcast.api_typical_forecast_updates_count
-            ret[API_USED_TOTAL_COMBINED] = (
-                self.solcast.api_used_count + self.solcast.successes_forced_24h + self.solcast.successes_actuals_24h
-            )
+            # The tracked count includes the estimated actuals calls.
+            ret[API_USED_TOTAL_COMBINED] = self.solcast.api_used_count + self.solcast.successes_forced_24h
 
         return ret
 

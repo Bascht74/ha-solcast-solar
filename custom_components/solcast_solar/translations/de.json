@@ -43,7 +43,7 @@
         "description": "Solcast-Kontodaten\n\n(Wenn keine automatische Aktualisierung erfolgt, ist eine Automatisierung erforderlich – siehe Integrationsdokumentation)",
         "data_description": {
           "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt. Ein anderer Eintrag darf denselben Schlüssel nutzen; die Standorte, die er abruft, werden hier dann ausgeschlossen",
-          "api_limit": "Geben Sie ein tägliches Prognoseaktualisierungslimit ein, bei mehreren Schlüsseln kommagetrennt",
+          "api_limit": "Geben Sie das tägliche Limit an API-Aufrufen ein, geschätzte Istwerte eingeschlossen, bei mehreren Schlüsseln kommagetrennt. Solcast zählt die Aufrufe pro API-Schlüssel: Die Limits aller Einträge mit demselben Schlüssel dürfen zusammen das Tageskontingent des Kontos nicht überschreiten",
           "auto_update": "Wenn Sie keine automatische Aktualisierung verwenden, erstellen Sie eine Automatisierung, die die Aktion \"solcast_solar.update_forecasts\" regelmäßig aufruft, und halten Sie dabei das von Solcast empfohlene maximale Gesamtlimit ein (in der Regel insgesamt zehnmal pro Tag für einen Dachstandort oder bei zwei Standorten fünfmal pro Tag)"
         }
       },
@@ -57,7 +57,7 @@
         "description": "Solcast-Kontodaten\n\n(Wenn keine automatische Aktualisierung erfolgt, ist eine Automatisierung erforderlich – siehe Integrationsdokumentation)\n\nDie Solcast-API muss verfügbar sein, um diese Integration erstmalig konfigurieren zu können. Wenn Sie die Statusmeldung '429 / Try again later' erhalten, ist die API nicht verfügbar und die Konfiguration kann nicht abgeschlossen werden. Sie müssen warten. Beachten Sie, dass die API-Statusseite unter status.solcast.com höchstwahrscheinlich keine API-Probleme anzeigt. Die Ursache liegt höchstwahrscheinlich bei einem einzelnen schlechten API-Nutzer, der die Verfügbarkeit für alle Hobbyanwender beeinträchtigt.",
         "data_description": {
           "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt. Ein anderer Eintrag darf denselben Schlüssel nutzen; die Standorte, die er abruft, werden hier dann ausgeschlossen",
-          "api_limit": "Geben Sie ein tägliches Prognoseaktualisierungslimit ein, bei mehreren Schlüsseln kommagetrennt",
+          "api_limit": "Geben Sie das tägliche Limit an API-Aufrufen ein, geschätzte Istwerte eingeschlossen, bei mehreren Schlüsseln kommagetrennt. Solcast zählt die Aufrufe pro API-Schlüssel: Die Limits aller Einträge mit demselben Schlüssel dürfen zusammen das Tageskontingent des Kontos nicht überschreiten",
           "auto_update": "Wenn Sie keine automatische Aktualisierung verwenden, erstellen Sie eine Automatisierung, die die Aktion \"solcast_solar.update_forecasts\" regelmäßig aufruft, und halten Sie dabei das von Solcast empfohlene maximale Gesamtlimit ein (in der Regel insgesamt zehnmal pro Tag für einen Dachstandort oder bei zwei Standorten fünfmal pro Tag)",
           "instance_name": "Name dieser Anlage, zum Beispiel West. Leer nur beim ersten Eintrag. Weitere Einträge brauchen einen Namen, damit Dateien und Sensoren getrennt bleiben."
         }
@@ -356,10 +356,6 @@
       "description": "Die Solcast-API hat während eines Updates wiederholt den Status `429 / Try again later` gemeldet. Das bedeutet, dass die Solcast-API ausgelastet ist und Anfragen von Hobby-Nutzern aktiv blockiert.\n\n* Die Website solcast.com ist nicht betroffen, aber die API ist vorübergehend nicht für Sie verfügbar.\n* Die API-Statusseite unter status.solcast.com wird höchstwahrscheinlich kein Problem anzeigen.\n* Versuchen Sie nicht, diese Situation zu beheben.\n* Ändern Sie Ihren API-Schlüssel nicht.\n* Versuchen Sie kein Integrations-Upgrade.\n* Vermeiden Sie einen Neustart der Integration.\n* Die Integration stellt weiterhin die letzte von Solcast abgerufene Solarprognose bereit.\n* Dies ist kein Integrationsproblem und wird sich von selbst lösen. Ändere nichts.\n\n(Um dieses Problem zu unterdrücken, erstellen Sie eine erweiterte Konfigurationsoption api_raise_issues und setzen Sie sie auf false.)",
       "title": "Solcast-API vorübergehend nicht verfügbar{instance}"
     },
-    "actuals_api_limit": {
-      "description": "Die automatische Aktualisierung und geschätzte Ist-Werte sind aktiviert, während das API-Limit auf den maximalen Hobbyisten-Wert (`{configured_value}`) konfiguriert ist. Geschätzte Ist-Werte werden kurz nach Mitternacht abgerufen und verwenden einen API-Aufruf pro Dachanlage für jeden konfigurierten API-Schlüssel. Reduzieren Sie Ihr API-Limit auf `{suggested_value}`, um Aufrufe für geschätzte Ist-Werte zu reservieren.",
-      "title": "API-Limit für geschätzte Ist-Werte anpassen"
-    },
     "actuals_quota_today": {
       "title": "Abruf geschätzter Ist-Werte könnte das tägliche API-Kontingent überschreiten{instance}",
       "description": "Das Abrufen geschätzter Ist-Werte wurde aktiviert. Basierend auf der typischen täglichen API-Nutzung für Prognose-Abrufe ({api_used} Aufrufe) und dem abgeleiteten Kontingent von {api_limit} Aufrufen für das Konto würde das Hinzufügen der {actuals_cost} Aufruf(e) für den Abruf geschätzter Ist-Werte das Kontingent an einem typischen Tag überschreiten. Der Abruf wird trotzdem kurz nach Mitternacht versucht, aber er (oder ein nachfolgender Prognose-Abruf) könnte mit einer `429 Too Many Requests`-Antwort fehlschlagen.\n\nDiese Warnung kann auftreten, während der typische Nutzungszähler noch mit echten Daten initialisiert wird. Die typische Anzahl umfasst nur automatische Aktualisierungen/Automatisierungs-Aktualisierungen und erzwungene Prognose-Abrufe. Überprüfen Sie Ihr konfiguriertes API-Limit und alle Automationen für erzwungene Aktualisierungen, wenn Sie geschätzte Ist-Werte verwenden möchten."
@@ -521,7 +517,7 @@
         "description": "Dein Solcast-API-Kontoschlüssel",
         "data_description": {
           "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt. Ein anderer Eintrag darf denselben Schlüssel nutzen; die Standorte, die er abruft, werden hier dann ausgeschlossen",
-          "api_limit": "Geben Sie ein tägliches Prognoseaktualisierungslimit ein, bei mehreren Schlüsseln kommagetrennt",
+          "api_limit": "Geben Sie das tägliche Limit an API-Aufrufen ein, geschätzte Istwerte eingeschlossen, bei mehreren Schlüsseln kommagetrennt. Solcast zählt die Aufrufe pro API-Schlüssel: Die Limits aller Einträge mit demselben Schlüssel dürfen zusammen das Tageskontingent des Kontos nicht überschreiten",
           "attr_breakdown": "Wählen Sie, welche Aufschlüsselungen aktiviert sind",
           "auto_dampen": "Erfordert geschätzte Istwerte und eine PV-Erzeugungseinheit — siehe Integrationsdokumentation",
           "auto_update": "Wenn Sie keine automatische Aktualisierung verwenden, erstellen Sie eine Automatisierung, die die Aktion \"solcast_solar.update_forecasts\" regelmäßig aufruft, und halten Sie dabei das von Solcast empfohlene maximale Gesamtlimit ein (in der Regel insgesamt zehnmal pro Tag für einen Dachstandort oder bei zwei Standorten fünfmal pro Tag)",
@@ -529,7 +525,7 @@
           "custom_hours": "Anzahl der Stunden für den benutzerdefinierten Sensor (Minimum 1, Maximum 144)",
           "exclude_sites": "Ein ausgeschlossener Standort wird nicht von Solcast abgerufen: keine Prognose, keine geschätzten Istwerte, keine API-Aufrufe und kein Standortsensor",
           "generation_entities": "Für automatische Dämpfung: Energie (Wh/kWh/MWh, Gesamtzunahme) oder Leistung (W/kW/MW, augenblicklich)",
-          "get_actuals": "Verwendet einen API-Aufruf pro Standort und Tag — siehe Integrationsdokumentation; ein reduziertes API-Kontingent wird empfohlen",
+          "get_actuals": "Verwendet einen API-Aufruf pro Standort und Tag, den die automatische Aktualisierung freihält — siehe Integrationsdokumentation",
           "hard_limit_api": "Siehe Integrationsdokumentation; mehrere Werte für jeden Schlüssel durch Kommas trennen",
           "key_estimate": "",
           "site_damp": "Granulare Dämpfung ist eingestellt — löschen, um zur allgemeinen stündlichen Dämpfung zurückzukehren",

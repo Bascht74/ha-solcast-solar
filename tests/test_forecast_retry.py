@@ -19,6 +19,7 @@ from custom_components.solcast_solar.const import (
     ADVANCED_TRIGGER_ON_API_AVAILABLE,
     ADVANCED_TRIGGER_ON_API_UNAVAILABLE,
     API_KEY,
+    API_LIMIT,
     DAILY_LIMIT_CONSUMED,
     DELAYED_RESTART_ON_CRASH,
     DOMAIN,
@@ -65,6 +66,9 @@ from . import (
     session_set,
     write_advanced_options,
 )
+
+# Ten updates a day for two sites, as with a limit of 20 before two calls stayed free for estimated actuals.
+TEN_UPDATES = DEFAULT_INPUT1 | {API_LIMIT: "22"}
 
 
 class AsyncMockDoNothing(mock.MagicMock):
@@ -173,7 +177,7 @@ async def test_forecast_retry(
             },
         )
 
-        entry = await async_init_integration(hass, DEFAULT_INPUT1)
+        entry = await async_init_integration(hass, TEN_UPDATES)
         coordinator = entry.runtime_data.coordinator
         solcast = coordinator.solcast
 
@@ -291,7 +295,7 @@ async def test_log_update_failure_only_enabled(
             },
         )
 
-        entry = await async_init_integration(hass, DEFAULT_INPUT1)
+        entry = await async_init_integration(hass, TEN_UPDATES)
         coordinator = entry.runtime_data.coordinator
         solcast = coordinator.solcast
 
@@ -541,7 +545,7 @@ async def test_retry_recovery_then_schedule_deferred_actuals(
             },
         )
 
-        entry = await async_init_integration(hass, DEFAULT_INPUT1)
+        entry = await async_init_integration(hass, TEN_UPDATES)
         coordinator = entry.runtime_data.coordinator
         solcast = coordinator.solcast
 
