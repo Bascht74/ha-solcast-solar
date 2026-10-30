@@ -32,6 +32,7 @@ from custom_components.solcast_solar.const import (
     ADVANCED_AUTOMATED_DAMPENING_NO_LIMITING_CONSISTENCY,
     ADVANCED_AUTOMATED_DAMPENING_PRESERVE_UNMATCHED_FACTORS,
     ADVANCED_ESTIMATED_ACTUALS_FETCH_DELAY,
+    ADVANCED_ESTIMATED_ACTUALS_LOG_APE_PERCENTILES,
     ADVANCED_ESTIMATED_ACTUALS_LOG_MAPE_BREAKDOWN,
     ADVANCED_HISTORY_MAX_DAYS,
     AUTO_DAMPEN,
@@ -43,6 +44,7 @@ from custom_components.solcast_solar.const import (
     ESTIMATE,
     EXCEPTION_GENERATION_MIXED_TYPES,
     EXCLUDE_SITES,
+    EXPORT_LIMITING,
     FORECASTS,
     GENERATION,
     GENERATION_ENTITIES,
@@ -249,11 +251,13 @@ async def test_auto_dampen(
         )
         assert "Auto-dampen factor for 08:30 is 0.830" in caplog.text
 
+        # The rolled-over day has no generation readings, so it is a gap and not a day of zero generation that
+        # would pull the average (2) and minimum (3) models down. One matched pair remains, so all models agree.
         _advanced_checks = {
             0: {"base": 0.830, "adjusted": [0.858, 0.834]},
             1: {"base": 0.830, "adjusted": [0.858, 0.834]},
-            2: {"base": 0.652, "adjusted": [0.709, 0.660]},
-            3: {"base": 0.296, "adjusted": [0.410, 0.312]},
+            2: {"base": 0.830, "adjusted": [0.858, 0.834]},
+            3: {"base": 0.830, "adjusted": [0.858, 0.834]},
         }
         for preseve in (False, True):
             solcast.advanced_options[ADVANCED_AUTOMATED_DAMPENING_PRESERVE_UNMATCHED_FACTORS] = preseve
@@ -420,16 +424,16 @@ async def test_auto_dampen_issues(
             case ExtraSensors.YES_UNIT_NOT_IN_HISTORY:
                 assert "has no unit_of_measurement, assuming kWh" not in caplog.text
                 assert f"Generation entity {options[GENERATION_ENTITIES][0]} is not a valid entity" in caplog.text  # type: ignore[reportGeneralTypeIssues]
-                assert f"Site export entity {options[SITE_EXPORT_ENTITY]} is disabled, please enable it" in caplog.text
+                # The other entity gives only a part of the generation, so no day is used
+                assert "has a gap in daylight readings" in caplog.text
+                assert solcast.dampening.data_generation[GENERATION] == []
             case ExtraSensors.YES_NO_UNIT:
                 assert "has no unit_of_measurement, assuming kWh" in caplog.text
                 assert f"Generation entity {options[GENERATION_ENTITIES][0]} is disabled, please enable it" in caplog.text  # type: ignore[reportGeneralTypeIssues]
             case ExtraSensors.DODGY:
                 assert "has an unsupported unit_of_measurement 'MJ'" in caplog.text  # A dodgy unit should be logged
-                assert f"Site export entity {options[SITE_EXPORT_ENTITY]} is not a valid entity" in caplog.text
-                assert "Interval 11:00 max generation: 0.000, []" in caplog.text  # A jump in generation should not be seen as a peak
-                assert "Interval 12:30 max generation: 3.900" in caplog.text  # Dodgy generation filtered but some valid data remains
-                assert "Auto-dampen factor for 10:00 is 0.940" in caplog.text  # A valid interval still considered
+                assert "has a gap in daylight readings" in caplog.text  # Gaps with catch-up jumps exclude the day
+                assert solcast.dampening.data_generation[GENERATION] == []  # Every day has a gap or a missing entity
                 assert "Ignoring excessive PV generation jump at" in caplog.text  # Dodgy generation should be logged
             case ExtraSensors.YES_POWER:
                 # Power entity path: site 1111 has insufficient readings, site 2222 has full history.
@@ -473,6 +477,52 @@ async def test_auto_dampen_factor_from_today_only(
         assert all(DAMPENING_FACTOR not in f for f in past)
         assert all(f[DAMPENING_FACTOR] == round(solcast.dampening.auto_factors[f[PERIOD_START]], 4) for f in current)
         no_exception(caplog)
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_generation_gap_day_excluded(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test a day with an unknown stretch of generation readings is left out of the generation history."""
+
+    entity = "sensor.solar_export_sensor_1111_1111_1111_1111"
+    options = copy.deepcopy(DEFAULT_INPUT2)
+    options[GET_ACTUALS] = True
+    options[USE_ACTUALS] = 1
+    options[AUTO_DAMPEN] = True
+    options[GENERATION_ENTITIES] = [entity]
+
+    try:
+        entry = await async_init_integration(hass, options, extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        yesterday = solcast.dt_helper.day_start_utc(future=-1)
+
+        for unknown in (False, True):
+
+            async def history(_recorder: Any, start: dt, *_args: Any, unknown: bool = unknown) -> dict[str, list[State]]:
+                return {  # A reading every ten minutes, unknown from 09:00 to 21:00 when asked
+                    entity: [
+                        State(
+                            entity,
+                            "unknown" if unknown and 540 <= m < 1260 else f"{m / 100:.1f}",
+                            {"unit_of_measurement": "kWh"},
+                            last_updated=start + timedelta(minutes=m),
+                        )
+                        for m in range(0, 1440, 10)
+                    ]
+                }
+
+            monkeypatch.setattr(solcast.dampening, "_get_entity_history", history)
+            solcast.dampening.data_generation[GENERATION] = []
+            caplog.clear()
+            await solcast.dampening.get_pv_generation()
+            assert (yesterday in {gen[PERIOD_START] for gen in solcast.dampening.data_generation[GENERATION]}) is not unknown
+            assert ("has a gap in daylight readings" in caplog.text) is unknown
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
@@ -1361,6 +1411,71 @@ async def test_generation_ignored_jump_keeps_other_entities(
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 
 
+async def test_generation_entity_without_history_is_a_gap(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    entity_registry: er.EntityRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test a day on which one of two generation entities gives no readings is left out, not counted as partial generation.
+
+    The entity may have no history, be disabled or be missing from the entity registry.
+    """
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        yesterday = solcast.dt_helper.day_start_utc(future=-1)
+        second = _GENERATION_ENTITIES[1]
+
+        for case in ("complete", "silent", "disabled", "missing"):
+            if case == "disabled":
+                entity_registry.async_update_entity(second, disabled_by=er.RegistryEntryDisabler.USER)
+            if case == "missing":
+                entity_registry.async_remove(second)
+
+            async def history(_recorder: Any, start: dt, _end: dt, entity: str, *_args: Any, case: str = case) -> dict[str, list[State]]:
+                return {} if case == "silent" and entity == second else {entity: _energy_readings(entity, start)}
+
+            monkeypatch.setattr(solcast.dampening, "_get_entity_history", history)
+            solcast.dampening.data_generation[GENERATION] = []
+            await solcast.dampening.get_pv_generation()
+            generation = {gen[PERIOD_START]: gen[GENERATION] for gen in solcast.dampening.data_generation[GENERATION]}
+            if case == "complete":
+                assert generation[yesterday + timedelta(hours=12)] == pytest.approx(0.6)
+            else:
+                assert generation == {}, case
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_site_export_entity_missing_or_disabled(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    entity_registry: er.EntityRegistry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test a disabled or missing site export entity is reported and limits no interval."""
+
+    try:
+        options = _auto_dampen_options() | {SITE_EXPORT_ENTITY: "sensor.site_export_sensor", SITE_EXPORT_LIMIT: 5.0}
+        entry = await async_init_integration(hass, options, extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        day_start = solcast.dt_helper.day_start_utc()
+        prev_start = day_start - timedelta(days=1)
+
+        entity_registry.async_update_entity("sensor.site_export_sensor", disabled_by=RegistryEntryDisabler.USER)
+        for message in ("is disabled, please enable it", "is not a valid entity"):
+            limiting = solcast.dampening._build_half_hour_bool_intervals(prev_start, day_start)
+            await solcast.dampening._apply_site_export_limits(limiting, prev_start, day_start, entity_registry, get_instance(hass))
+            assert f"Site export entity sensor.site_export_sensor {message}" in caplog.text
+            assert not any(limiting.values())
+            entity_registry.async_remove("sensor.site_export_sensor")
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
 async def test_generation_quarter_hour_time_zone(
     recorder_mock: Recorder,
     hass: HomeAssistant,
@@ -1385,6 +1500,61 @@ async def test_generation_quarter_hour_time_zone(
         assert {period.minute for period in periods} == {0, 30}
         actuals = {actual[PERIOD_START] for actual in solcast.data_actuals[SITE_INFO]["1111-1111-1111-1111"][FORECASTS]}
         assert periods & actuals  # Generation can be matched with estimated actuals
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_accuracy_percentiles_exclude_gap_and_zero_days(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+) -> None:
+    """Accuracy leaves out a gap day and a day with nothing to compare."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        coordinator = entry.runtime_data.coordinator
+        solcast: SolcastApi = coordinator.solcast
+        solcast.advanced_options[ADVANCED_ESTIMATED_ACTUALS_LOG_APE_PERCENTILES] = [50, 90]
+
+        def generation_for(days: dict[int, float]) -> list[dict[str, Any]]:
+            return [
+                {
+                    PERIOD_START: solcast.dt_helper.day_start_utc(future=-ago) + timedelta(minutes=30 * interval),
+                    GENERATION: generated,
+                    EXPORT_LIMITING: False,
+                }
+                for ago, generated in sorted(days.items(), reverse=True)
+                for interval in range(48)
+            ]
+
+        def accuracy() -> dict[str, Any]:
+            attributes = coordinator.get_sensor_extra_attributes(ENTITY_ACCURACY)
+            assert attributes is not None
+            return attributes
+
+        # The day three days ago is a gap day, so it has no generation at all.
+        solcast.dampening.data_generation[GENERATION] = generation_for({2: 0.5, 1: 0.5})
+        await solcast.build_actual_data()  # Estimated actuals to compare with
+        await coordinator._updater.calculate_accuracy_metrics()
+        attributes = accuracy()
+        assert attributes["infinity_excluded"] is False
+        assert len(attributes["undampened_ape_breakdown"]) == 2
+        assert math.isfinite(attributes["undampened_p50_ape"])
+        assert math.isfinite(attributes["undampened_p90_ape"])
+
+        # A day whose generation is all export limited has nothing to compare: an infinite error, which is left out.
+        solcast.advanced_options[ADVANCED_AUTOMATED_DAMPENING_NO_LIMITING_CONSISTENCY] = True
+        limited = generation_for({3: 0.5, 2: 0.5, 1: 0.5})
+        for record in limited[:48]:  # The oldest day comes first
+            record[EXPORT_LIMITING] = True
+        solcast.dampening.data_generation[GENERATION] = limited
+        await coordinator._updater.calculate_accuracy_metrics()
+        attributes = accuracy()
+        assert attributes["infinity_excluded"] is True
+        assert len(attributes["undampened_ape_breakdown"]) == 2
+        assert math.isfinite(attributes["undampened_p50_ape"])
+        assert math.isfinite(attributes["undampened_p90_ape"])
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

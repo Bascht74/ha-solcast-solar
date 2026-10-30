@@ -94,6 +94,7 @@ _ENERGY_UNIT_FACTORS: Final[dict[str, float]] = {"mWh": 1e-6, "Wh": 0.001, "kWh"
 _SUPPRESSION_ENTITY_ON_STATES: Final[tuple[str, ...]] = ("on", "1", "true", "True")
 _SUPPRESSION_ENTITY_STATES: Final[tuple[str, ...]] = ("on", "off", "1", "0", "true", "false", "True", "False")
 _SITE_EXPORT_INTERVAL_MINUTES: Final[int] = 5
+_GENERATION_GAP_FRACTION: Final[float] = 0.1  # Share of a day's expected energy without readings that excludes a generation day
 
 _LOGGER = get_logger(__name__)
 
@@ -778,22 +779,38 @@ class Dampening:
         day: int,
         entity_registry: er.EntityRegistry,
         recorder_instance: Any,
-    ) -> dict[dt, float]:
-        """Collect one day of PV generation intervals from configured entities."""
+        recheck: bool = False,
+    ) -> tuple[dict[dt, float], bool]:
+        """Collect one day of PV generation intervals from configured entities, and whether a reading gap spoils the day.
+
+        A recheck of a cached day finds a gap only in the readings: an entity missing now says nothing about that day,
+        and a day without readings from any entity may be purged from the recorder.
+        """
         generation_intervals = self._build_float_intervals(prev_start, HALF_HOUR_MINUTES, end=day_start)
+        gap = False
+        whole_day = [(prev_start, day_start)]
+        read = silent = 0
 
         for entity in self.api.options.generation_entities:
             r_entity = entity_registry.async_get(entity)
-            if r_entity is None:
-                _LOGGER.error("Generation entity %s is not a valid entity", entity)
-                continue
-            if r_entity.disabled_by is not None:
-                _LOGGER.error("Generation entity %s is disabled, please enable it", entity)
+            if r_entity is None or r_entity.disabled_by is not None:
+                if not recheck:  # The recheck of each cached day would repeat it
+                    _LOGGER.error(
+                        "Generation entity %s is %s", entity, "not a valid entity" if r_entity is None else "disabled, please enable it"
+                    )
+                    gap = gap or self._daylight_gap(whole_day, prev_start, day_start)  # The others give only a part
                 continue
 
+            read += 1
             entity_history = await self._get_entity_history(recorder_instance, prev_start, day_start, entity)
             if entity_history.get(entity) and len(entity_history[entity]) > 4:
                 _LOGGER.debug("Retrieved day %d PV generation data from entity: %s", -1 + day * -1, entity)
+                states = entity_history[entity]
+                spans = [  # Unavailable or unknown
+                    (e.last_updated, states[i + 1].last_updated if i + 1 < len(states) else day_start)
+                    for i, e in enumerate(states)
+                    if not _is_number(e.state)
+                ]
 
                 if self._is_power_entity(entity):
                     # Power entity: compute time-weighted average kW per interval, then convert to kWh (* 0.5).
@@ -806,6 +823,7 @@ class Dampening:
 
                     if not compute_power_intervals(power_readings, generation_intervals):
                         _LOGGER.debug("Insufficient power readings for entity: %s", entity)
+                    gap = gap or self._daylight_gap(spans, prev_start, day_start)
                     continue
 
                 # Energy entity: compute deltas and distribute across intervals.
@@ -853,6 +871,12 @@ class Dampening:
                         interval.astimezone(self.api.tz).strftime(DT_DATE_FORMAT),
                         entity,
                     )
+                spans += [  # Readings missing before an ignored catch-up jump
+                    (sample_generation_time[i - 1], sample_generation_time[i])
+                    for i in range(1, len(sample_time))
+                    if sample_time[i] in result.ignored
+                ]
+                gap = gap or self._daylight_gap(spans, prev_start, day_start)
             else:
                 _LOGGER.debug(
                     "No day %d PV generation data (or barely any) from entity: %s (%s)",
@@ -860,11 +884,35 @@ class Dampening:
                     entity,
                     entity_history.get(entity),
                 )
+                silent += 1
+                gap = gap or (not recheck and self._daylight_gap(whole_day, prev_start, day_start))  # No usable readings all day
+        if recheck and 0 < silent < read:  # Readings from some entities only
+            gap = gap or self._daylight_gap(whole_day, prev_start, day_start)
 
         for interval_start, generation in generation_intervals.items():
             generation_intervals[interval_start] = round(generation, 3)
 
-        return generation_intervals
+        return generation_intervals, gap
+
+    def _daylight_gap(self, spans: list[tuple[dt, dt]], prev_start: dt, day_start: dt) -> bool:
+        """Return whether spans without readings miss a significant share of the day's expected energy.
+
+        Each half hour weighs as much as its peak estimated actual, so a sensor that is unavailable at night or at dusk,
+        when little or nothing is generated, does not spoil a day, while an outage of an hour around noon does.
+        """
+        half_hour = timedelta(minutes=HALF_HOUR_MINUTES)
+        expected = missing = 0.0
+        for interval in self._build_half_hour_bool_intervals(prev_start, day_start):
+            if (weight := self.api.peak_intervals.get(self.adjusted_interval_dt(interval), 0.0)) <= 0:
+                continue
+            expected += weight
+            overlap = sum(
+                (min(end, interval + half_hour) - max(start, interval)) / half_hour
+                for start, end in spans
+                if start < interval + half_hour and end > interval
+            )
+            missing += weight * min(overlap, 1.0)
+        return missing > 0 and missing >= expected * _GENERATION_GAP_FRACTION
 
     async def _apply_suppression_entity_limits(
         self,
@@ -1013,19 +1061,28 @@ class Dampening:
 
         entity_registry = er.async_get(self.api.hass)
         recorder_instance = get_instance(self.api.hass)
+        await self.prepare_data(only_peaks=True)  # Peak intervals tell daylight for gap detection
 
         for day in range(days):
             # PV generation
             # On UTC :00/:30 like the estimated actuals, also where local midnight is at :15 or :45 UTC
             day_start = self._bucket_interval_start(self.api.dt_helper.day_start_utc(future=(-1 * day)))
             prev_start = self._bucket_interval_start(self.api.dt_helper.day_start_utc(future=(-1 * day) - 1))  # 23 or 25 hours at DST
-            generation_intervals = await self._collect_generation_intervals_for_day(
+            generation_intervals, gap = await self._collect_generation_intervals_for_day(
                 prev_start,
                 day_start,
                 day,
                 entity_registry,
                 recorder_instance,
             )
+            if gap:
+                _LOGGER.debug(
+                    "PV generation on %s has a gap in daylight readings, excluding the day from accuracy and dampening",
+                    prev_start.astimezone(self.api.tz).strftime(DT_DATE_ONLY_FORMAT),
+                )
+                for interval in generation_intervals:
+                    generation.pop(interval, None)
+                continue
 
             export_limiting = self._build_half_hour_bool_intervals(prev_start, day_start)
             await self._apply_suppression_entity_limits(
@@ -1218,11 +1275,13 @@ class Dampening:
         last_day: dt | None = None
 
         for interval in values:
+            if generation.get(interval[PERIOD_START]) is None:
+                continue  # Only days with generation, so an excluded day is not an infinite error
             i = interval[PERIOD_START].astimezone(self.api.options.tz).replace(hour=0, minute=0, second=0, microsecond=0)
             if i != last_day:
                 value_day[i] = 0.0
                 last_day = i
-            if generation.get(interval[PERIOD_START]) is not None and not generation[interval[PERIOD_START]][EXPORT_LIMITING]:
+            if not generation[interval[PERIOD_START]][EXPORT_LIMITING]:
                 value_day[i] += interval[ESTIMATE] / 2  # 30 minute intervals
 
         for day, value in value_day.items():
@@ -1246,7 +1305,7 @@ class Dampening:
             (
                 (len(error) != len(non_inf_error)),
                 mean(non_inf_error.values()),
-                [percentile(sorted(error.values()), p) for p in percentiles],
+                [percentile(sorted(non_inf_error.values()), p) for p in percentiles],
                 daily,
             )
             if non_inf_error
