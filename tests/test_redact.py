@@ -98,3 +98,23 @@ class TestRedactLatLon:
     def test_redact_lat_lon_simple_no_decimals_unchanged(self) -> None:
         """A string with no decimal coordinates must pass through unchanged."""
         assert redact_lat_lon_simple("value=5") == "value=5", "String with no decimal coordinates must be returned unchanged"
+
+
+class TestRedactFilenameInPathsAndMessages:
+    """Tests for redact_filename_api_key with full paths, named entries and error messages."""
+
+    def test_hyphenated_config_path(self) -> None:
+        """A hyphen in the config path must not stop the redaction."""
+        result = redact_filename_api_key("/home-assistant/config/solcast-sites-BlAhDeBlAhBlAhBlAhABCDEF-260101.json.bak")
+        assert result == "/home-assistant/config/solcast-sites-******ABCDEF-260101.json.bak"
+
+    def test_named_entry_stem(self) -> None:
+        """A named entry's cache file has the entry slug before the key part."""
+        assert redact_filename_api_key("solcast-norddach-usage-FeEeFiIiFoOoOoFuMmUVWXYZ.json") == "solcast-norddach-usage-******UVWXYZ.json"
+
+    def test_error_message_with_path(self) -> None:
+        """An error message quoting a cache file path must not carry the key."""
+        message = "[Errno 13] Permission denied: '/my-config/solcast-west-sites-BlAhDeBlAhBlAhBlAhABCDEF.json'"
+        result = redact_filename_api_key(message)
+        assert "BlAhDeBlAh" not in result
+        assert result == "[Errno 13] Permission denied: '/my-config/solcast-west-sites-******ABCDEF.json'"

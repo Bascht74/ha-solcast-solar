@@ -93,7 +93,7 @@ from .fetcher import Fetcher
 from .forecast import ForecastQuery
 from .instance import repair_issue_id, repair_placeholders
 from .log import get_logger
-from .redact import redact_api_key
+from .redact import redact_api_key, redact_filename_api_key
 from .sites_cache import FRESH_DATA, SitesCache
 
 CONTIGUOUS = "contiguous"
@@ -344,15 +344,19 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         if source_path.exists():
             for file in source_path.glob("solcast*.json"):
                 target_path = Path(self.config_dir) / file.name
-                _LOGGER.info("Migrating config directory file %s to %s", file.resolve(), target_path)
+                _LOGGER.info(
+                    "Migrating config directory file %s to %s",
+                    redact_filename_api_key(str(file.resolve())),
+                    redact_filename_api_key(str(target_path)),
+                )
                 file.replace(target_path)
 
         unlinked: list[str] = []
         for file in filter(self.sites_cache.is_this_entry_cache, Path(self.config_dir).glob("solcast*.json")):
             if file.stat().st_size == 0:
-                _LOGGER.critical("Removing zero-length file %s", file.resolve())
+                _LOGGER.critical("Removing zero-length file %s", redact_filename_api_key(str(file.resolve())))
                 file.unlink()
-                unlinked.append(str(file.name))
+                unlinked.append(redact_filename_api_key(file.name))
             else:
                 filename = str(file.resolve())
                 for api_key in self.options.api_key.split(","):

@@ -98,6 +98,7 @@ from .instance import (
 )
 from .issues import refresh_issue_placeholders, sync_actuals_api_limit_issue, sync_shared_api_limit_issues
 from .log import get_logger, set_log_instance
+from .redact import redact_filename_api_key
 from .solcastapi import ConnectionOptions, SolcastApi
 from .state import raise_and_record
 
@@ -741,7 +742,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception as e:  # noqa: BLE001
             _LOGGER.warning(
                 "Could not load API usage cached limit while upgrading config, using default of ten: %s",
-                e,
+                redact_filename_api_key(str(e)),
             )
             default = "10"
         new_options["api_quota"] = default

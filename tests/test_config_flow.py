@@ -1060,6 +1060,27 @@ async def test_entry_options_upgrade(
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 
 
+async def test_entry_options_upgrade_does_not_log_api_keys(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test the API limit upgrade does not log the API keys in the names of missing usage caches."""
+
+    api_keys = ("SECRETKEY1234567890", "SECRETKEY0987654321")
+    try:
+        await async_init_integration(hass, {CONF_API_KEY: ",".join(api_keys), "const_disableautopoll": False}, version=3)
+        messages = [
+            record.getMessage() for record in caplog.records if record.getMessage().startswith("Could not load API usage cached limit")
+        ]
+        assert messages
+        assert "usage-******567890.json" in messages[0]
+        assert not any(api_key in message for api_key in api_keys for message in messages)
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
 async def test_presumed_dead_and_full_flow(
     recorder_mock: Recorder,
     hass: HomeAssistant,

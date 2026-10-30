@@ -27,13 +27,13 @@ def redact_msg_api_key(msg: str, api_key: str) -> str:
 
 
 def redact_filename_api_key(filename: str) -> str:
-    """Obfuscate API key in filenames."""
+    """Obfuscate API key in filenames, also in a path or message, and in named stems like `solcast-<slug>-sites-KEY`."""
 
-    parts = filename.split("-")
-    if len(parts) == 4 and (parts[1] == "sites" or parts[1] == "usage"):
-        api_key = parts[2]
-        return filename.replace(api_key, redact_api_key(api_key))
-    return filename
+    return re.sub(
+        r"(-(?:sites|usage)-)([^-/\\\s'\"]+)(?=(?:-\d{6})?\.json)",
+        lambda match: match.group(1) + redact_api_key(match.group(2)),
+        filename,
+    )
 
 
 def redact_lat_lon_simple(s: str) -> str:

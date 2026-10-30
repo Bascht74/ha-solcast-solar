@@ -398,7 +398,7 @@ class SitesCache:
                     try:
                         response_json = json.loads(await file.read(), cls=JSONDecoder)
                     except json.decoder.JSONDecodeError:
-                        _LOGGER.error("JSONDecodeError, sites ignored: %s", site)
+                        _LOGGER.error("JSONDecodeError, sites ignored: %s", redact_filename_api_key(site))
                         continue
                     for _site in response_json.get(SITES, []):
                         if _site.get(API_KEY):
@@ -412,7 +412,7 @@ class SitesCache:
                     try:
                         response_json = json.loads(await file.read(), cls=JSONDecoder)
                     except json.decoder.JSONDecodeError:
-                        _LOGGER.error("JSONDecodeError, usage ignored: %s", usage)
+                        _LOGGER.error("JSONDecodeError, usage ignored: %s", redact_filename_api_key(usage))
                         continue
                     match = re.search(rf"{re.escape(self._cache_stem())}-usage-(.+)\.json$", Path(usage).name)
                     if match:
@@ -891,7 +891,9 @@ class SitesCache:
                 await self.api.hass.async_add_executor_job(shutil.copy2, cache_file, backup_file)
                 _LOGGER.debug("Created backup %s", redact_filename_api_key(str(backup_file)))
             except OSError as err:
-                _LOGGER.warning("Could not create backup %s: %s", redact_filename_api_key(str(backup_file)), err)
+                _LOGGER.warning(
+                    "Could not create backup %s: %s", redact_filename_api_key(str(backup_file)), redact_filename_api_key(str(err))
+                )
 
     def _site_transfer_signature(self, site: dict[str, Any]) -> tuple[str, str, str] | None:
         """Return a comparable site signature used for site-ID transfer matching."""
@@ -1295,10 +1297,13 @@ class SitesCache:
                 else:
                     cached_sites_unavailable(at_least_one_only=True)
         except (ClientConnectionError, ClientResponseError, ConnectionRefusedError, TimeoutError) as e:
-            _LOGGER.error("Connection error: %s", e)
+            error_text = str(e)
+            for api_key in api_keys:
+                error_text = redact_msg_api_key(error_text, api_key.strip())
+            _LOGGER.error("Connection error: %s", error_text)
             self.api.sites_status = LoadStatus.API_BUSY  # A connection error passes, so set-up is retried later
             api_key_in_error = ""
-            _LOGGER.error("Error retrieving sites: %s", e)
+            _LOGGER.error("Error retrieving sites: %s", error_text)
             if use_cache:
                 _LOGGER.info("Attempting to continue with cached sites")
                 error = False

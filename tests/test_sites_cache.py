@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from aiohttp import ClientResponseError, RequestInfo
 from custom_components.solcast_solar.const import (
     ADVANCED_SOLCAST_PORT,
     ADVANCED_SOLCAST_URL,
@@ -26,7 +27,10 @@ from custom_components.solcast_solar.const import (
 )
 from custom_components.solcast_solar.enums import LoadStatus
 from custom_components.solcast_solar.sites_cache import SitesCache
+from custom_components.solcast_solar.solcastapi import SolcastApi
+from multidict import CIMultiDict, CIMultiDictProxy
 import pytest
+from yarl import URL
 
 from homeassistant.util import dt as dt_util
 
@@ -282,6 +286,71 @@ async def test_sites_data_uses_combined_extant_match_for_key_collapse(tmp_path: 
         "2222-2222-2222-2222",
         "3333-3333-3333-3333",
     ]
+
+
+class _DeniedHass:
+    """Minimal hass-like object whose copy fails with the path in the error, as the operating system reports it."""
+
+    async def async_add_executor_job(self, func: Any, *args: Any) -> Any:
+        """Run an executor job inline, refusing copies."""
+        if getattr(func, "__name__", "") == "copy2":
+            raise PermissionError(13, "Permission denied", str(args[0]))
+        return func(*args)
+
+
+@pytest.mark.asyncio
+async def test_backup_error_does_not_log_api_key(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A failed backup of a key-named cache, in a hyphenated config path and for a named entry, does not log the key."""
+    api_key = "SECRETKEY1234567890"
+    config_dir = tmp_path / "home-assistant"
+    config_dir.mkdir()
+    (config_dir / "solcast-west.json").write_text("{}", encoding="utf-8")
+    (config_dir / f"solcast-west-sites-{api_key}.json").write_text("{}", encoding="utf-8")
+    sites_cache = SitesCache(
+        SimpleNamespace(config_dir=str(config_dir), filename=str(config_dir / "solcast-west.json"), hass=_DeniedHass())
+    )  # pyright: ignore[reportArgumentType]
+    caplog.set_level(logging.WARNING)
+
+    await sites_cache._backup_json_caches()
+
+    assert "Could not create backup" in caplog.text
+    assert "solcast-west-sites-******567890" in caplog.text
+    assert api_key not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_sites_client_error_does_not_log_api_key(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A client error from the sites request quotes the request URL, which must not carry the key into the log."""
+    api_key = "SECRETKEY1234567890"
+
+    async def client_error(url: str, params: dict[str, Any], **_kwargs: Any) -> None:
+        request = RequestInfo(URL(url).with_query(params), "GET", CIMultiDictProxy(CIMultiDict()))
+        raise ClientResponseError(request, (), status=502, message="Bad Gateway")
+
+    api = SimpleNamespace(
+        config_dir=str(tmp_path),
+        filename=str(tmp_path / "solcast.json"),
+        options=SimpleNamespace(api_key=api_key),
+        entry_options={API_KEY: api_key},
+        advanced_options={ADVANCED_SOLCAST_URL: "https://api.solcast.com.au", ADVANCED_SOLCAST_PORT: 443, ADVANCED_SSL_VERIFY: True},
+        get_solcast_base_url=lambda url, _port: url,
+        aiohttp_session=SimpleNamespace(get=client_error),
+        headers={},
+        sites_status=LoadStatus.OK,
+        sites=[],
+        http_status_translate=lambda status: f"{status}",
+        entry=None,
+        hass=_ExecutorHass(),
+    )
+    sites_cache = SitesCache(api)  # pyright: ignore[reportArgumentType]
+    caplog.set_level(logging.ERROR)
+
+    status, _, _ = await sites_cache._sites_data(prior_crash=False, use_cache=False)
+
+    assert status == 999
+    assert api.sites_status is LoadStatus.API_BUSY  # Set-up is retried later
+    assert "Connection error: 502" in caplog.text
+    assert api_key not in caplog.text
 
 
 @pytest.mark.asyncio

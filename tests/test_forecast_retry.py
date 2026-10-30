@@ -549,7 +549,7 @@ async def test_fetch_timeout_and_client_error_are_failures(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test the time limit on all attempts fails the update like other failures, and a client error fails the fetch."""
+    """Test the time limit on all attempts fails the update like other failures, and a client error does not log the API key."""
 
     api_key = "SECRETKEY1234567890"
 
@@ -588,6 +588,7 @@ async def test_fetch_timeout_and_client_error_are_failures(
         solcast.api_limits[api_key] = 10
         assert await solcast.fetcher.fetch_data(hours=1, path=FORECASTS, site="1111-1111-1111-1111", api_key=api_key, force=True) is None
         assert "Client error: 502" in caplog.text
+        assert api_key not in caplog.text
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

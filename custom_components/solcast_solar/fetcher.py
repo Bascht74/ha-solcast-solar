@@ -774,7 +774,7 @@ class Fetcher:
                                     status = 1000
                                     break
                                 except (ClientConnectionError, ClientResponseError) as e:
-                                    _LOGGER.error("Client error: %s", e)
+                                    _LOGGER.error("Client error: %s", redact_msg_api_key(str(e), api_key))
                                     status = 1000
                                     break
                             if status in (200, 400, 401, 403, 404, 500, 1000):  # Do not retry for these statuses.
