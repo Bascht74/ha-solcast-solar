@@ -105,13 +105,13 @@ An example list: `["12:00", "12:30", "13:00", "13:30", "14:00", "14:30", "15:00"
 
 Possible values: float `0.0`..`1.0` (default `0.95`)
 
-Dampening values modelled as higher than a certain threshold are ignored as insignificant.
+Dampening values modelled at or above a certain threshold are ignored as insignificant (set to 1.0). Values in a band below the threshold, as wide as the gap between the threshold and 1.0 (0.90 to 0.95 by default), are eased towards 1.0 in a straight line, so there is no step at the threshold. A value of `1.0` ignores nothing.
 
 **Key: "automated_dampening_insignificant_factor_adjusted"**
 
 Possible values: float `0.0`..`1.0` (default `0.95`)
 
-Dampening values adjusted by delta adjustment as higher than a certain threshold are ignored as insignificant.
+Dampening values adjusted by delta adjustment at or above a certain threshold are ignored as insignificant, and eased towards 1.0 below it in the same way. The band starts no lower than the factor before adjustment, so a factor is not raised a second time.
 
 **Key: "automated_dampening_minimum_matching_generation"**
 

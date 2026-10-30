@@ -7,6 +7,7 @@ estimated actuals and generation of the 7 days before), in standard time.
 from collections import OrderedDict
 import copy
 from datetime import UTC, datetime as dt, timedelta, tzinfo
+from itertools import pairwise
 import tempfile
 from types import SimpleNamespace
 from typing import Any
@@ -53,6 +54,7 @@ from custom_components.solcast_solar.coordinator import SolcastUpdateCoordinator
 from custom_components.solcast_solar.dampen import Dampening
 from custom_components.solcast_solar.dates import DateTimeHelper
 from custom_components.solcast_solar.forecast import ForecastQuery
+from custom_components.solcast_solar.util import ease_insignificant
 from freezegun import freeze_time
 import pytest
 
@@ -144,6 +146,27 @@ def _isolated_ones(factors: list[float]) -> list[int]:
     return [i for i in range(1, 47) if factors[i] >= 0.999 and factors[i - 1] < 0.95 and factors[i + 1] < 0.95]
 
 
+@pytest.mark.parametrize(
+    ("factor", "threshold", "start", "expected"),
+    [
+        (0.85, 0.95, 0.0, 0.85),  # Below the band: unchanged
+        (0.90, 0.95, 0.0, 0.90),
+        (0.92, 0.95, 0.0, 0.94),
+        (0.949, 0.95, 0.0, 0.998),  # Was 0.949, while 0.950 became 1.0
+        (0.95, 0.95, 0.0, 1.0),
+        (0.99, 0.95, 0.0, 1.0),
+        (1.0, 0.95, 0.0, 1.0),
+        (0.97, 1.0, 0.0, 0.97),  # A threshold of 1.0 ignores nothing
+        (0.94, 0.95, 0.94, 0.94),  # Eased once already, or left alone by delta adjustment: not raised again
+        (0.95, 0.95, 0.94, 0.96),
+        (0.97, 0.95, 0.94, 1.0),
+    ],
+)
+def test_ease_insignificant(factor: float, threshold: float, start: float, expected: float) -> None:
+    """A factor near the insignificant threshold fades towards 1.0 instead of jumping to it."""
+    assert ease_insignificant(factor, threshold, start) == pytest.approx(expected)
+
+
 @pytest.mark.parametrize(("name", "series"), [("Süd-West", SUED_WEST), ("Ost", OST)])
 async def test_no_isolated_one_between_dampened_neighbours(name: str, series: dict[int, str | float]) -> None:
     """Matched intervals without enough samples take their neighbours' line, and no 1.0 stays between dampened neighbours."""
@@ -160,6 +183,19 @@ async def test_no_isolated_one_between_dampened_neighbours(name: str, series: di
                 min(factors[interval - 1], factors[interval + 1]) <= factors[interval] <= max(factors[interval - 1], factors[interval + 1])
             )
             assert factors[interval] < 1.0
+
+
+async def test_interpolated_values() -> None:
+    """The Ost evening: intervals without enough matches lie on the line between their neighbours, measured factors stay."""
+    api = _api()
+    dampening = Dampening(api)
+    factors = await dampening.calculate(*_model_inputs(OST, api), [], 0)
+
+    assert factors[33] == pytest.approx(0.936)  # 0.918 eased towards 1.0
+    assert factors[32] == pytest.approx((0.517 + 0.936) / 2, abs=0.001)  # Was 1.0 between 0.517 and 0.918
+    assert factors[34] == pytest.approx(0.968, abs=0.001)  # Between 0.936 and the measured 1.0 at 35
+    assert factors[19] == 0.881  # Measured shading between measured 1.0 values stays
+    assert factors[27:32] == [0.621, 0.486, 0.556, 0.442, 0.517]
 
 
 async def test_isolated_one_takes_the_higher_neighbour(caplog: pytest.LogCaptureFixture) -> None:
@@ -200,6 +236,35 @@ async def test_gap_day_does_not_flip_an_interval() -> None:
     assert gap[32] < 1.0
     assert min(gap[31], gap[33]) <= gap[32] <= max(gap[31], gap[33])
     assert not _isolated_ones(gap)
+
+
+async def test_raw_factor_rounded_before_threshold() -> None:
+    """Model 0 rounds the factor before the threshold, so a stored 0.950 that delta adjustment turns into 1.0 is not left."""
+    api = _api()
+    dampening = Dampening(api)
+    stamps = [DAY + timedelta(days=day, hours=10) for day in range(2)]
+    api.peak_intervals[20] = 3.0
+    factors = await dampening.calculate({20: stamps}, dict.fromkeys(stamps, 2.849), OrderedDict.fromkeys(stamps, 3.0), [], 0)
+    assert factors[20] == 1.0  # 2.849 / 3.0 = 0.94967 was stored as 0.950
+
+
+@pytest.mark.parametrize("delta_model", [0, 1])
+def test_adjusted_factor_has_no_step(delta_model: int) -> None:
+    """A forecast falling below the peak loosens a factor smoothly up to 1.0, without a step at the threshold."""
+    api = _api(**{ADVANCED_AUTOMATED_DAMPENING_DELTA_ADJUSTMENT_MODEL: delta_model})
+    dampening = Dampening(api)
+    dampening.factors = {ALL: [1.0] * 48}
+    dampening.factors[ALL][26] = 0.70
+    dampening.target_peak_intervals = dict.fromkeys(range(48), 0.0) | {26: 2.0}
+    when = dt(2026, 10, 6, 13, 0, tzinfo=UTC)
+    applied = [dampening.get_factor("site", when, 2.0 * share / 100) for share in range(100, 0, -2)]
+
+    assert applied[0] == 0.70  # At the peak the factor is kept
+    assert applied == sorted(applied)
+    assert max(b - a for a, b in pairwise(applied)) < 0.03  # Was a step of 0.054 to 1.0
+    assert applied[-1] == 1.0
+    dampening.factors[ALL][26] = 0.94  # A stored factor eased already is not raised again at the peak
+    assert dampening.get_factor("site", when, 2.0) == 0.94
 
 
 async def test_matching_against_normalised_peak(monkeypatch: pytest.MonkeyPatch) -> None:

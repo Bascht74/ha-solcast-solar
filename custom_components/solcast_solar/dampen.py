@@ -84,6 +84,9 @@ from .enums import EnergyResult
 from .log import get_logger
 from .redact import format_site_key
 from .util import diff, interquartile_bounds, percentile
+from .util import (
+    ease_insignificant,
+)
 
 if TYPE_CHECKING:
     from .solcastapi import SolcastApi
@@ -1706,11 +1709,7 @@ class Dampening:
                                         case 3:  # min factor from matched pairs
                                             factor = min(raw_factors)
                                     factor = round(factor, 3) if factor > 0 else 1.0
-                                    if self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR] <= factor < 1.0:
-                                        msg = f"Ignoring insignificant factor for {interval_time} of {factor:.3f}"
-                                        factor = 1.0
-                                    else:
-                                        msg = f"Auto-dampen factor for {interval_time} is {factor:.3f}"
+                                    msg, factor = self._insignificant_eased(factor, interval_time)
                                     dampening[interval] = factor
                                     known[interval] = True
                                 msg = (
@@ -1734,13 +1733,8 @@ class Dampening:
                                     len(generation_samples)
                                     >= self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_MINIMUM_MATCHING_GENERATION]
                                 ):
-                                    factor = (peak / peak_intervals[interval]) if peak_intervals[interval] != 0 else 1.0
-                                    if self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR] <= factor < 1.0:
-                                        msg = f"Ignoring insignificant factor for {interval_time} of {factor:.3f}"
-                                        factor = 1.0
-                                    else:
-                                        msg = f"Auto-dampen factor for {interval_time} is {factor:.3f}"
-                                    dampening[interval] = round(factor, 3)
+                                    factor = round(peak / peak_intervals[interval], 3) if peak_intervals[interval] != 0 else 1.0
+                                    msg, dampening[interval] = self._insignificant_eased(factor, interval_time)
                                     known[interval] = True
                                 else:
                                     msg = f"Not enough reliable generation samples for {interval_time} to determine dampening ({len(generation_samples)})"
@@ -1773,6 +1767,15 @@ class Dampening:
                     _LOGGER.debug(msg)
 
         return self._smooth_factors(dampening, known, unknown, verbose_log)
+
+    def _insignificant_eased(self, factor: float, interval_time: str) -> tuple[str, float]:
+        """Return the log message and a modelled factor eased towards 1.0 near the insignificant threshold."""
+        eased = ease_insignificant(factor, self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR])
+        if eased == 1.0 and factor < 1.0:
+            return f"Ignoring insignificant factor for {interval_time} of {factor:.3f}", eased
+        if eased != factor:
+            return f"Auto-dampen factor for {interval_time} is {eased:.3f}, eased towards 1.0 from {factor:.3f}", eased
+        return f"Auto-dampen factor for {interval_time} is {factor:.3f}", factor
 
     def _smooth_factors(self, dampening: list[float], known: list[bool], unknown: list[int], verbose_log: bool) -> list[float]:
         """Fill matched intervals that lack samples from their neighbours, then remove a 1.0 between dampened neighbours.
@@ -1868,7 +1871,9 @@ class Dampening:
                         self.adjustment_peak(interval),
                         interval_pv50,
                     )
-                factor = 1.0 if factor >= self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR_ADJUSTED] else factor
+                factor = ease_insignificant(
+                    factor, self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR_ADJUSTED], factor_pre_adjustment
+                )
 
         return min(1.0, factor)
 

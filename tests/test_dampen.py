@@ -1343,7 +1343,8 @@ async def test_calculate_models_1_to_3_real_north_roof(monkeypatch: pytest.Monke
 
     # Generation over estimated actual: 0.734 on 2 October, 0.913 on 4 October.
     # Before the fix the ratio was applied to these pairs too, and models 1-3 gave 0.874, 0.773 and 0.673.
-    assert [factors[interval] for factors in models] == pytest.approx([0.913, 0.823, 0.734], abs=0.001)
+    # 0.913 lies in the band below the insignificant threshold of 0.95, which eases it to 0.926.
+    assert [factors[interval] for factors in models] == pytest.approx([0.926, 0.823, 0.734], abs=0.001)
 
 
 def test_delta_adjustment_model_1_loosens_only_below_peak() -> None:
