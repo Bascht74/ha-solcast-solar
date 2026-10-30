@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from custom_components.solcast_solar.const import (
+    ALL,
     AUTO_DAMPEN,
     ESTIMATE,
     EXPORT_LIMITING,
@@ -27,6 +28,7 @@ import pytest
 
 from homeassistant.components.recorder import Recorder
 from homeassistant.core import HomeAssistant, State
+from homeassistant.helpers import entity_registry as er
 
 from . import (
     DEFAULT_INPUT1,
@@ -181,3 +183,39 @@ def stored_version(solcast: SolcastApi) -> int:
     """The version of the generation cache file."""
 
     return json.loads(Path(solcast.filename_generation).read_text(encoding="utf-8"))["version"]
+
+
+async def test_factors_reset_when_generation_is_gone(
+    recorder_mock: Recorder, hass: HomeAssistant, entity_registry: er.EntityRegistry, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Without generation to model from, automated factors go back to 1.0, warned about once, not kept from old generation."""
+
+    options = copy.deepcopy(DEFAULT_INPUT1) | {GET_ACTUALS: True, USE_ACTUALS: 1, AUTO_DAMPEN: True, GENERATION_ENTITIES: [ENERGY_ENTITY]}
+    warning = "Auto-dampening has no PV generation to model from, so its factors are reset to 1.0 until there is"
+    try:
+        entry = await async_init_integration(hass, options, extra_sensors=ExtraSensors.YES)
+        await reload_integration(hass, entry)
+        assert any(factor != 1.0 for factor in entry.runtime_data.coordinator.solcast.dampening.factors[ALL])
+
+        # A new inverter sensor without history: the generation of the old one is dropped, and none can be read yet.
+        new_entity = entity_registry.async_get_or_create(
+            "sensor", "inverter", "new_power", suggested_object_id="new_inverter_energy"
+        ).entity_id
+        caplog.clear()
+        hass.config_entries.async_update_entry(entry, options={**entry.options, GENERATION_ENTITIES: [new_entity]})
+        await hass.async_block_till_done()
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        assert "Generation entities changed" in caplog.text
+        assert solcast.dampening.data_generation[GENERATION] == []
+        assert caplog.text.count(warning) == 1
+        assert solcast.dampening.factors[ALL] == [1.0] * 48
+        assert json.loads(Path(solcast.dampening.get_filename()).read_text(encoding="utf-8"))[ALL] == [1.0] * 48
+
+        # Once reset, the next start and the next model run only say why auto-dampening waits.
+        caplog.clear()
+        await reload_integration(hass, entry)
+        await entry.runtime_data.coordinator.solcast.dampening.model_automated()
+        assert warning not in caplog.text
+        assert "Auto-dampening suppressed: No generation yet" in caplog.text
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

@@ -46,6 +46,7 @@ from .const import (
     FORECASTS,
     FORMAT,
     GENERATION,
+    GENERATION_ENTITIES,
     GENERATION_VERSION,
     INTEGRATION_VERSION,
     ISSUE_UNUSUAL_AZIMUTH_NORTHERN,
@@ -668,6 +669,16 @@ class SitesCache:
                     generation_data = await self.api.dampening.load_generation_data()
                     if generation_data:
                         self.api.dampening.data_generation = generation_data
+                    entities = sorted(self.api.options.generation_entities)
+                    stored_entities = self.api.dampening.data_generation.get(GENERATION_ENTITIES)
+                    if stored_entities is None:  # Written now, so a change before the next generation update is still seen
+                        self.api.dampening.data_generation[GENERATION_ENTITIES] = entities
+                        if generation_data:
+                            await self.serialise_data(self.api.dampening.data_generation, file)
+                    elif stored_entities != entities:
+                        _LOGGER.debug("Generation entities changed, reloading generation and dampening history")
+                        self.api.dampening.data_generation.update({GENERATION: [], GENERATION_ENTITIES: entities})
+                        await self.api.hass.async_add_executor_job(Path(self.api.filename_dampening_history).unlink, True)
                     if (
                         self.api.options.auto_dampen
                         and self.api.options.generation_entities

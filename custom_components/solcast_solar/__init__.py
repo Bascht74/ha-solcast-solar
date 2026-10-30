@@ -521,7 +521,7 @@ async def tasks_cancel(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:  # noqa: C901
     """Reconfigure the integration when options get updated.
 
-    * Changing API key or limit, auto-update, hard limit or the custom hour sensor results in a restart.
+    * Changing API key or limit, auto-update, hard limit, the custom hour sensor, generation entities or excluded sites results in a restart.
     * Changing dampening results in forecast recalculation and sensor refresh.
     * Other alterations simply refresh sensor values and attributes.
 
@@ -581,6 +581,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
         or changed(CUSTOM_HOURS)
         or changed(SITE_EXPORT_ENTITY)
         or changed(GET_ACTUALS)
+        or changed(GENERATION_ENTITIES)
         or changed(EXCLUDE_SITES)
     )
 

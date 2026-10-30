@@ -59,6 +59,7 @@ from .const import (
     EXPORT_LIMITING,
     FORECASTS,
     GENERATION,
+    GENERATION_ENTITIES,
     GENERATION_VERSION,
     HALF_HOUR_MINUTES,
     INTERVALS_PER_DAY,
@@ -1119,6 +1120,7 @@ class Dampening:
         self.data_generation = {
             LAST_UPDATED: dt_util.now(UTC).replace(microsecond=0),
             VERSION: GENERATION_VERSION,
+            GENERATION_ENTITIES: sorted(self.api.options.generation_entities),
             GENERATION: sorted(
                 filter(
                     lambda generated: generated[PERIOD_START] >= self.api.dt_helper.day_start_utc(future=-22),
@@ -1373,6 +1375,7 @@ class Dampening:
         deal_breaker_site = ""
         if not self.data_generation[GENERATION]:
             deal_breaker = "No generation yet"
+            await self._reset_automated_factors()
         else:
             for site in self.api.sites:
                 if self.api.data_actuals[SITE_INFO].get(site[RESOURCE_ID]) is None:
@@ -1383,6 +1386,19 @@ class Dampening:
             _LOGGER.info("Auto-dampening suppressed: %s%s", deal_breaker, f" for {deal_breaker_site}" if deal_breaker_site else "")
             return True
         return False
+
+    async def _reset_automated_factors(self) -> None:
+        """Reset the automated factors to 1.0 when no generation is left to model them from.
+
+        Factors modelled from generation that is gone (other generation entities, or every day left out) would
+        otherwise stay in force until generation is there again.
+        """
+        if not self.api.options.auto_dampen or not any(factor != 1.0 for factor in self.factors.get(ALL, [])):
+            return
+        _LOGGER.warning("Auto-dampening has no PV generation to model from, so its factors are reset to 1.0 until there is")
+        self.factors[ALL] = [1.0] * INTERVALS_PER_DAY
+        await self.serialise_granular()
+        await self.granular_data()
 
     async def model_automated(self, force: bool = False) -> None:
         """Model the automated dampening of the forecast data.

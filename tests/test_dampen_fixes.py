@@ -38,6 +38,7 @@ from . import (
     ExtraSensors,
     async_cleanup_integration_tests,
     async_init_integration,
+    get_config_dir,
     reload_integration,
 )
 
@@ -141,6 +142,43 @@ async def test_generation_loads_days_missing_since_last(
     stored = [gen[PERIOD_START] for gen in dampening.data_generation[GENERATION]]
     assert len(stored) == len(set(stored)) == 1 + sum(int(hour * 2) for hour in hours)
     assert all(not gen[EXPORT_LIMITING] for gen in dampening.data_generation[GENERATION][1:])
+
+
+async def test_generation_entities_key_written_at_load(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A generation cache without the entities key gets it at load, so a later change of the entities is detected."""
+
+    try:
+        config_dir = get_config_dir(hass.config.config_dir, create=True)
+        generation_file = Path(f"{config_dir}/solcast-generation.json")
+        options = copy.deepcopy(DEFAULT_INPUT2)
+        options[AUTO_UPDATE] = 0
+        options[GET_ACTUALS] = True
+        options[USE_ACTUALS] = 1
+        options[AUTO_DAMPEN] = True
+        options[GENERATION_ENTITIES] = ["sensor.solar_export_sensor_1111_1111_1111_1111"]
+        entry = await async_init_integration(hass, options, extra_sensors=ExtraSensors.YES)
+        await reload_integration(hass, entry)  # Loads the cache, reads generation and writes the generation file
+
+        data = json.loads(generation_file.read_text(encoding="utf-8"))
+        data.pop(GENERATION_ENTITIES)
+        generation_file.write_text(json.dumps(data), encoding="utf-8")
+
+        await reload_integration(hass, entry)
+        assert json.loads(generation_file.read_text(encoding="utf-8"))[GENERATION_ENTITIES] == options[GENERATION_ENTITIES]
+
+        caplog.clear()
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, GENERATION_ENTITIES: ["sensor.solar_export_sensor_2222_2222_2222_2222"]}
+        )
+        await hass.async_block_till_done()
+        assert "Generation entities changed" in caplog.text
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 
 
 async def test_cached_gap_days_rechecked_once(
