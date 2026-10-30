@@ -84,11 +84,12 @@ from .instance import (
     cache_file_path,
     cache_stem,
     entry_slug,
+    instance_name,
     is_named_instance,
     shared_unique_id,
 )
 from .issues import sync_actuals_api_limit_issue
-from .log import get_logger
+from .log import get_logger, set_log_instance
 from .solcastapi import ConnectionOptions, SolcastApi
 from .state import raise_and_record
 
@@ -304,6 +305,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """
 
     random.seed()
+    set_log_instance(instance_name(entry.options))
 
     if ENTRY_OPTIONS_DEVELOPMENT:
         await async_migrate_entry(hass, entry)
@@ -488,6 +490,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     """
     coordinator = entry.runtime_data.coordinator
+    set_log_instance(instance_name(entry.options))
 
     reload = False
     recalculate_and_refresh = False
