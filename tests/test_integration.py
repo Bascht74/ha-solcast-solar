@@ -449,7 +449,7 @@ async def test_api_failure(
             assert "API did not return a json object, returned" in caplog.text
 
         def assertions1_except(entry: ConfigEntry):
-            assert entry.state is ConfigEntryState.SETUP_ERROR, f"Expected entry state ConfigEntryState.SETUP_ERROR, got {entry.state}"
+            assert entry.state is ConfigEntryState.SETUP_RETRY, f"Expected entry state ConfigEntryState.SETUP_RETRY, got {entry.state}"
             assert "Error retrieving sites" in caplog.text
             assert "Attempting to continue" in caplog.text
             assert "Cached sites are not yet available" in caplog.text

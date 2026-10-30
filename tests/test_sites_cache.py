@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from datetime import timedelta
 import json
@@ -11,6 +12,9 @@ from types import SimpleNamespace
 from typing import Any
 
 from custom_components.solcast_solar.const import (
+    ADVANCED_SOLCAST_PORT,
+    ADVANCED_SOLCAST_URL,
+    ADVANCED_SSL_VERIFY,
     API_KEY,
     FORECASTS,
     RESOURCE_ID,
@@ -278,3 +282,73 @@ async def test_sites_data_uses_combined_extant_match_for_key_collapse(tmp_path: 
         "2222-2222-2222-2222",
         "3333-3333-3333-3333",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("status", "sites_status"), [(503, LoadStatus.API_BUSY), (500, LoadStatus.API_BUSY), (404, LoadStatus.ERROR)])
+async def test_sites_server_error_without_cache(tmp_path: Path, status: int, sites_status: LoadStatus) -> None:
+    """A server error while no sites are cached lets the set-up be retried later, as a busy API does; a client error does not."""
+
+    class _Response:
+        def __init__(self) -> None:
+            self.status = status
+
+        async def text(self) -> str:
+            return ""
+
+    async def respond(*_args: Any, **_kwargs: Any) -> _Response:
+        return _Response()
+
+    api = SimpleNamespace(
+        config_dir=str(tmp_path),
+        filename=str(tmp_path / "solcast.json"),
+        options=SimpleNamespace(api_key="key"),
+        entry_options={API_KEY: "key"},
+        advanced_options={ADVANCED_SOLCAST_URL: "https://api.solcast.com.au", ADVANCED_SOLCAST_PORT: 443, ADVANCED_SSL_VERIFY: True},
+        get_solcast_base_url=lambda url, _port: url,
+        aiohttp_session=SimpleNamespace(get=respond),
+        headers={},
+        sites_status=LoadStatus.OK,
+        sites=[],
+        http_status_translate=lambda status: f"{status}",
+        entry=None,
+        hass=_ExecutorHass(),
+    )
+    sites_cache = SitesCache(api)  # pyright: ignore[reportArgumentType]
+
+    result, _, _ = await sites_cache._sites_data(prior_crash=False, use_cache=True)
+
+    assert result != 200
+    assert api.sites_status is sites_status
+
+
+@pytest.mark.asyncio
+async def test_sites_request_times_out(tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A sites request that never answers fails after the time limit, so set-up does not hang."""
+
+    async def hang(*_args: Any, **_kwargs: Any) -> None:
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr("custom_components.solcast_solar.sites_cache.SITES_TIMEOUT", 0)
+    api = SimpleNamespace(
+        config_dir=str(tmp_path),
+        filename=str(tmp_path / "solcast.json"),
+        options=SimpleNamespace(api_key="key"),
+        entry_options={API_KEY: "key"},
+        advanced_options={ADVANCED_SOLCAST_URL: "https://api.solcast.com.au", ADVANCED_SOLCAST_PORT: 443, ADVANCED_SSL_VERIFY: True},
+        get_solcast_base_url=lambda url, _port: url,
+        aiohttp_session=SimpleNamespace(get=hang),
+        headers={},
+        sites_status=LoadStatus.OK,
+        sites=[],
+        http_status_translate=lambda status: f"{status}",
+        entry=None,
+        hass=_ExecutorHass(),
+    )
+    sites_cache = SitesCache(api)  # pyright: ignore[reportArgumentType]
+
+    status, _, _ = await sites_cache._sites_data(prior_crash=False, use_cache=False)
+
+    assert status == 999
+    assert api.sites_status is LoadStatus.API_BUSY  # Set-up is retried later
+    assert "Error retrieving sites" in caplog.text

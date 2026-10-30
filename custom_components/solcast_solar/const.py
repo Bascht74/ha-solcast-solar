@@ -382,6 +382,7 @@ SITE_EXPORT_ENTITY: Final[str] = "site_export_entity"
 SITE_EXPORT_LIMIT: Final[str] = "site_export_limit"
 SITE_INFO: Final[str] = "siteinfo"
 SITES_STATUS: Final[str] = "sites_status"
+SITES_TIMEOUT: Final[int] = 60  # Seconds to wait for the rooftop sites of one API key
 STATUS: Final[str] = "status"
 STOPS_WORKING: Final[str] = "stops_working"
 SUGGESTED_VALUE: Final[str] = "suggested_value"

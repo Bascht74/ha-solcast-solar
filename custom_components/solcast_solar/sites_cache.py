@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 import contextlib
@@ -70,6 +71,7 @@ from .const import (
     SITE_ATTRIBUTE_LONGITUDE,
     SITE_INFO,
     SITES,
+    SITES_TIMEOUT,
     SUCCESS,
     SUCCESS_ACTUALS,
     SUCCESS_FORCED,
@@ -1198,12 +1200,13 @@ class SitesCache:
                     )
                     params = {FORMAT: JSON, API_KEY: api_key}
                     _LOGGER.debug("Connecting to %s?format=json&api_key=%s", url, redact_api_key(api_key))
-                    response: ClientResponse = await self.api.aiohttp_session.get(
-                        url=url,
-                        params=params,
-                        headers=self.api.headers,
-                        ssl=self.api.advanced_options[ADVANCED_SSL_VERIFY],
-                    )
+                    async with asyncio.timeout(SITES_TIMEOUT):
+                        response: ClientResponse = await self.api.aiohttp_session.get(
+                            url=url,
+                            params=params,
+                            headers=self.api.headers,
+                            ssl=self.api.advanced_options[ADVANCED_SSL_VERIFY],
+                        )
                     status = response.status
                     (_LOGGER.debug if status == 200 else _LOGGER.warning)(
                         "HTTP session returned status %s for API key %s%s",
@@ -1280,7 +1283,7 @@ class SitesCache:
                         if status in (401, 403):
                             self.api.sites_status = LoadStatus.BAD_KEY
                             break
-                        if status in (429, 420):
+                        if status in (429, 420) or status >= 500:  # Busy or failing for now, so retry later
                             self.api.sites_status = LoadStatus.API_BUSY
                             break
                         self.api.sites_status = LoadStatus.ERROR
@@ -1293,7 +1296,7 @@ class SitesCache:
                     cached_sites_unavailable(at_least_one_only=True)
         except (ClientConnectionError, ClientResponseError, ConnectionRefusedError, TimeoutError) as e:
             _LOGGER.error("Connection error: %s", e)
-            self.api.sites_status = LoadStatus.ERROR
+            self.api.sites_status = LoadStatus.API_BUSY  # A connection error passes, so set-up is retried later
             api_key_in_error = ""
             _LOGGER.error("Error retrieving sites: %s", e)
             if use_cache:
@@ -1309,7 +1312,7 @@ class SitesCache:
                         _ = check_rekey(response_json, api_key)
                         self.api.sites_status = LoadStatus.OK
                     else:
-                        self.api.sites_status = LoadStatus.ERROR
+                        self.api.sites_status = LoadStatus.API_BUSY
                         error = True
                         cached_sites_unavailable()
                         api_key_in_error = redact_api_key(api_key)
