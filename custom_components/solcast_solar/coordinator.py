@@ -185,6 +185,11 @@ class SolcastUpdateCoordinator(DataUpdateCoordinator):
 
         await self._updater.setup()
 
+        if missed := self.solcast.sites_cache.missed_midnight_resets:
+            # Home Assistant was stopped over UTC midnight, so rotate the failure statistics that the midnight task did not.
+            self.solcast.sites_cache.missed_midnight_resets = 0
+            await self.solcast.fetcher.reset_failure_stats(days=missed)
+
         self.tasks[TASK_MIDNIGHT_UPDATE] = async_track_utc_time_change(
             self.hass, self._update_utc_midnight_usage_sensor_data, hour=0, minute=0, second=0
         )

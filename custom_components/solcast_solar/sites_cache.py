@@ -7,7 +7,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable
 import contextlib
 import copy
-from datetime import UTC, datetime as dt, timedelta
+from datetime import UTC, datetime as dt
 import json
 from pathlib import Path
 import re
@@ -132,6 +132,7 @@ class SitesCache:
             api: The parent SolcastApi instance.
         """
         self.api = api
+        self.missed_midnight_resets: int = 0  # Daily resets missed while Home Assistant was stopped.
 
         # Private attributes (alphabetical).
         self._api_used_reset: dict[str, dt | None] = {}
@@ -760,24 +761,32 @@ class SitesCache:
         if force or self.stale_usage_cache:
             _LOGGER.debug("Reset API usage")
             for api_key in self.api.api_used:
-                yesterday_total = self.api.api_used[api_key] + self.api.api_forced.get(api_key, 0)
-                self.api.api_typical_forecast_updates[api_key] = yesterday_total
-                if yesterday_total > 0:
-                    self.api.api_typical[api_key] = yesterday_total
-                    _LOGGER.debug(
-                        "Typical daily API usage for %s updated to %d (tracked %d + forced %d, actuals excluded %d)",
-                        redact_api_key(api_key),
-                        yesterday_total,
-                        self.api.api_used[api_key],
-                        self.api.api_forced.get(api_key, 0),
-                        self.api.api_actuals.get(api_key, 0),
-                    )
-                self.api.api_used[api_key] = 0
-                self.api.api_forced[api_key] = 0
-                self.api.api_actuals[api_key] = 0
-                await self.serialise_usage(api_key, reset=True)
+                await self._reset_key_usage(api_key)
         else:
             _LOGGER.debug("Usage cache is fresh, so not resetting")
+
+    async def _reset_key_usage(self, api_key: str) -> None:
+        """Keep yesterday's forecast updates as the typical daily usage, then reset the usage of one API key.
+
+        The tracked usage counts the estimated actuals calls too, and the typical usage leaves them out.
+        """
+        tracked_forecasts = max(self.api.api_used[api_key] - self.api.api_actuals.get(api_key, 0), 0)
+        yesterday_total = tracked_forecasts + self.api.api_forced.get(api_key, 0)
+        self.api.api_typical_forecast_updates[api_key] = yesterday_total
+        if yesterday_total > 0:
+            self.api.api_typical[api_key] = yesterday_total
+            _LOGGER.debug(
+                "Typical daily API usage for %s updated to %d (tracked %d + forced %d, actuals excluded %d)",
+                redact_api_key(api_key),
+                yesterday_total,
+                tracked_forecasts,
+                self.api.api_forced.get(api_key, 0),
+                self.api.api_actuals.get(api_key, 0),
+            )
+        self.api.api_used[api_key] = 0
+        self.api.api_forced[api_key] = 0
+        self.api.api_actuals[api_key] = 0
+        await self.serialise_usage(api_key, reset=True)
 
     async def reset_usage_cache(self):
         """Reset all usage caches."""
@@ -1346,126 +1355,134 @@ class SitesCache:
 
         The limit is specified by the user in integration configuration.
         """
-        try:
 
-            async def sanitise_and_set_usage(api_key: str, usage: dict[str, Any]):
-                self.api.api_limits[api_key] = usage.get(DAILY_LIMIT, 10)
-                assert isinstance(self.api.api_limits[api_key], int), "daily_limit is not an integer"
-                self.api.api_used[api_key] = usage.get(DAILY_LIMIT_CONSUMED, 0)
-                assert isinstance(self.api.api_used[api_key], int), "daily_limit_consumed is not an integer"
-                self.api.api_forced[api_key] = usage.get(DAILY_FORCED_CONSUMED, 0)
-                assert isinstance(self.api.api_forced[api_key], int), "daily_forced_consumed is not an integer"
-                self.api.api_actuals[api_key] = usage.get(DAILY_ACTUALS_CONSUMED, 0)
-                assert isinstance(self.api.api_actuals[api_key], int), "daily_actuals_consumed is not an integer"
-                configured_limit = quota.get(api_key, 10)
-                allow_exceed = self.api.advanced_options.get(ADVANCED_ALLOW_EXCEED_API_LIMIT_MAXIMUM, False)
-                # Seed from the configured limit.  Auto-update can never consume more.
-                loaded_typical = usage.get(DAILY_TYPICAL, configured_limit)
-                # Cap stale values.
-                if not allow_exceed:
-                    loaded_typical = min(loaded_typical, configured_limit)
-                self.api.api_typical[api_key] = loaded_typical
-                assert isinstance(self.api.api_typical[api_key], int), "daily_typical is not an integer"
-                loaded_typical_forecast_updates = usage.get(DAILY_TYPICAL_FORECAST_UPDATES)
-                if loaded_typical_forecast_updates is None:
-                    loaded_typical_forecast_updates = self.api.api_typical[api_key] + self.api.api_forced.get(api_key, 0)
-                assert isinstance(loaded_typical_forecast_updates, int), "daily_typical_forecast_updates is not an integer"
-                self.api.api_typical_forecast_updates[api_key] = loaded_typical_forecast_updates
-                self._api_used_reset[api_key] = usage.get(RESET, self.api.dt_helper.utc_previous_midnight())
-                assert isinstance(self._api_used_reset[api_key], dt), "reset is not a datetime"
-                if (used_reset := self._api_used_reset[api_key]) is not None:
-                    _LOGGER.debug(
-                        "Usage cache for %s last reset %s",
-                        redact_api_key(api_key),
-                        used_reset.astimezone(self.api.tz).strftime(DT_DATE_FORMAT),
-                    )
-                if usage.get(DAILY_LIMIT) != quota[api_key]:  # Limit has been adjusted, so rewrite the cache.
+        def invalid_usage_fields(usage: Any) -> list[str]:
+            if not isinstance(usage, dict):
+                return ["content"]
+            invalid = [
+                field
+                for field in (DAILY_LIMIT, DAILY_LIMIT_CONSUMED, DAILY_FORCED_CONSUMED, DAILY_ACTUALS_CONSUMED, DAILY_TYPICAL)
+                if field in usage and (not isinstance(usage[field], int) or isinstance(usage[field], bool))
+            ]
+            if usage.get(DAILY_TYPICAL_FORECAST_UPDATES) is not None and not isinstance(usage[DAILY_TYPICAL_FORECAST_UPDATES], int):
+                invalid.append(DAILY_TYPICAL_FORECAST_UPDATES)
+            if RESET in usage and (not isinstance(usage[RESET], dt) or usage[RESET].tzinfo is None):
+                invalid.append(RESET)
+            return invalid
+
+        async def sanitise_and_set_usage(api_key: str, usage: dict[str, Any]) -> bool:
+            if invalid := invalid_usage_fields(usage):
+                _LOGGER.error("The usage cache for %s is corrupt, invalid %s", redact_api_key(api_key), ", ".join(invalid))
+                self.api.usage_status = LoadStatus.ERROR
+                return False
+            self.api.api_limits[api_key] = usage.get(DAILY_LIMIT, 10)
+            self.api.api_used[api_key] = usage.get(DAILY_LIMIT_CONSUMED, 0)
+            self.api.api_forced[api_key] = usage.get(DAILY_FORCED_CONSUMED, 0)
+            self.api.api_actuals[api_key] = usage.get(DAILY_ACTUALS_CONSUMED, 0)
+            configured_limit = quota.get(api_key, 10)
+            allow_exceed = self.api.advanced_options.get(ADVANCED_ALLOW_EXCEED_API_LIMIT_MAXIMUM, False)
+            # Seed from the configured limit.  Auto-update can never consume more.
+            loaded_typical = usage.get(DAILY_TYPICAL, configured_limit)
+            # Cap stale values.
+            if not allow_exceed:
+                loaded_typical = min(loaded_typical, configured_limit)
+            self.api.api_typical[api_key] = loaded_typical
+            loaded_typical_forecast_updates = usage.get(DAILY_TYPICAL_FORECAST_UPDATES)
+            if loaded_typical_forecast_updates is None:
+                loaded_typical_forecast_updates = self.api.api_typical[api_key] + self.api.api_forced.get(api_key, 0)
+            self.api.api_typical_forecast_updates[api_key] = loaded_typical_forecast_updates
+            self._api_used_reset[api_key] = used_reset = usage.get(RESET, self.api.dt_helper.utc_previous_midnight())
+            _LOGGER.debug(
+                "Usage cache for %s last reset %s",
+                redact_api_key(api_key),
+                used_reset.astimezone(self.api.tz).strftime(DT_DATE_FORMAT),
+            )
+            if usage.get(DAILY_LIMIT) != quota[api_key]:  # Limit has been adjusted, so rewrite the cache.
+                self.api.api_limits[api_key] = quota[api_key]
+                # Reset typical to the new limit.
+                self.api.api_typical[api_key] = quota[api_key]
+                await self.serialise_usage(api_key)
+                _LOGGER.info("Usage loaded and cache updated with new limit")
+            elif (
+                DAILY_FORCED_CONSUMED not in usage or DAILY_ACTUALS_CONSUMED not in usage
+            ):  # Schema upgraded, rewrite to persist new field.
+                await self.serialise_usage(api_key)
+                _LOGGER.debug("Usage loaded and cache updated with new schema")
+            elif DAILY_TYPICAL_FORECAST_UPDATES not in usage:
+                await self.serialise_usage(api_key)
+                _LOGGER.debug("Usage loaded and cache updated with typical forecast updates")
+                await self.serialise_usage(api_key)
+                _LOGGER.debug("Usage loaded and cache updated to count the estimated actuals calls")
+            else:
+                _LOGGER.debug(
+                    "Usage loaded%s",
+                    (" for " + redact_api_key(api_key)) if self.multi_key else "",
+                )
+            if used_reset < (previous_midnight := self.api.dt_helper.utc_previous_midnight()):
+                # A restart across UTC midnight missed the daily reset, so do it now and rotate the failure statistics later.
+                _LOGGER.warning(
+                    "Resetting usage for %s, last reset was more than 24-hours ago",
+                    redact_api_key(api_key),
+                )
+                self.missed_midnight_resets = max(self.missed_midnight_resets, (previous_midnight - used_reset).days, 1)
+                await self._reset_key_usage(api_key)
+            return True
+
+        self.api.usage_status = LoadStatus.OK
+        api_keys = self.api.options.api_key.split(",")
+        api_limit_values = self.api.options.api_limit.split(",")
+        for index in range(len(api_keys)):  # If only one limit value is present, yet there are multiple sites then use the same limit.
+            if len(api_limit_values) < index + 1:
+                api_limit_values.append(api_limit_values[index - 1])
+        api_limit_values = api_limit_values[: len(api_keys)]
+        quota = {k.strip(): int(v.strip()) for k, v in zip(api_keys, api_limit_values, strict=True)}
+
+        for api_key in api_keys:
+            api_key = api_key.strip()
+            old_api_key = self._rekey.get(api_key)  # For a re-keyed API key.
+            cache_filename = self._get_usage_cache_filename(api_key)
+            cache_exists = await self._is_file(cache_filename)
+            _LOGGER.debug(
+                "%s for %s",
+                "Usage cache " + ("exists" if cache_exists else "does not yet exist"),
+                redact_api_key(api_key),
+            )
+            cache = True
+            usage: dict[str, Any] = {}
+            if cache_exists:
+                usage = self._extant_usage.get(old_api_key, {}) if old_api_key is not None else {}
+                if not old_api_key:
+                    async with aiofiles.open(cache_filename) as file:
+                        try:
+                            usage = json.loads(await file.read(), cls=JSONDecoder)
+                        except json.decoder.JSONDecodeError:
+                            _LOGGER.error(
+                                "The usage cache for %s is corrupt, re-creating cache with zero usage",
+                                redact_api_key(api_key),
+                            )
+                            cache = False
+            else:
+                cache = False
+            if not cache and old_api_key:
+                # Multi-key, so the old cache has been removed
+                _LOGGER.debug("Using extant cache data for API key %s", redact_api_key(api_key))
+                usage = self._extant_usage.get(old_api_key, {})
+            if (cache or old_api_key) and not await sanitise_and_set_usage(api_key, usage):
+                return
+            if not cache:
+                if not old_api_key:
+                    _LOGGER.warning("Creating usage cache for %s, assuming zero API used", redact_api_key(api_key))
                     self.api.api_limits[api_key] = quota[api_key]
-                    # Reset typical to the new limit.
+                    self.api.api_used[api_key] = 0
+                    self.api.api_forced[api_key] = 0
+                    self.api.api_actuals[api_key] = 0
                     self.api.api_typical[api_key] = quota[api_key]
-                    await self.serialise_usage(api_key)
-                    _LOGGER.info("Usage loaded and cache updated with new limit")
-                elif (
-                    DAILY_FORCED_CONSUMED not in usage or DAILY_ACTUALS_CONSUMED not in usage
-                ):  # Schema upgraded, rewrite to persist new field.
-                    await self.serialise_usage(api_key)
-                    _LOGGER.debug("Usage loaded and cache updated with new schema")
-                elif DAILY_TYPICAL_FORECAST_UPDATES not in usage:
-                    await self.serialise_usage(api_key)
-                    _LOGGER.debug("Usage loaded and cache updated with typical forecast updates")
-                else:
-                    _LOGGER.debug(
-                        "Usage loaded%s",
-                        (" for " + redact_api_key(api_key)) if self.multi_key else "",
-                    )
-                if used_reset is not None:
-                    if self.api.dt_helper.real_now_utc() > used_reset + timedelta(hours=24):
-                        _LOGGER.warning(
-                            "Resetting usage for %s, last reset was more than 24-hours ago",
-                            redact_api_key(api_key),
-                        )
-                        self.api.api_used[api_key] = 0
-                        await self.serialise_usage(api_key, reset=True)
-
-            self.api.usage_status = LoadStatus.OK
-            api_keys = self.api.options.api_key.split(",")
-            api_limit_values = self.api.options.api_limit.split(",")
-            for index in range(len(api_keys)):  # If only one limit value is present, yet there are multiple sites then use the same limit.
-                if len(api_limit_values) < index + 1:
-                    api_limit_values.append(api_limit_values[index - 1])
-            api_limit_values = api_limit_values[: len(api_keys)]
-            quota = {k.strip(): int(v.strip()) for k, v in zip(api_keys, api_limit_values, strict=True)}
-
-            for api_key in api_keys:
-                api_key = api_key.strip()
-                old_api_key = self._rekey.get(api_key)  # For a re-keyed API key.
-                cache_filename = self._get_usage_cache_filename(api_key)
-                _LOGGER.debug(
-                    "%s for %s",
-                    "Usage cache " + ("exists" if Path(cache_filename).is_file() else "does not yet exist"),
-                    redact_api_key(api_key),
-                )
-                cache = True
-                usage: dict[str, Any] = {}
-                if Path(cache_filename).is_file():
-                    usage = self._extant_usage.get(old_api_key, {}) if old_api_key is not None else {}
-                    if not old_api_key:
-                        async with aiofiles.open(cache_filename) as file:
-                            try:
-                                usage = json.loads(await file.read(), cls=JSONDecoder)
-                            except json.decoder.JSONDecodeError:
-                                _LOGGER.error(
-                                    "The usage cache for %s is corrupt, re-creating cache with zero usage",
-                                    redact_api_key(api_key),
-                                )
-                                cache = False
-                    if cache and usage:
-                        await sanitise_and_set_usage(api_key, usage)
-                else:
-                    cache = False
-                if not cache:
-                    if old_api_key:
-                        # Multi-key, so the old cache has been removed
-                        _LOGGER.debug("Using extant cache data for API key %s", redact_api_key(api_key))
-                        usage = self._extant_usage.get(old_api_key, {}) if old_api_key is not None else {}
-                        await sanitise_and_set_usage(api_key, usage)
-                    else:
-                        _LOGGER.warning("Creating usage cache for %s, assuming zero API used", redact_api_key(api_key))
-                        self.api.api_limits[api_key] = quota[api_key]
-                        self.api.api_used[api_key] = 0
-                        self.api.api_forced[api_key] = 0
-                        self.api.api_actuals[api_key] = 0
-                        self.api.api_typical[api_key] = quota[api_key]
-                        self.api.api_typical_forecast_updates[api_key] = quota[api_key]
-                        self._api_used_reset[api_key] = self.api.dt_helper.utc_previous_midnight()
-                    await self.serialise_usage(api_key, reset=True)
-                _LOGGER.debug(
-                    "API counter for %s is %d/%d",
-                    redact_api_key(api_key),
-                    self.api.api_used[api_key],
-                    self.api.api_limits[api_key],
-                )
-
-        except Exception:
-            _LOGGER.exception("Exception in _sites_usage()")
-            self.api.usage_status = LoadStatus.ERROR
+                    self.api.api_typical_forecast_updates[api_key] = quota[api_key]
+                    self._api_used_reset[api_key] = self.api.dt_helper.utc_previous_midnight()
+                await self.serialise_usage(api_key, reset=True)
+            _LOGGER.debug(
+                "API counter for %s is %d/%d",
+                redact_api_key(api_key),
+                self.api.api_used[api_key],
+                self.api.api_limits[api_key],
+            )

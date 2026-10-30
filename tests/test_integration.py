@@ -1951,11 +1951,17 @@ async def test_scenarios(
             {DAILY_LIMIT: "10", DAILY_LIMIT_CONSUMED: 8, "reset": "2025-01-05T00:00:00+00:00"},
             {DAILY_LIMIT: 10, DAILY_LIMIT_CONSUMED: "8", "reset": "2025-01-05T00:00:00+00:00"},
             {DAILY_LIMIT: 10, DAILY_LIMIT_CONSUMED: 8, "reset": "notadate"},
+            {DAILY_LIMIT: 10, DAILY_LIMIT_CONSUMED: 8, "reset": "2025-01-05T00:00:00"},
+            {DAILY_LIMIT: 10, DAILY_LIMIT_CONSUMED: 8, DAILY_TYPICAL_FORECAST_UPDATES: "8", "reset": "2025-01-05T00:00:00+00:00"},
+            [10, 8],
         ]
         for test in usage_corruption:
             _LOGGER.debug("Testing usage corruption: %s", test)
+            caplog.clear()
             usage_file.write_text(json.dumps(test), encoding="utf-8")
             await _reload(hass, entry)
+            assert "is corrupt, invalid" in caplog.text
+            assert "Exception in _sites_usage()" not in caplog.text
             assert entry.state is ConfigEntryState.SETUP_ERROR, f"Expected entry state ConfigEntryState.SETUP_ERROR, got {entry.state}"
             assert entry.state is not ConfigEntryState.LOADED, "Integration should be presumed dead after corruption"
             await clear_state(hass, entry)  # Clear presumption of death

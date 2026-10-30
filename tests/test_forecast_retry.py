@@ -5,6 +5,7 @@ import copy
 from datetime import UTC, datetime as dt, timedelta
 import json
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest import mock
@@ -18,13 +19,17 @@ from custom_components.solcast_solar.const import (
     ADVANCED_TRIGGER_ON_API_AVAILABLE,
     ADVANCED_TRIGGER_ON_API_UNAVAILABLE,
     API_KEY,
+    DAILY_LIMIT_CONSUMED,
     DELAYED_RESTART_ON_CRASH,
     DOMAIN,
     FAILURE,
     FORECASTS,
     ISSUE_API_UNAVAILABLE,
+    LAST_7D,
+    LAST_14D,
     LAST_24H,
     LAST_UPDATED,
+    RESET,
     RESOURCE_ID,
     SERVICE_FORCE_UPDATE_FORECASTS,
     TASK_FORECASTS_FETCH_IMMEDIATE,
@@ -622,6 +627,41 @@ async def test_gateway_errors_are_failures_and_cancel_is_raised(
                 await solcast.fetcher.fetch_data(hours=48, path=FORECASTS, site=site_id, api_key=api_key, force=True)
         finally:
             solcast.aiohttp_session = original_session
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_restart_over_utc_midnight_resets_usage_and_rotates_failures(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+) -> None:
+    """Days of daily resets missed while Home Assistant was stopped are caught up at the next start."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        solcast = entry.runtime_data.coordinator.solcast
+        solcast.data[FAILURE][LAST_24H] = 3
+        solcast.data[FAILURE][LAST_7D] = [3, 1, 0, 0, 0, 0, 0]
+        solcast.data[FAILURE][LAST_14D] = [3, 1] + [0] * 12
+        await solcast.sites_cache.serialise_data(solcast.data, solcast.filename)
+
+        usage_file = Path(solcast.sites_cache._get_usage_cache_filename(KEY1))
+        usage = json.loads(usage_file.read_text(encoding="utf-8"))
+        usage[DAILY_LIMIT_CONSUMED] = 7
+        usage[RESET] = (solcast.dt_helper.utc_previous_midnight() - timedelta(days=2)).isoformat()
+        usage_file.write_text(json.dumps(usage), encoding="utf-8")
+
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        solcast = entry.runtime_data.coordinator.solcast
+
+        assert solcast.data[FAILURE][LAST_24H] == 0
+        assert solcast.data[FAILURE][LAST_7D] == [0, 0, 3, 1, 0, 0, 0]
+        assert solcast.data[FAILURE][LAST_14D][:4] == [0, 0, 3, 1]
+        assert len(solcast.data[FAILURE][LAST_14D]) == 14
+        assert solcast.api_typical[KEY1] == 7
+        assert solcast.sites_cache.missed_midnight_resets == 0
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

@@ -213,13 +213,17 @@ class Fetcher:
                     await raise_and_record(self.api.hass, self.api.entry, ConfigEntryNotReady, EXCEPTION_BUILD_FAILED_ACTUALS)
         return success
 
-    async def reset_failure_stats(self) -> None:
-        """Reset the failure statistics and the success counters."""
+    async def reset_failure_stats(self, days: int = 1) -> None:
+        """Reset the failure statistics and the success counters.
+
+        Arguments:
+            days (int): The number of days that have passed since the last reset.
+        """
 
         _LOGGER.debug("Resetting failure statistics")
         self.api.data[FAILURE][LAST_24H] = 0
-        self.api.data[FAILURE][LAST_7D] = [0, *self.api.data[FAILURE][LAST_7D][:-1]]
-        self.api.data[FAILURE][LAST_14D] = [0, *self.api.data[FAILURE][LAST_14D][:-1]]
+        self.api.data[FAILURE][LAST_7D] = ([0] * days + self.api.data[FAILURE][LAST_7D])[:7]
+        self.api.data[FAILURE][LAST_14D] = ([0] * days + self.api.data[FAILURE][LAST_14D])[:14]
         self.api.data[SUCCESS][SUCCESS_TRACKED] = {}
         self.api.data[SUCCESS][SUCCESS_FORCED] = {}
         self.api.data[SUCCESS][SUCCESS_ACTUALS] = {}
