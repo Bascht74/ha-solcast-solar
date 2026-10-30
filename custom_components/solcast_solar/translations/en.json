@@ -30,7 +30,7 @@
           "api_key": "API key"
         },
         "data_description": {
-          "api_key": "Enter one or more Solcast API keys, separated by commas"
+          "api_key": "Enter one or more Solcast API keys, separated by commas. Another entry may use the same key; the sites that entry fetches are then excluded here"
         },
         "description": "Solcast Account API key"
       },
@@ -41,7 +41,7 @@
           "auto_update": "Auto-update"
         },
         "data_description": {
-          "api_key": "Enter one or more Solcast API keys, separated by commas",
+          "api_key": "Enter one or more Solcast API keys, separated by commas. Another entry may use the same key; the sites that entry fetches are then excluded here",
           "api_limit": "Enter a forecast update daily limit, comma separated when using multiple keys",
           "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)"
         },
@@ -55,7 +55,7 @@
           "instance_name": "Name"
         },
         "data_description": {
-          "api_key": "Enter one or more Solcast API keys, separated by commas",
+          "api_key": "Enter one or more Solcast API keys, separated by commas. Another entry may use the same key; the sites that entry fetches are then excluded here",
           "api_limit": "Enter a forecast update daily limit, comma separated when using multiple keys",
           "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)",
           "instance_name": "Name of this plant, for example West. Leave empty only for the first entry. Further entries need a name so their files and sensors stay separate."
@@ -387,6 +387,10 @@
       "description": "Future forecast data is missing, which is unexpected. Check the logs.",
       "title": "Future forecasts missing{instance}"
     },
+    "shared_api_limit": {
+      "description": "The entries {entries} use the Solcast API key {api_key}, and their API limits (in brackets) add up to {total} calls a day. Solcast counts the calls of all entries per API key, and a hobbyist account allows {quota} calls a day, so updates may be refused before the day ends. Lower the API limits of these entries so they add up to {quota} or less. Ignore this repair if your Solcast account allows more calls.",
+      "title": "API limits of a shared Solcast API key exceed the daily quota"
+    },
     "unusual_azimuth_northern": {
       "description": "The azimuth for site {site} is unusual for the latitude of this northern hemisphere rooftop. Should this be {proposal} instead of {extant}? (Ignore the issue if the site is facing towards North.)",
       "title": "Unusual azimuth{instance}"
@@ -502,7 +506,7 @@
           "use_actuals": "Forecast history to show on the Energy dashboard"
         },
         "data_description": {
-          "api_key": "Enter one or more Solcast API keys, separated by commas",
+          "api_key": "Enter one or more Solcast API keys, separated by commas. Another entry may use the same key; the sites that entry fetches are then excluded here",
           "api_limit": "Enter a forecast update daily limit, comma separated when using multiple keys",
           "attr_breakdown": "Select which breakdowns are enabled",
           "auto_dampen": "Requires estimated actuals and a PV generation entity \u2014 see the integration documentation",

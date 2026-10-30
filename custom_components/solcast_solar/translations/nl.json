@@ -31,7 +31,7 @@
         },
         "description": "Solcast-account API-sleutel",
         "data_description": {
-          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's"
+          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's. Een andere vermelding mag dezelfde sleutel gebruiken; de sites die die vermelding ophaalt, worden hier dan uitgesloten"
         }
       },
       "reconfigure_confirm": {
@@ -42,7 +42,7 @@
         },
         "description": "Solcast accountgegevens\n\n(Als u geen automatische updates gebruikt, is automatisering vereist - zie de integratiedocumentatie)",
         "data_description": {
-          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's",
+          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's. Een andere vermelding mag dezelfde sleutel gebruiken; de sites die die vermelding ophaalt, worden hier dan uitgesloten",
           "api_limit": "Voer een dagelijkse limiet voor voorspellingsupdates in, komma-gescheiden bij gebruik van meerdere sleutels",
           "auto_update": "Als u geen automatische update gebruikt, maak dan een automatisering die de actie \"solcast_solar.update_forecasts\" periodiek aanroept, en houd u daarbij aan de door Solcast geadviseerde maximale totale limiet (meestal in totaal tien keer per dag voor één daksite, of bij twee sites vijf keer per dag)"
         }
@@ -56,7 +56,7 @@
         },
         "description": "Solcast accountgegevens\n\n(Als u geen automatische updates gebruikt, is automatisering vereist - zie de integratiedocumentatie)\n\nDe Solcast API moet beschikbaar zijn om deze integratie in eerste instantie te configureren. Als u de statusmelding '429 / Probeer het later opnieuw' ontvangt, is de API niet beschikbaar en kan de configuratie niet worden voltooid. U moet wachten. Houd er rekening mee dat de API-statuspagina op status.solcast.com vrijwel zeker geen API-problemen zal tonen. De meest waarschijnlijke oorzaak is een slechte API-gebruiker die de beschikbaarheid voor alle hobbyisten beïnvloedt.",
         "data_description": {
-          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's",
+          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's. Een andere vermelding mag dezelfde sleutel gebruiken; de sites die die vermelding ophaalt, worden hier dan uitgesloten",
           "api_limit": "Voer een dagelijkse limiet voor voorspellingsupdates in, komma-gescheiden bij gebruik van meerdere sleutels",
           "auto_update": "Als u geen automatische update gebruikt, maak dan een automatisering die de actie \"solcast_solar.update_forecasts\" periodiek aanroept, en houd u daarbij aan de door Solcast geadviseerde maximale totale limiet (meestal in totaal tien keer per dag voor één daksite, of bij twee sites vijf keer per dag)",
           "instance_name": "Naam van deze installatie, bijvoorbeeld West. Laat alleen bij de eerste vermelding leeg. Volgende vermeldingen hebben een naam nodig zodat hun bestanden en sensoren gescheiden blijven."
@@ -384,6 +384,10 @@
       "description": "De toekomstvoorspellingen ontbreken, wat onverwacht is. Controleer de logboeken.",
       "title": "Toekomstvoorspellingen ontbreken{instance}"
     },
+    "shared_api_limit": {
+      "description": "De vermeldingen {entries} gebruiken de Solcast API-sleutel {api_key}, en hun API-limieten (tussen haakjes) komen samen op {total} aanroepen per dag. Solcast telt de aanroepen van alle vermeldingen per API-sleutel, en een hobbyaccount staat {quota} aanroepen per dag toe, dus updates kunnen vóór het einde van de dag worden geweigerd. Verlaag de API-limieten van deze vermeldingen zodat ze samen {quota} of minder zijn. Negeer deze reparatie als uw Solcast-account meer aanroepen toestaat.",
+      "title": "API-limieten van een gedeelde Solcast API-sleutel overschrijden het dagelijkse quotum"
+    },
     "unusual_azimuth_northern": {
       "description": "De azimut voor locatie {site} is ongebruikelijk voor de breedtegraad van dit dak op het noordelijk halfrond. Moet dit {proposal} zijn in plaats van {extant}? (Negeer dit probleem als de locatie naar het noorden is gericht.)",
       "title": "Ongebruikelijke azimut{instance}"
@@ -500,7 +504,7 @@
         },
         "description": "Configuratieopties voor Solcast",
         "data_description": {
-          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's",
+          "api_key": "Voer een of meer Solcast API-sleutels in, gescheiden door komma's. Een andere vermelding mag dezelfde sleutel gebruiken; de sites die die vermelding ophaalt, worden hier dan uitgesloten",
           "api_limit": "Voer een dagelijkse limiet voor voorspellingsupdates in, komma-gescheiden bij gebruik van meerdere sleutels",
           "attr_breakdown": "Selecteer welke uitsplitsingen zijn ingeschakeld",
           "auto_dampen": "Vereist geschatte werkelijke waarden en een PV-productie-entiteit — zie de integratiedocumentatie",

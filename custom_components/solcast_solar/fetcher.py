@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime as dt, timedelta
+from datetime import UTC, date, datetime as dt, timedelta
 from enum import Enum
 from hashlib import md5
 import json
@@ -21,6 +21,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
+from homeassistant.util.hass_dict import HassKey
 
 from .const import (
     ADVANCED_API_RAISE_ISSUES,
@@ -74,7 +75,7 @@ from .const import (
     UPDATE_TRIES,
 )
 from .enums import AutoUpdate, SolcastApiStatus, UpdateOutcome, UpdateResult
-from .instance import repair_issue_id, repair_placeholders
+from .instance import api_keys_in_use, repair_issue_id, repair_placeholders
 from .redact import redact_api_key, redact_msg_api_key
 from .state import raise_and_record
 
@@ -100,6 +101,9 @@ async def async_trigger_automation_by_name(hass: HomeAssistant, name: str) -> bo
     return success
 
 
+_OVERSPENT_LOGGED: HassKey[dict[tuple[str | None, str], date]] = HassKey(f"{DOMAIN}_overspent_logged")
+
+
 class _DataCallStatus(Enum):
     """The result of a data call."""
 
@@ -119,6 +123,27 @@ class Fetcher:
         """
         self.api = api
         self._next_update: str | None = None
+
+    def _log_shared_key_overspent(self, api_key: str) -> None:
+        """Log once per UTC day that Solcast refused a call below this entry's limit while another entry uses the same API key."""
+
+        used, limit = self.api.api_used[api_key], self.api.api_limits[api_key]
+        entry_id = self.api.entry.entry_id if self.api.entry is not None else None
+        if used >= limit or not (others := api_keys_in_use(self.api.hass, entry_id, api_key)):
+            return
+        # Kept beyond this fetcher, so a reload does not log it again the same UTC day.
+        logged = self.api.hass.data.setdefault(_OVERSPENT_LOGGED, {})
+        if logged.get(key := (entry_id, api_key)) == (today := dt_util.utcnow().date()):
+            return
+        logged[key] = today
+        _LOGGER.warning(
+            "Solcast reports the daily limit of API key %s reached at %d of this entry's %d calls; "
+            "%s uses the same API key and spent more than its share",
+            redact_api_key(api_key),
+            used,
+            limit,
+            ", ".join(others),
+        )
 
     def _log_failure(self, message: str, *args: Any) -> None:
         """Log at warning or error level based on the failure-only advanced option."""
@@ -753,6 +778,7 @@ class Fetcher:
                                         if response_status.get(ERROR_CODE) == "TooManyRequests":
                                             _LOGGER.debug("Set status to 998, API limit exceeded")
                                             status = 998
+                                            self._log_shared_key_overspent(api_key)
                                             self.api.api_used[api_key] = self.api.api_limits[api_key]
                                             await self.api.sites_cache.serialise_usage(api_key)
                                             break

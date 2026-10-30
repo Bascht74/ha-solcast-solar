@@ -13,9 +13,13 @@ import zoneinfo
 import aiofiles
 
 from homeassistant import loader
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import (
+    SIGNAL_CONFIG_ENTRY_CHANGED,
+    ConfigEntry,
+    ConfigEntryChange,
+)
 from homeassistant.const import CONF_API_KEY, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
     ConfigEntryError,
@@ -27,6 +31,7 @@ from homeassistant.helpers import (
     entity_registry as er,
     issue_registry as ir,
 )
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
@@ -91,7 +96,7 @@ from .instance import (
     is_reserved_slug,
     shared_unique_id,
 )
-from .issues import refresh_issue_placeholders, sync_actuals_api_limit_issue
+from .issues import refresh_issue_placeholders, sync_actuals_api_limit_issue, sync_shared_api_limit_issues
 from .log import get_logger, set_log_instance
 from .solcastapi import ConnectionOptions, SolcastApi
 from .state import raise_and_record
@@ -317,6 +322,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Store the file slug once, so a later change of the transliteration cannot move this entry's files.
         hass.config_entries.async_update_entry(entry, options={**entry.options, INSTANCE_SLUG: entry_slug(entry.options)})
     refresh_issue_placeholders(hass, entry)
+    sync_shared_api_limit_issues(hass)
 
     version = await get_version(hass)
     options = await __get_options(hass, entry)
@@ -441,6 +447,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     """
     register_stub_actions(hass)
+
+    @callback
+    def _entry_changed(_change: ConfigEntryChange, entry: ConfigEntry) -> None:
+        """Count the API limits again when an entry is loaded, fails, is disabled or removed."""
+        if entry.domain == DOMAIN:
+            sync_shared_api_limit_issues(hass)
+
+    async_dispatcher_connect(hass, SIGNAL_CONFIG_ENTRY_CHANGED, _entry_changed)
     return True
 
 
@@ -459,6 +473,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """
     # Terminate all tasks
     await tasks_cancel(hass, entry)
+    # A disabled entry no longer counts towards the API limits of its keys.
+    sync_shared_api_limit_issues(hass)
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
@@ -470,6 +486,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove a named entry's cache files, crash store and repairs; the original entry's are never touched."""
 
+    sync_shared_api_limit_issues(hass, removed=entry.entry_id)
     # A reserved name from before the flow refused it would share the original entry's file names.
     if not is_named_instance(entry.options) or is_reserved_slug(entry_slug(entry.options)):
         return

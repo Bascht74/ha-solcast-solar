@@ -31,7 +31,7 @@
         },
         "description": "Clé API du compte Solcast",
         "data_description": {
-          "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules"
+          "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules. Une autre entrée peut utiliser la même clé ; les sites que cette entrée récupère sont alors exclus ici"
         }
       },
       "reconfigure_confirm": {
@@ -42,7 +42,7 @@
         },
         "description": "Détails du compte Solcast\n\n(S'il n'y a pas de mise à jour automatique, une automatisation est requise - voir la documentation d'intégration)",
         "data_description": {
-          "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules",
+          "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules. Une autre entrée peut utiliser la même clé ; les sites que cette entrée récupère sont alors exclus ici",
           "api_limit": "Entrez une limite quotidienne de mises à jour des prévisions, séparées par des virgules en cas de clés multiples",
           "auto_update": "Si vous n'utilisez pas la mise à jour automatique, créez une automatisation qui appelle périodiquement l'action \"solcast_solar.update_forecasts\", tout en respectant la limite totale maximale conseillée par Solcast (généralement dix fois au total par jour pour un site sur toit, ou avec deux sites cinq fois par jour)"
         }
@@ -56,7 +56,7 @@
         },
         "description": "Détails du compte Solcast\n\n(S'il n'y a pas de mise à jour automatique, une automatisation est requise - voir la documentation d'intégration)\n\nL'API Solcast doit être disponible pour configurer cette intégration pour la première fois. Si vous recevez le message de statut '429 / Try again later', l'API est indisponible et la configuration ne peut pas être complétée. Vous devez patienter. Notez que la page de statut de l'API sur status.solcast.com n'indiquera presque certainement aucun problème d'API. La cause réside très probablement dans un seul mauvais utilisateur de l'API qui affecte la disponibilité pour tous les amateurs.",
         "data_description": {
-          "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules",
+          "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules. Une autre entrée peut utiliser la même clé ; les sites que cette entrée récupère sont alors exclus ici",
           "api_limit": "Entrez une limite quotidienne de mises à jour des prévisions, séparées par des virgules en cas de clés multiples",
           "auto_update": "Si vous n'utilisez pas la mise à jour automatique, créez une automatisation qui appelle périodiquement l'action \"solcast_solar.update_forecasts\", tout en respectant la limite totale maximale conseillée par Solcast (généralement dix fois au total par jour pour un site sur toit, ou avec deux sites cinq fois par jour)",
           "instance_name": "Nom de cette installation, par exemple Ouest. Ne le laissez vide que pour la première entrée. Les entrées suivantes ont besoin d'un nom pour que leurs fichiers et capteurs restent séparés."
@@ -384,6 +384,10 @@
       "description": "Les données de prévisions futures sont manquantes, ce qui est inattendu. Vérifiez les journaux.",
       "title": "Prévisions manquantes{instance}"
     },
+    "shared_api_limit": {
+      "description": "Les entrées {entries} utilisent la clé API Solcast {api_key}, et leurs limites API (entre parenthèses) totalisent {total} appels par jour. Solcast compte les appels de toutes les entrées par clé API, et un compte amateur autorise {quota} appels par jour, donc des mises à jour peuvent être refusées avant la fin de la journée. Réduisez les limites API de ces entrées pour qu'elles totalisent {quota} ou moins. Ignorez cette réparation si votre compte Solcast autorise plus d'appels.",
+      "title": "Les limites API d'une clé API Solcast partagée dépassent le quota quotidien"
+    },
     "unusual_azimuth_northern": {
       "description": "L'azimut du site {site} est inhabituel pour la latitude de ce toit de l'hémisphère nord. Devrait-on plutôt choisir {proposal} que {extant}? (Ignorez le problème si le site est orienté vers le nord.)",
       "title": "Azimut inhabituel{instance}"
@@ -500,7 +504,7 @@
         },
         "description": "Options de configuration Solcast",
         "data_description": {
-          "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules",
+          "api_key": "Entrez une ou plusieurs clés API Solcast, séparées par des virgules. Une autre entrée peut utiliser la même clé ; les sites que cette entrée récupère sont alors exclus ici",
           "api_limit": "Entrez une limite quotidienne de mises à jour des prévisions, séparées par des virgules en cas de clés multiples",
           "attr_breakdown": "Choisissez les répartitions activées",
           "auto_dampen": "Nécessite des valeurs réelles estimées et une entité de production PV — voir la documentation d'intégration",

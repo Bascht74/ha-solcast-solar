@@ -31,7 +31,7 @@
         },
         "description": "API-Schlüssel für das Solcast-Konto",
         "data_description": {
-          "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt"
+          "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt. Ein anderer Eintrag darf denselben Schlüssel nutzen; die Standorte, die er abruft, werden hier dann ausgeschlossen"
         }
       },
       "reconfigure_confirm": {
@@ -42,7 +42,7 @@
         },
         "description": "Solcast-Kontodaten\n\n(Wenn keine automatische Aktualisierung erfolgt, ist eine Automatisierung erforderlich – siehe Integrationsdokumentation)",
         "data_description": {
-          "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt",
+          "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt. Ein anderer Eintrag darf denselben Schlüssel nutzen; die Standorte, die er abruft, werden hier dann ausgeschlossen",
           "api_limit": "Geben Sie ein tägliches Prognoseaktualisierungslimit ein, bei mehreren Schlüsseln kommagetrennt",
           "auto_update": "Wenn Sie keine automatische Aktualisierung verwenden, erstellen Sie eine Automatisierung, die die Aktion \"solcast_solar.update_forecasts\" regelmäßig aufruft, und halten Sie dabei das von Solcast empfohlene maximale Gesamtlimit ein (in der Regel insgesamt zehnmal pro Tag für einen Dachstandort oder bei zwei Standorten fünfmal pro Tag)"
         }
@@ -56,7 +56,7 @@
         },
         "description": "Solcast-Kontodaten\n\n(Wenn keine automatische Aktualisierung erfolgt, ist eine Automatisierung erforderlich – siehe Integrationsdokumentation)\n\nDie Solcast-API muss verfügbar sein, um diese Integration erstmalig konfigurieren zu können. Wenn Sie die Statusmeldung '429 / Try again later' erhalten, ist die API nicht verfügbar und die Konfiguration kann nicht abgeschlossen werden. Sie müssen warten. Beachten Sie, dass die API-Statusseite unter status.solcast.com höchstwahrscheinlich keine API-Probleme anzeigt. Die Ursache liegt höchstwahrscheinlich bei einem einzelnen schlechten API-Nutzer, der die Verfügbarkeit für alle Hobbyanwender beeinträchtigt.",
         "data_description": {
-          "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt",
+          "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt. Ein anderer Eintrag darf denselben Schlüssel nutzen; die Standorte, die er abruft, werden hier dann ausgeschlossen",
           "api_limit": "Geben Sie ein tägliches Prognoseaktualisierungslimit ein, bei mehreren Schlüsseln kommagetrennt",
           "auto_update": "Wenn Sie keine automatische Aktualisierung verwenden, erstellen Sie eine Automatisierung, die die Aktion \"solcast_solar.update_forecasts\" regelmäßig aufruft, und halten Sie dabei das von Solcast empfohlene maximale Gesamtlimit ein (in der Regel insgesamt zehnmal pro Tag für einen Dachstandort oder bei zwei Standorten fünfmal pro Tag)",
           "instance_name": "Name dieser Anlage, zum Beispiel West. Leer nur beim ersten Eintrag. Weitere Einträge brauchen einen Namen, damit Dateien und Sensoren getrennt bleiben."
@@ -384,6 +384,10 @@
       "description": "Zukünftige Prognosedaten fehlen, was unerwartet ist. Überprüfen Sie die Protokolle.",
       "title": "Zukunftsprognosen fehlen{instance}"
     },
+    "shared_api_limit": {
+      "description": "Die Einträge {entries} nutzen den Solcast-API-Schlüssel {api_key}, und ihre API-Limits (in Klammern) ergeben zusammen {total} Aufrufe pro Tag. Solcast zählt die Aufrufe aller Einträge pro API-Schlüssel, und ein Hobbyist-Konto erlaubt {quota} Aufrufe pro Tag, daher können Aktualisierungen vor Tagesende abgelehnt werden. Senken Sie die API-Limits dieser Einträge, sodass sie zusammen höchstens {quota} ergeben. Ignorieren Sie diese Reparatur, wenn Ihr Solcast-Konto mehr Aufrufe erlaubt.",
+      "title": "API-Limits eines gemeinsamen Solcast-API-Schlüssels überschreiten das Tageskontingent"
+    },
     "unusual_azimuth_northern": {
       "description": "Der Azimut für Standort {site} ist für den Breitengrad dieses Daches auf der Nordhalbkugel ungewöhnlich. Sollte dies {proposal} statt {extant} heißen? (Ignorieren Sie das Problem, wenn der Standort nach Norden ausgerichtet ist.)",
       "title": "Ungewöhnlicher Azimut{instance}"
@@ -500,7 +504,7 @@
         },
         "description": "Dein Solcast-API-Kontoschlüssel",
         "data_description": {
-          "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt",
+          "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt. Ein anderer Eintrag darf denselben Schlüssel nutzen; die Standorte, die er abruft, werden hier dann ausgeschlossen",
           "api_limit": "Geben Sie ein tägliches Prognoseaktualisierungslimit ein, bei mehreren Schlüsseln kommagetrennt",
           "attr_breakdown": "Wählen Sie, welche Aufschlüsselungen aktiviert sind",
           "auto_dampen": "Erfordert geschätzte Istwerte und eine PV-Erzeugungseinheit — siehe Integrationsdokumentation",

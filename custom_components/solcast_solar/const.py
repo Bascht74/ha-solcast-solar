@@ -283,6 +283,7 @@ HALF_HOUR_SECONDS: Final[int] = 1800
 HARD_LIMIT_API: Final[str] = "hard_limit_api"
 HEADERS_ACCEPT: Final[str] = "Accept"
 HEADERS_USER_AGENT: Final[str] = "User-Agent"
+HOBBYIST_DAILY_QUOTA: Final[int] = 10
 HOURS: Final[str] = "hours"
 IGNORE_AUTO_ENABLED: Final[str] = "ignore_auto_enabled"
 INFINITY_EXCLUDED: Final[str] = "infinity_excluded"

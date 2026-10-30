@@ -31,7 +31,7 @@
         },
         "description": "Chave API da conta Solcast",
         "data_description": {
-          "api_key": "Insira uma ou mais chaves API Solcast, separadas por vírgulas"
+          "api_key": "Insira uma ou mais chaves API Solcast, separadas por vírgulas. Outra entrada pode usar a mesma chave; os sites que essa entrada obtém são então excluídos aqui"
         }
       },
       "reconfigure_confirm": {
@@ -42,7 +42,7 @@
         },
         "description": "Detalhes da conta Solcast\n\n(Se não usar a atualização automática, é necessária uma automação - consulte a documentação da integração)",
         "data_description": {
-          "api_key": "Insira uma ou mais chaves API Solcast, separadas por vírgulas",
+          "api_key": "Insira uma ou mais chaves API Solcast, separadas por vírgulas. Outra entrada pode usar a mesma chave; os sites que essa entrada obtém são então excluídos aqui",
           "api_limit": "Insira um limite diário de atualização de previsão, separado por vírgulas ao usar várias chaves",
           "auto_update": "Se não usar a atualização automática, crie uma automação que chame periodicamente a ação \"solcast_solar.update_forecasts\", respeitando o limite máximo total recomendado pela Solcast (normalmente dez vezes no total por dia para um único local em telhado, ou com dois locais cinco vezes por dia)"
         }
@@ -56,7 +56,7 @@
         },
         "description": "Detalhes da conta Solcast\n\n(Se não usar a atualização automática, é necessária uma automação - consulte a documentação da integração)\n\nA API Solcast deve estar disponível para configurar esta integração pela primeira vez. Se receber a mensagem de status '429 / Try again later', a API está indisponível e a configuração não pode ser concluída. Você precisa aguardar. Note que a página de status da API em status.solcast.com quase certamente não mostrará nenhum problema de API. A causa mais provável é um único utilizador problemático da API que está a afetar a disponibilidade para todos os hobbyistas.",
         "data_description": {
-          "api_key": "Insira uma ou mais chaves API Solcast, separadas por vírgulas",
+          "api_key": "Insira uma ou mais chaves API Solcast, separadas por vírgulas. Outra entrada pode usar a mesma chave; os sites que essa entrada obtém são então excluídos aqui",
           "api_limit": "Insira um limite diário de atualização de previsão, separado por vírgulas ao usar várias chaves",
           "auto_update": "Se não usar a atualização automática, crie uma automação que chame periodicamente a ação \"solcast_solar.update_forecasts\", respeitando o limite máximo total recomendado pela Solcast (normalmente dez vezes no total por dia para um único local em telhado, ou com dois locais cinco vezes por dia)",
           "instance_name": "Nome desta instalação, por exemplo Oeste. Deixe vazio apenas na primeira entrada. As entradas seguintes precisam de um nome para que os seus ficheiros e sensores fiquem separados."
@@ -384,6 +384,10 @@
       "description": "Dados de previsão futura em falta, o que é inesperado. Verifique os registos.",
       "title": "Previsões futuras em falta{instance}"
     },
+    "shared_api_limit": {
+      "description": "As entradas {entries} usam a chave API Solcast {api_key}, e os seus limites de API (entre parênteses) somam {total} chamadas por dia. A Solcast conta as chamadas de todas as entradas por chave API, e uma conta de hobbyista permite {quota} chamadas por dia, por isso as atualizações podem ser recusadas antes do fim do dia. Reduza os limites de API destas entradas para que somem {quota} ou menos. Ignore esta reparação se a sua conta Solcast permitir mais chamadas.",
+      "title": "Os limites de API de uma chave API Solcast compartilhada excedem a cota diária"
+    },
     "unusual_azimuth_northern": {
       "description": "O azimute do local {site} é incomum para a latitude deste telhado no hemisfério norte. Deveria ser {proposal} em vez de {extant}? (Ignore o problema se o local estiver voltado para o norte.)",
       "title": "Azimute incomum{instance}"
@@ -500,7 +504,7 @@
         },
         "description": "Opções de configuração do Solcast",
         "data_description": {
-          "api_key": "Insira uma ou mais chaves API Solcast, separadas por vírgulas",
+          "api_key": "Insira uma ou mais chaves API Solcast, separadas por vírgulas. Outra entrada pode usar a mesma chave; os sites que essa entrada obtém são então excluídos aqui",
           "api_limit": "Insira um limite diário de atualização de previsão, separado por vírgulas ao usar várias chaves",
           "attr_breakdown": "Selecione quais detalhamentos estão ativados",
           "auto_dampen": "Requer estimativas reais e uma entidade de geração fotovoltaica — consulte a documentação de integração",

@@ -1,10 +1,12 @@
 """Issue registry helpers for Solcast Solar."""
 
+from collections import defaultdict
 from collections.abc import Mapping
 from datetime import datetime as dt
+from hashlib import sha256
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
@@ -19,6 +21,7 @@ from .const import (
     DT_DATE_ONLY_FORMAT,
     GET_ACTUALS,
     ISSUE_ACTUALS_API_LIMIT,
+    HOBBYIST_DAILY_QUOTA,
     ISSUE_ACTUALS_QUOTA_TODAY,
     ISSUE_ADVANCED_DEPRECATED,
     ISSUE_ADVANCED_PROBLEM,
@@ -34,12 +37,14 @@ from .const import (
 )
 from .enums import AutoUpdate
 from .instance import (
+    api_key_limits,
     is_named_instance,
     repair_placeholders,
     scoped_issue_id,
 )
 from .log import get_logger
 from .util import split_and_strip
+from .redact import redact_api_key
 
 _LOGGER = get_logger(__name__)
 
@@ -191,6 +196,57 @@ def refresh_issue_placeholders(hass: HomeAssistant, entry: ConfigEntry) -> None:
             translation_key=issue.translation_key,
             translation_placeholders=repair_placeholders(entry, issue.translation_placeholders),
         )
+
+
+def _fetched_api_keys(entry: ConfigEntry) -> set[str] | None:
+    """Return the API keys a loaded entry fetches a site with, or None while that is not known."""
+
+    if entry.state is ConfigEntryState.LOADED:
+        return set(entry.runtime_data.coordinator.solcast.api_sites_per_key)
+    return None
+
+
+def sync_shared_api_limit_issues(hass: HomeAssistant, removed: str | None = None) -> None:
+    """Raise a repair for each API key whose entries have API limits that add up to more than a hobbyist quota.
+
+    Solcast counts the calls of every entry that uses an API key to fetch a site. A disabled entry, the entry being
+    removed, and a key whose sites a loaded entry all excludes do not count. An entry that is enabled but not loaded
+    yet counts with every key, so the repair, and an Ignore of it, stays put while entries start.
+    """
+
+    limits: defaultdict[str, list[tuple[str, int]]] = defaultdict(list)
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.entry_id != removed and entry.disabled_by is None:
+            fetched = _fetched_api_keys(entry)
+            for api_key, limit in api_key_limits(entry.options).items():
+                if fetched is None or api_key in fetched:
+                    limits[api_key].append((entry.title, limit))
+    raised: set[str] = set()
+    for api_key, entry_limits in limits.items():
+        total = sum(limit for _, limit in entry_limits)
+        if len(entry_limits) < 2 or total <= HOBBYIST_DAILY_QUOTA:
+            continue
+        issue_id = f"{ISSUE_SHARED_API_LIMIT}_{sha256(api_key.encode()).hexdigest()[:12]}"
+        raised.add(issue_id)
+        entries = ", ".join(sorted(f"{title} ({limit})" for title, limit in entry_limits))
+        placeholders = {"api_key": redact_api_key(api_key), "entries": entries, "total": str(total), "quota": str(HOBBYIST_DAILY_QUOTA)}
+        if (issue := ir.async_get(hass).async_get_issue(DOMAIN, issue_id)) is not None and issue.translation_placeholders == placeholders:
+            continue  # Checked again on every change of an entry
+        _LOGGER.debug("Raise issue `%s`: API limits of %s add up to %d", issue_id, entries, total)
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            is_persistent=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_SHARED_API_LIMIT,
+            translation_placeholders=placeholders,
+        )
+    for domain, issue_id in list(ir.async_get(hass).issues):
+        if domain == DOMAIN and issue_id.startswith(f"{ISSUE_SHARED_API_LIMIT}_") and issue_id not in raised:
+            _LOGGER.debug("Remove issue for %s", issue_id)
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 def sync_actuals_quota_risk_issue(

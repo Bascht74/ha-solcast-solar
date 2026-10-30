@@ -31,7 +31,7 @@
         },
         "description": "Klucz API konta Solcast",
         "data_description": {
-          "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami"
+          "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami. Inny wpis może używać tego samego klucza; witryny pobierane przez ten wpis są wtedy tutaj wykluczone"
         }
       },
       "reconfigure_confirm": {
@@ -42,7 +42,7 @@
         },
         "description": "Dane konta Solcast\n\n(Jeśli nie ma automatycznej aktualizacji, wymagana jest automatyzacja - zobacz dokumentację integracji)",
         "data_description": {
-          "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami",
+          "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami. Inny wpis może używać tego samego klucza; witryny pobierane przez ten wpis są wtedy tutaj wykluczone",
           "api_limit": "Wprowadź dzienny limit aktualizacji prognozy, rozdzielony przecinkami przy użyciu wielu kluczy",
           "auto_update": "Jeśli nie używasz automatycznej aktualizacji, utwórz automatyzację, która okresowo wywołuje akcję \"solcast_solar.update_forecasts\", przestrzegając zalecanego przez Solcast maksymalnego łącznego limitu (zwykle łącznie dziesięć razy dziennie dla jednego miejsca dachowego, a przy dwóch miejscach pięć razy dziennie)"
         }
@@ -56,7 +56,7 @@
         },
         "description": "Dane konta Solcast\n\n(Jeśli nie ma automatycznej aktualizacji, wymagana jest automatyzacja - zobacz dokumentację integracji)\n\nAPI Solcast musi być dostępne, aby wstępnie skonfigurować tę integrację. Jeśli otrzymasz komunikat o stanie '429 / Try again later', API jest niedostępne i konfiguracja nie może zostać ukończona. Musisz poczekać. Należy pamiętać, że strona stanu API pod adresem status.solcast.com prawie na pewno nie pokaże żadnych problemów z API. Przyczyną jest najprawdopodobniej pojedynczy nieodpowiedzialny użytkownik API, który wpływa na dostępność dla wszystkich hobbystów.",
         "data_description": {
-          "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami",
+          "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami. Inny wpis może używać tego samego klucza; witryny pobierane przez ten wpis są wtedy tutaj wykluczone",
           "api_limit": "Wprowadź dzienny limit aktualizacji prognozy, rozdzielony przecinkami przy użyciu wielu kluczy",
           "auto_update": "Jeśli nie używasz automatycznej aktualizacji, utwórz automatyzację, która okresowo wywołuje akcję \"solcast_solar.update_forecasts\", przestrzegając zalecanego przez Solcast maksymalnego łącznego limitu (zwykle łącznie dziesięć razy dziennie dla jednego miejsca dachowego, a przy dwóch miejscach pięć razy dziennie)",
           "instance_name": "Nazwa tej instalacji, na przykład Zachód. Pozostaw puste tylko dla pierwszego wpisu. Kolejne wpisy wymagają nazwy, aby ich pliki i czujniki pozostały oddzielne."
@@ -384,6 +384,10 @@
       "description": "Brak danych prognozy na przyszłość, co jest nieoczekiwane. Sprawdź dzienniki.",
       "title": "Brak prognoz na przyszłość{instance}"
     },
+    "shared_api_limit": {
+      "description": "Wpisy {entries} używają klucza API Solcast {api_key}, a ich limity API (w nawiasach) wynoszą łącznie {total} wywołań dziennie. Solcast liczy wywołania wszystkich wpisów dla każdego klucza API, a konto hobbysty pozwala na {quota} wywołań dziennie, więc aktualizacje mogą zostać odrzucone przed końcem dnia. Obniż limity API tych wpisów tak, aby łącznie wynosiły {quota} lub mniej. Zignoruj tę naprawę, jeśli Twoje konto Solcast pozwala na więcej wywołań.",
+      "title": "Limity API współdzielonego klucza API Solcast przekraczają dzienny limit"
+    },
     "unusual_azimuth_northern": {
       "description": "Azymut dla miejsca {site} jest nietypowy dla szerokości geograficznej tego dachu na półkuli północnej. Czy powinno to być {proposal} zamiast {extant}? (Jeśli strona jest skierowana na północ, możesz zignorować ten problem.)",
       "title": "Nietypowy azymut{instance}"
@@ -500,7 +504,7 @@
         },
         "description": "Opcje konfiguracji Solcast",
         "data_description": {
-          "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami",
+          "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami. Inny wpis może używać tego samego klucza; witryny pobierane przez ten wpis są wtedy tutaj wykluczone",
           "api_limit": "Wprowadź dzienny limit aktualizacji prognozy, rozdzielony przecinkami przy użyciu wielu kluczy",
           "attr_breakdown": "Wybierz, które podziały są włączone",
           "auto_dampen": "Wymaga szacowanych wartości rzeczywistych i encji generacji fotowoltaicznej — patrz dokumentacja integracji",

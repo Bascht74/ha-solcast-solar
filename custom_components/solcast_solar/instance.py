@@ -12,11 +12,13 @@ from pathlib import Path
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
 
 from .const import (
+    API_LIMIT,
     CONFIG_DISCRETE_NAME,
     CONFIG_FOLDER_DISCRETE,
     DOMAIN,
@@ -30,6 +32,7 @@ from .const import (
     TITLE,
 )
 from .log import get_logger
+from .util import split_and_strip
 
 _LOGGER = get_logger(__name__)
 _UMLAUT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})  # codespell:ignore ue
@@ -157,6 +160,19 @@ def repair_placeholders(entry: Any, extra: Mapping[str, str] | None = None) -> d
     return {"instance": instance, **(extra or {})}
 
 
+def api_keys_in_use(hass: HomeAssistant, entry_id: str | None, api_key: str) -> list[str]:
+    """Return the titles of the other entries, not disabled, that use one of these API keys."""
+
+    keys = set(split_and_strip(api_key))
+    return sorted(
+        other.title
+        for other in hass.config_entries.async_entries(DOMAIN)
+        if other.entry_id != entry_id
+        and other.disabled_by is None
+        and keys & set(split_and_strip(str(other.options.get(CONF_API_KEY, ""))))
+    )
+
+
 def _counted_rooftops(hass: HomeAssistant, entry: ConfigEntry) -> set[str]:
     """Return the rooftops of an entry: the loaded sites, or else its rooftop sensors in the entity registry."""
 
@@ -183,6 +199,7 @@ def entry_rooftops(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:
 
 def rooftops_counted_elsewhere(hass: HomeAssistant, entry_id: str | None, rooftops: list[str], excluded: list[str]) -> dict[str, str]:
     """Return the rooftops this entry would count that another entry counts already, with that entry's title.
+
     Every entry of the domain is checked, also one that is not loaded, failed to set up or is disabled.
     """
 
@@ -225,3 +242,11 @@ def check_rooftops(
     if clash:
         _LOGGER.debug("Site(s) %s fetched by %s, so excluded here", ", ".join(sorted(clash)), ", ".join(sorted(set(clash.values()))))
     return excluded, None, {}
+
+
+def api_key_limits(options: Mapping[str, Any]) -> dict[str, int]:
+    """Return the API limit of each API key of an entry; a key without its own limit takes the one before it."""
+
+    api_keys = split_and_strip(str(options.get(CONF_API_KEY, "")))
+    limits = [int(limit) for limit in split_and_strip(str(options.get(API_LIMIT, "10")))] or [10]
+    return {api_key: limits[min(index, len(limits) - 1)] for index, api_key in enumerate(api_keys)}

@@ -31,7 +31,7 @@
         },
         "description": "Clave API de cuenta Solcast",
         "data_description": {
-          "api_key": "Ingrese una o más claves API de Solcast, separadas por comas"
+          "api_key": "Ingrese una o más claves API de Solcast, separadas por comas. Otra entrada puede usar la misma clave; los sitios que esa entrada obtiene se excluyen entonces aquí"
         }
       },
       "reconfigure_confirm": {
@@ -42,7 +42,7 @@
         },
         "description": "Detalles de la cuenta Solcast\n\n(Si no se utiliza la actualización automática, se requiere una automatización; consulte la documentación de integración)",
         "data_description": {
-          "api_key": "Ingrese una o más claves API de Solcast, separadas por comas",
+          "api_key": "Ingrese una o más claves API de Solcast, separadas por comas. Otra entrada puede usar la misma clave; los sitios que esa entrada obtiene se excluyen entonces aquí",
           "api_limit": "Ingrese un límite diario de actualización de pronóstico, separado por comas al usar múltiples claves",
           "auto_update": "Si no usa la actualización automática, cree una automatización que llame periódicamente a la acción \"solcast_solar.update_forecasts\", respetando el límite total máximo recomendado por Solcast (normalmente diez veces en total por día para un sitio de azotea, o con dos sitios cinco veces por día)"
         }
@@ -56,7 +56,7 @@
         },
         "description": "Detalles de la cuenta Solcast\n\n(Si no se utiliza la actualización automática, se requiere una automatización; consulte la documentación de integración)\n\nLa API de Solcast debe estar disponible para configurar esta integración por primera vez. Si recibe el mensaje de estado '429 / Try again later', significa que la API no está disponible y la configuración no puede completarse. Debe esperar. Tenga en cuenta que la página de estado de la API en status.solcast.com casi con certeza no mostrará ningún problema de API. La causa más probable es un único usuario problemático de la API que afecta la disponibilidad para todos los aficionados.",
         "data_description": {
-          "api_key": "Ingrese una o más claves API de Solcast, separadas por comas",
+          "api_key": "Ingrese una o más claves API de Solcast, separadas por comas. Otra entrada puede usar la misma clave; los sitios que esa entrada obtiene se excluyen entonces aquí",
           "api_limit": "Ingrese un límite diario de actualización de pronóstico, separado por comas al usar múltiples claves",
           "auto_update": "Si no usa la actualización automática, cree una automatización que llame periódicamente a la acción \"solcast_solar.update_forecasts\", respetando el límite total máximo recomendado por Solcast (normalmente diez veces en total por día para un sitio de azotea, o con dos sitios cinco veces por día)",
           "instance_name": "Nombre de esta instalación, por ejemplo Oeste. Déjelo vacío solo en la primera entrada. Las demás entradas necesitan un nombre para que sus archivos y sensores se mantengan separados."
@@ -384,6 +384,10 @@
       "description": "Faltan datos de pronóstico futuro, lo cual es inesperado. Verifique los registros.",
       "title": "Faltan previsiones de futuro{instance}"
     },
+    "shared_api_limit": {
+      "description": "Las entradas {entries} usan la clave API de Solcast {api_key}, y sus límites de API (entre paréntesis) suman {total} llamadas al día. Solcast cuenta las llamadas de todas las entradas por clave API, y una cuenta de aficionado permite {quota} llamadas al día, por lo que las actualizaciones pueden ser rechazadas antes de que termine el día. Reduzca los límites de API de estas entradas para que sumen {quota} o menos. Ignore esta reparación si su cuenta de Solcast permite más llamadas.",
+      "title": "Los límites de API de una clave API de Solcast compartida superan la cuota diaria"
+    },
     "unusual_azimuth_northern": {
       "description": "El azimut del sitio {site} es inusual para la latitud de este tejado del hemisferio norte. ¿Debería ser {proposal} en lugar de {extant}? (Ignore el problema si el sitio está orientado hacia el norte).",
       "title": "Azimut inusual{instance}"
@@ -500,7 +504,7 @@
         },
         "description": "Opciones de configuración de Solcast",
         "data_description": {
-          "api_key": "Ingrese una o más claves API de Solcast, separadas por comas",
+          "api_key": "Ingrese una o más claves API de Solcast, separadas por comas. Otra entrada puede usar la misma clave; los sitios que esa entrada obtiene se excluyen entonces aquí",
           "api_limit": "Ingrese un límite diario de actualización de pronóstico, separado por comas al usar múltiples claves",
           "attr_breakdown": "Seleccione qué desgloses están habilitados",
           "auto_dampen": "Requiere valores reales estimados y una entidad de generación FV — consulte la documentación de integración",
