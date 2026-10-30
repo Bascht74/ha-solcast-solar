@@ -56,13 +56,19 @@ from .log import get_logger
 _LOGGER = get_logger(__name__)
 
 
-async def async_is_allow_exceed_api_limit(hass: HomeAssistant) -> bool:
-    """Return whether the advanced API limit override is enabled."""
+async def async_is_allow_exceed_api_limit(hass: HomeAssistant, advanced_file: Path | None = None) -> bool:
+    """Return whether the allow-exceed flag is set in this entry's advanced file.
 
-    config_dir = Path(hass.config.config_dir)
-    advanced_dir = config_dir / CONFIG_DISCRETE_NAME if CONFIG_FOLDER_DISCRETE else config_dir
-    advanced_file = advanced_dir / "solcast-advanced.json"
-    if not advanced_file.exists():
+    The original entry keeps ``solcast-advanced.json``. A named entry reads
+    ``solcast-<slug>-advanced.json``. Callers that omit the path keep the
+    original file, which is what the first config flow and the tests use.
+    """
+
+    if advanced_file is None:
+        config_dir = Path(hass.config.config_dir)
+        advanced_dir = config_dir / CONFIG_DISCRETE_NAME if CONFIG_FOLDER_DISCRETE else config_dir
+        advanced_file = advanced_dir / "solcast-advanced.json"
+    if not await hass.async_add_executor_job(advanced_file.exists):
         return False
 
     def _read_advanced_setting() -> bool:

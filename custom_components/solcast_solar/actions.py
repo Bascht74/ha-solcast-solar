@@ -646,7 +646,7 @@ class ServiceActions:
             api_count = len(opt[CONF_API_KEY].split(","))
 
         if (api_limit := call_data.get(API_LIMIT)) is not None:
-            allow_exceed = await async_is_allow_exceed_api_limit(self._hass)
+            allow_exceed = await async_is_allow_exceed_api_limit(self._hass, Path(self._solcast.filename_advanced))
             validated_quota, error = validate_api_limit_value(api_limit, api_count, allow_exceed=allow_exceed)
             if error is not None:
                 raise ServiceValidationError(translation_domain=DOMAIN, translation_key=error)

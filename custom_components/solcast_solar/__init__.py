@@ -81,6 +81,8 @@ from .const import (
 from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, HistoryType, LoadStatus
 from .instance import (
+    cache_file_path,
+    cache_stem,
     entry_slug,
     is_named_instance,
     shared_unique_id,
@@ -145,11 +147,7 @@ async def __get_options(hass: HomeAssistant, entry: ConfigEntry) -> ConnectionOp
         entry.options[CONF_API_KEY],
         entry.options.get(API_LIMIT, 10),
         DEFAULT_SOLCAST_HTTPS_URL,
-        hass.config.path(
-            f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}/solcast.json"
-            if CONFIG_FOLDER_DISCRETE
-            else f"{hass.config.config_dir}/solcast.json"
-        ),
+        cache_file_path(hass, entry.options),
         await __get_time_zone(hass),
         entry.options.get(AUTO_UPDATE, AutoUpdate.NONE),
         dampening_option,
@@ -690,10 +688,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             default_list: list[str] = []
             config_dir = f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}" if CONFIG_FOLDER_DISCRETE else hass.config.config_dir
+            stem = cache_stem(new_options)
+            several_keys = len(new_options[CONF_API_KEY].split(",")) > 1
             for api_key in new_options[CONF_API_KEY].split(","):
-                api_cache_filename = (
-                    f"{config_dir}/solcast-usage{'' if len(new_options[CONF_API_KEY].split(',')) < 2 else '-' + api_key.strip()}.json"
-                )
+                api_cache_filename = f"{config_dir}/{stem}-usage{'-' + api_key.strip() if several_keys else ''}.json"
                 async with aiofiles.open(api_cache_filename) as f:
                     usage = json.loads(await f.read())
                 default_list.append(str(usage[DAILY_LIMIT]))

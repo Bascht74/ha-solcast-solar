@@ -8,11 +8,15 @@ Rooftop sensors stay on the resource ID, which is already unique.
 """
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
+from homeassistant.core import HomeAssistant
 from homeassistant.util import slugify
 
 from .const import (
+    CONFIG_DISCRETE_NAME,
+    CONFIG_FOLDER_DISCRETE,
     INSTANCE_NAME,
     INSTANCE_SLUG,
     INTEGRATION,
@@ -92,3 +96,30 @@ def shared_unique_id(options: Mapping[str, Any] | None, key: str) -> str:
     if not slug:
         return key
     return f"{slug}_{key}"
+
+
+def cache_stem(options: Mapping[str, Any] | None) -> str:
+    """Return ``solcast`` or ``solcast-<slug>``."""
+
+    slug = entry_slug(options)
+    if not slug:
+        return "solcast"
+    return f"solcast-{slug}"
+
+
+def cache_file_path(hass: HomeAssistant, options: Mapping[str, Any] | None) -> str:
+    """Return the cache path in the same shape the original entry uses today."""
+
+    stem = cache_stem(options)
+    return hass.config.path(
+        f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}/{stem}.json"
+        if CONFIG_FOLDER_DISCRETE
+        else f"{hass.config.config_dir}/{stem}.json"
+    )
+
+
+def advanced_file_path(hass: HomeAssistant, options: Mapping[str, Any] | None) -> Path:
+    """Return the advanced-options file that belongs to this cache stem."""
+
+    cache = Path(cache_file_path(hass, options))
+    return cache.parent / f"{cache.stem}-advanced.json"
