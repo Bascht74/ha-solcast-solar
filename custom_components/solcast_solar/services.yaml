@@ -86,8 +86,12 @@ query_forecast_data:
         datetime:
     undampened:
       example: "false"
+      selector:
+        boolean:
     site:
       example: "1234-5678-9012-3456"
+      selector:
+        text:
 
 query_estimate_data:
   name: Query estimates
@@ -111,8 +115,12 @@ query_estimate_data:
         datetime:
     dampened:
       example: "false"
+      selector:
+        boolean:
     site:
       example: "1234-5678-9012-3456"
+      selector:
+        text:
 
 set_custom_hours:
   name: Set custom hours sensor
@@ -128,6 +136,8 @@ set_custom_hours:
           integration: solcast_solar
     hours:
       example: "6"
+      selector:
+        text:
 
 set_dampening:
   name: Set forecasts dampening
@@ -143,8 +153,12 @@ set_dampening:
           integration: solcast_solar
     damp_factor:
       example: "1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1"
+      selector:
+        text:
     site:
       example: "1234-5678-9012-3456"
+      selector:
+        text:
 
 get_dampening:
   name: Get forecasts dampening
@@ -160,6 +174,8 @@ get_dampening:
           integration: solcast_solar
     site:
       example: "1234-5678-9012-3456"
+      selector:
+        text:
 
 get_options:
   name: Get options
@@ -189,6 +205,8 @@ set_hard_limit:
     hard_limit:
       description: Set the max value in kW that the inverter can produce. Use 0 to disable the hard limit.
       example: "6.0"
+      selector:
+        text:
 
 remove_hard_limit:
   name: Remove inverter forecast hard limit
@@ -217,41 +235,81 @@ set_options:
           integration: solcast_solar
     api_key:
       example: "your-api-key"
+      selector:
+        text:
     api_limit:
       example: "10"
+      selector:
+        text:
     auto_update:
       example: "1"
+      selector:
+        text:
     key_estimate:
       example: "estimate"
+      selector:
+        text:
     custom_hours:
       example: "6"
+      selector:
+        text:
     hard_limit:
       example: "100"
+      selector:
+        text:
     attr_brk_estimate:
       example: true
+      selector:
+        boolean:
     attr_brk_estimate10:
       example: true
+      selector:
+        boolean:
     attr_brk_estimate90:
       example: true
+      selector:
+        boolean:
     attr_brk_site:
       example: true
+      selector:
+        boolean:
     attr_brk_halfhourly:
       example: true
+      selector:
+        boolean:
     attr_brk_hourly:
       example: true
+      selector:
+        boolean:
     attr_brk_detailed:
       example: false
+      selector:
+        boolean:
     get_actuals:
       example: false
+      selector:
+        boolean:
     use_actuals:
       example: "0"
+      selector:
+        text:
     auto_dampen:
       example: false
+      selector:
+        boolean:
     generation_entities:
       example: "sensor.inverter_power"
+      selector:
+        text:
     exclude_sites:
       example: "1234-5678-9012-3456"
+      selector:
+        text:
     site_export_entity:
       example: "sensor.grid_export"
+      selector:
+        text:
     site_export_limit:
       example: "5.0"
+      selector:
+        text:
