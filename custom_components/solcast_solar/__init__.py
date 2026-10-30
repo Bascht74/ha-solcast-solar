@@ -88,7 +88,7 @@ from .instance import (
     is_named_instance,
     shared_unique_id,
 )
-from .issues import sync_actuals_api_limit_issue
+from .issues import refresh_issue_placeholders, sync_actuals_api_limit_issue
 from .log import get_logger, set_log_instance
 from .solcastapi import ConnectionOptions, SolcastApi
 from .state import raise_and_record
@@ -313,6 +313,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if is_named_instance(entry.options) and INSTANCE_SLUG not in entry.options:
         # Store the file slug once, so a later change of the transliteration cannot move this entry's files.
         hass.config_entries.async_update_entry(entry, options={**entry.options, INSTANCE_SLUG: entry_slug(entry.options)})
+    refresh_issue_placeholders(hass, entry)
 
     version = await get_version(hass)
     options = await __get_options(hass, entry)

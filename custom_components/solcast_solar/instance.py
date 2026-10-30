@@ -123,3 +123,28 @@ def advanced_file_path(hass: HomeAssistant, options: Mapping[str, Any] | None) -
 
     cache = Path(cache_file_path(hass, options))
     return cache.parent / f"{cache.stem}-advanced.json"
+
+
+def scoped_issue_id(issue_id: str, options: Mapping[str, Any] | None, entry_id: str) -> str:
+    """Keep the original issue ID for the unnamed entry so existing repairs stay put."""
+
+    if not is_named_instance(options) or not entry_id:
+        return issue_id
+    return f"{issue_id}_{entry_id}"
+
+
+def repair_issue_id(issue_id: str, entry: Any) -> str:
+    """Return the repair ID for this config entry."""
+
+    if entry is None:
+        return issue_id
+    return scoped_issue_id(issue_id, getattr(entry, "options", None), str(getattr(entry, "entry_id", "") or ""))
+
+
+def repair_placeholders(entry: Any, extra: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Placeholders for a repair; ``instance`` adds a named entry's title to the repair title, and is empty otherwise."""
+
+    instance = ""
+    if entry is not None and is_named_instance(entry.options):
+        instance = f" ({str(entry.title or '').strip() or device_name_for(entry.options)})"
+    return {"instance": instance, **(extra or {})}

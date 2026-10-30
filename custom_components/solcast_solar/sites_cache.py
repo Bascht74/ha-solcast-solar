@@ -83,6 +83,7 @@ from .enums import (
     UpdateOutcome,
     UpdateResult,
 )
+from .instance import repair_issue_id, repair_placeholders
 from .issues import check_unusual_azimuth
 from .log import get_logger
 from .migration import SchemaIncompatibleError, clear_cache, upgrade_cache_schema
@@ -198,14 +199,15 @@ class SitesCache:
         """Check and clean up any existing issues if the conditions are now resolved."""
         issue_registry = ir.async_get(self.api.hass)
         for issue in [ISSUE_UNUSUAL_AZIMUTH_NORTHERN, ISSUE_UNUSUAL_AZIMUTH_SOUTHERN]:
-            if (i := issue_registry.async_get_issue(DOMAIN, issue)) is not None:
+            issue_id = repair_issue_id(issue, self.api.entry)
+            if (i := issue_registry.async_get_issue(DOMAIN, issue_id)) is not None:
                 if (
                     i.dismissed_version is not None
                     and i.translation_placeholders is not None
                     and self._dismissal.get(i.translation_placeholders.get(SITE, ""), False)
                 ) or not any_unusual:
-                    _LOGGER.debug("Remove %sissue for %s", "ignored " if i.dismissed_version is not None else "", issue)
-                    ir.async_delete_issue(self.api.hass, DOMAIN, issue)
+                    _LOGGER.debug("Remove %sissue for %s", "ignored " if i.dismissed_version is not None else "", issue_id)
+                    ir.async_delete_issue(self.api.hass, DOMAIN, issue_id)
 
     async def delete_solcast_file(self, *args: tuple[Any]) -> None:
         """Delete the solcast json files.
@@ -276,8 +278,10 @@ class SitesCache:
                     if unusual:
                         log = (
                             _LOGGER.warning
-                            if issue_registry.async_get_issue(DOMAIN, ISSUE_UNUSUAL_AZIMUTH_NORTHERN) is None
-                            and issue_registry.async_get_issue(DOMAIN, ISSUE_UNUSUAL_AZIMUTH_SOUTHERN) is None
+                            if issue_registry.async_get_issue(DOMAIN, repair_issue_id(ISSUE_UNUSUAL_AZIMUTH_NORTHERN, self.api.entry))
+                            is None
+                            and issue_registry.async_get_issue(DOMAIN, repair_issue_id(ISSUE_UNUSUAL_AZIMUTH_SOUTHERN, self.api.entry))
+                            is None
                             and not self._dismissal.get(site, False)
                             else _LOGGER.debug
                         )
@@ -291,18 +295,21 @@ class SitesCache:
                             ir.async_create_issue(
                                 self.api.hass,
                                 DOMAIN,
-                                raise_issue,
+                                repair_issue_id(raise_issue, self.api.entry),
                                 is_fixable=False,
                                 is_persistent=True,
                                 severity=ir.IssueSeverity.WARNING,
                                 translation_key=raise_issue,
-                                translation_placeholders={
-                                    SITE: site,
-                                    SITE_ATTRIBUTE_LATITUDE: str(v[SITE_ATTRIBUTE_LATITUDE]),
-                                    PROPOSAL: str(proposal),
-                                    EXTANT: str(v[SITE_ATTRIBUTE_AZIMUTH]),
-                                    LEARN_MORE: "",
-                                },
+                                translation_placeholders=repair_placeholders(
+                                    self.api.entry,
+                                    {
+                                        SITE: site,
+                                        SITE_ATTRIBUTE_LATITUDE: str(v[SITE_ATTRIBUTE_LATITUDE]),
+                                        PROPOSAL: str(proposal),
+                                        EXTANT: str(v[SITE_ATTRIBUTE_AZIMUTH]),
+                                        LEARN_MORE: "",
+                                    },
+                                ),
                                 learn_more_url=LEARN_MORE_UNUSUAL_AZIMUTH,
                             )
                             raise_issue = ""
@@ -430,7 +437,8 @@ class SitesCache:
 
         status, message, api_key_in_error = await self._sites_data(prior_crash=prior_crash, use_cache=use_cache)
         if self.api.sites_status == LoadStatus.OK:
-            await test_unusual_azimuth()
+            if self.api.repairs_allowed:
+                await test_unusual_azimuth()
             await self._sites_usage()
 
         return status, message, api_key_in_error

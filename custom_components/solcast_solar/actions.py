@@ -139,6 +139,8 @@ from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, LoadStatus
 from .instance import (
     instance_name,
+    repair_issue_id,
+    repair_placeholders,
 )
 from .log import get_logger, set_log_instance
 from .migration import sync_legacy_keys
@@ -823,12 +825,15 @@ class ServiceActions:
         ir.async_create_issue(
             self._hass,
             DOMAIN,
-            issue_id,
+            repair_issue_id(issue_id, self._entry),
             is_fixable=False,
             is_persistent=False,
             severity=ir.IssueSeverity.WARNING,
             translation_key=ISSUE_ACTION_DEPRECATED,
-            translation_placeholders={"deprecated_action": action_name, "new_action": SERVICE_SET_OPTIONS},
+            translation_placeholders=repair_placeholders(
+                self._entry,
+                {"deprecated_action": action_name, "new_action": SERVICE_SET_OPTIONS},
+            ),
         )
 
 

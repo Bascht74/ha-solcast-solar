@@ -174,7 +174,7 @@ class AdvancedOptions:
                         for _ in range(600):
                             await asyncio.sleep(0.1)
                         _LOGGER.error(problem)
-                        await raise_or_clear_advanced_problems([problem], self.api.hass)
+                        await raise_or_clear_advanced_problems([problem], self.api.hass, entry=self.api.entry)
                 except asyncio.CancelledError:
                     self.api.tasks.pop(ADVANCED_INVALID_JSON_TASK, None)
 
@@ -198,11 +198,12 @@ class AdvancedOptions:
                         with contextlib.suppress(json.JSONDecodeError):
                             response_json = json.loads(content)
                         if not isinstance(response_json, dict):
-                            self.api.tasks[ADVANCED_INVALID_JSON_TASK] = asyncio.create_task(
-                                add_problem_later(
-                                    "Advanced options file invalid format, expected JSON `dict`: %s", self.api.filename_advanced
+                            if self.api.repairs_allowed:
+                                self.api.tasks[ADVANCED_INVALID_JSON_TASK] = asyncio.create_task(
+                                    add_problem_later(
+                                        "Advanced options file invalid format, expected JSON `dict`: %s", self.api.filename_advanced
+                                    )
                                 )
-                            )
                             return change
                         self.api.extant_advanced_options = copy.deepcopy(response_json)
                         options_present = self.advanced_with_aliases(response_json)
@@ -460,12 +461,14 @@ class AdvancedOptions:
                     if not self.api.advanced_options.get(ADVANCED_AUTOMATED_DAMPENING_ADAPTIVE_MODEL_CONFIGURATION, False):
                         await clear_cache(self.api.filename_dampening_history, False)  # remove dampening history if necessary
             finally:
-                await raise_or_clear_advanced_problems(problems, self.api.hass)
-                await raise_or_clear_advanced_deprecated(
-                    deprecated_in_use,
-                    self.api.hass,
-                    stops_working={o: dt.strptime(stops, DT_DATE_ONLY_FORMAT) for o, stops in deprecated.items() if stops is not None},
-                )
+                if self.api.repairs_allowed:
+                    await raise_or_clear_advanced_problems(problems, self.api.hass, entry=self.api.entry)
+                    await raise_or_clear_advanced_deprecated(
+                        deprecated_in_use,
+                        self.api.hass,
+                        stops_working={o: dt.strptime(stops, DT_DATE_ONLY_FORMAT) for o, stops in deprecated.items() if stops is not None},
+                        entry=self.api.entry,
+                    )
 
         return change
 

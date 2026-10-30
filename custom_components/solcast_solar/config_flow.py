@@ -180,7 +180,8 @@ async def validate_sites(hass: HomeAssistant, user_input: dict[str, Any]) -> tup
         user_input[SITE_EXPORT_LIMIT],
         user_input[AUTO_DAMPEN],
     )
-    solcast = SolcastApi(session, options, hass)
+    # Without its config entry a named entry's repairs would take the original entry's IDs; its set-up raises them.
+    solcast = SolcastApi(session, options, hass, repairs_allowed=not is_named_instance(user_input))
     await solcast.async_migrate_config_files()
     await solcast.advanced_opt.read_advanced_options()
     solcast.headers = get_session_headers(solcast, await get_version(hass))
