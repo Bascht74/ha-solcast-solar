@@ -128,6 +128,8 @@ class Updater:
         This is an even spread between sunrise and sunset.
         """
         self.divisions = int(self._coordinator.solcast.api_limit / self._coordinator.solcast.api_maximum_sites)
+        if self.divisions == 0:
+            _LOGGER.warning("The API limit leaves no automated forecast update, so none is scheduled")
 
         def get_intervals(sunrise: dt, sunset: dt, log: bool = True):
             intervals_yesterday = []
@@ -138,7 +140,7 @@ class Updater:
                     for i in range(self.divisions)
                 ]
             seconds = int((sunset - sunrise).total_seconds())
-            interval = seconds / self.divisions
+            interval = seconds / max(self.divisions, 1)
             intervals = intervals_yesterday + [
                 (sunrise + timedelta(seconds=interval * i)).replace(microsecond=0) for i in range(self.divisions)
             ]

@@ -199,3 +199,19 @@ async def test_granular_factors_of_an_excluded_site_are_kept(recorder_mock: Reco
         assert solcast.dampening.get_factor(SITE1, noon, 1.0) == 0.5
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_plan_without_updates(recorder_mock: Recorder, hass: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """An API limit below the number of sites leaves no forecast update, so none is scheduled."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        coordinator = entry.runtime_data.coordinator
+        coordinator.solcast.api_limits[KEY1] = 1
+        caplog.clear()
+        coordinator.updater.update_setup()
+        assert coordinator.divisions == 0
+        assert "The API limit leaves no automated forecast update, so none is scheduled" in caplog.text
+        assert coordinator.updater.get_auto_update_details()["next_auto_update"] is None
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
