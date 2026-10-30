@@ -1,6 +1,7 @@
 """Set-up with automated dampening while a fetched site has no estimated actuals yet, and the tasks around it."""
 
 import copy
+from datetime import timedelta
 import json
 from pathlib import Path
 from typing import Any
@@ -14,10 +15,13 @@ from custom_components.solcast_solar.const import (
     GENERATION_ENTITIES,
     GET_ACTUALS,
     INSTANCE_NAME,
+    LAST_UPDATED,
     SITE_INFO,
+    TASK_NEW_DAY_GENERATION,
     USE_ACTUALS,
     VERSION,
 )
+from custom_components.solcast_solar.dampen import Dampening
 import pytest
 
 from homeassistant.components.recorder import Recorder
@@ -158,5 +162,73 @@ async def test_gap_check_while_a_site_has_no_estimated_actuals(
         await reload_integration(hass, entry)
         _no_setup_error(caplog, entry)
         assert json.loads(generation_file.read_text(encoding="utf-8"))[VERSION] == 2
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+@pytest.mark.parametrize(
+    ("task", "logged"),
+    [
+        ("get_pv_generation", "Loading generation failed, continuing without it"),
+        ("recheck_generation_gaps", "Check of cached generation failed, continuing without it"),
+    ],
+)
+async def test_generation_failure_does_not_stop_the_setup(
+    recorder_mock: Recorder, hass: HomeAssistant, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch, task: str, logged: str
+) -> None:
+    """Reading generation while loading is logged when it fails, and the entry loads without it."""
+
+    try:
+        entry = await async_init_integration(hass, _options(), extra_sensors=ExtraSensors.YES)
+        await reload_integration(hass, entry)
+        solcast = entry.runtime_data.coordinator.solcast
+        generation_file = Path(solcast.filename_generation)
+        if task == "get_pv_generation":
+            generation_file.unlink()
+        else:
+            cached = json.loads(generation_file.read_text(encoding="utf-8"))
+            cached.pop(VERSION)
+            generation_file.write_text(json.dumps(cached), encoding="utf-8")
+
+        async def fail(_self: Dampening) -> None:
+            raise RuntimeError("recorder gone")
+
+        monkeypatch.setattr(Dampening, task, fail)
+        caplog.clear()
+        await reload_integration(hass, entry)
+        assert entry.state is ConfigEntryState.LOADED
+        assert logged in caplog.text
+        assert "RuntimeError: recorder gone" in caplog.text
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_failed_generation_update_is_scheduled_again(
+    recorder_mock: Recorder, hass: HomeAssistant, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed daily generation update is logged and leaves no task behind, so the next day schedules it again."""
+
+    try:
+        entry = await async_init_integration(hass, _options(), extra_sensors=ExtraSensors.YES)
+        coordinator = entry.runtime_data.coordinator
+        solcast = coordinator.solcast
+
+        async def fail(_self: Dampening) -> None:
+            raise RuntimeError("recorder gone")
+
+        monkeypatch.setattr(Dampening, "get_pv_generation", fail)
+        solcast.data_actuals[LAST_UPDATED] -= timedelta(days=1)  # Today's estimated actuals and generation are still due
+        coordinator.tasks.pop(TASK_NEW_DAY_GENERATION, None)
+        assert await coordinator.updater.check_generation_fetch()
+        scheduled = coordinator.tasks[TASK_NEW_DAY_GENERATION]
+
+        caplog.clear()
+        await coordinator.updater._generation()  # pyright: ignore[reportPrivateUsage]
+        assert "Update generation data failed" in caplog.text
+        assert TASK_NEW_DAY_GENERATION not in coordinator.tasks
+        scheduled()  # The fired timer, as the job leaves it
+
+        assert await coordinator.updater.check_generation_fetch()
+        assert coordinator.tasks[TASK_NEW_DAY_GENERATION] is not scheduled
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

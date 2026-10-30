@@ -702,7 +702,7 @@ class SitesCache:
                         and self.api.options.generation_entities
                         and len(self.api.dampening.data_generation[GENERATION]) == 0
                     ):
-                        await self.api.dampening.get_pv_generation()
+                        await self._without_setup_abort(self.api.dampening.get_pv_generation, "Loading generation")
                     # Check for sites changes.
                     await adds_moves_changes()
                     # Migrate un-dampened history data to the un-dampened cache if needed.

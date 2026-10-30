@@ -1487,6 +1487,27 @@ async def test_site_export_entity_missing_or_disabled(
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 
 
+async def test_corrupt_generation_cache_stops_the_setup(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test a corrupt generation cache stops the setup and names the file, as the other cache files do."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        filename = solcast.filename_generation
+        Path(filename).write_text("{", encoding="utf-8")
+
+        caplog.clear()
+        await reload_integration(hass, entry)
+        assert entry.state is ConfigEntryState.SETUP_RETRY
+        assert f"The cached data in {filename} is corrupt in load_saved_data()" in caplog.text
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
 async def test_generation_quarter_hour_time_zone(
     recorder_mock: Recorder,
     hass: HomeAssistant,
