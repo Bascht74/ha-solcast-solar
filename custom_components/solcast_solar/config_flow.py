@@ -76,7 +76,6 @@ from .const import (
     SITE_EXPORT_ENTITY,
     SITE_EXPORT_LIMIT,
     SUGGESTED_VALUE,
-    TITLE,
     UNKNOWN,
     USE_ACTUALS,
 )
@@ -269,7 +268,7 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                     if key_changed:
                         self._mark_reset_old_key()
                         sync_legacy_keys(all_config_data)
-                        self.hass.config_entries.async_update_entry(self._entry, title=TITLE, options=all_config_data)
+                        self.hass.config_entries.async_update_entry(self._entry, options=all_config_data)
                     if self._entry.state is not ConfigEntryState.LOADED:
                         _LOGGER.debug("Loading presumed dead integration")
                         await (await state.async_get(self.hass, self._entry.entry_id)).async_clear()
@@ -351,7 +350,7 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                         sync_legacy_keys(all_config_data)
                         if key_changed:
                             self._mark_reset_old_key()
-                        self.hass.config_entries.async_update_entry(self._entry, title=TITLE, options=all_config_data)
+                        self.hass.config_entries.async_update_entry(self._entry, options=all_config_data)
                         if self._entry.state is not ConfigEntryState.LOADED:
                             _LOGGER.debug("Loading presumed dead integration")
                             await (await state.async_get(self.hass, self._entry.entry_id)).async_clear()
@@ -696,7 +695,7 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
                             if ATTR_BREAKDOWN in user_input
                             else user_input.get(breakdown_key, all_config_data.get(breakdown_key, False))
                         )
-                    all_config_data[EXCLUDE_SITES] = user_input.get(EXCLUDE_SITES, [])
+                    all_config_data[EXCLUDE_SITES] = [site for site in user_input.get(EXCLUDE_SITES, []) if site]
 
                     self._all_config_data = all_config_data
 
@@ -730,7 +729,7 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
                     if all_config_data != self._entry.options:
                         if self._api_key_changed:
                             await set_sensitive(self.hass, self._entry)
-                        self.hass.config_entries.async_update_entry(self._entry, title=TITLE, options=all_config_data)
+                        self.hass.config_entries.async_update_entry(self._entry, options=all_config_data)
                         await self.check_dead()
                         return self.async_abort(reason=AFFIRMATION_RECONFIGURED)
                     return self.async_abort(reason=AFFIRMATION_UNCHANGED)
@@ -761,7 +760,8 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
             runtime_data = getattr(self._entry, "runtime_data", None)
             if runtime_data is not None:
                 solcast = runtime_data.coordinator.solcast
-        exclude: list[SelectOptionDict] = [SelectOptionDict(label="not_loaded", value="")]
+        # Not loaded: offer only the sites already excluded, so they stay selected.
+        exclude: list[SelectOptionDict] = [SelectOptionDict(label=site, value=site) for site in self._options.get(EXCLUDE_SITES, [])]
         if solcast is not None:
             exclude = [
                 SelectOptionDict(label=site[NAME] + " (" + site[RESOURCE_ID] + ")", value=site[RESOURCE_ID]) for site in solcast.sites_all
@@ -858,7 +858,7 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
             if all_config_data != self._entry.options:
                 if self._api_key_changed:
                     await set_sensitive(self.hass, self._entry)
-                self.hass.config_entries.async_update_entry(self._entry, title=TITLE, options=all_config_data)
+                self.hass.config_entries.async_update_entry(self._entry, options=all_config_data)
                 await self.check_dead()
                 return self.async_abort(reason=AFFIRMATION_RECONFIGURED)
             return self.async_abort(reason=AFFIRMATION_UNCHANGED)
