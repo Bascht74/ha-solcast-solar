@@ -319,13 +319,12 @@ class Dampening:
     def adjusted_interval_dt(self, interval: dt) -> int:
         """Adjust a datetime as standard time."""
         interval_tz = interval.astimezone(self.api.tz)
-        offset = 1 if self.api.dt_helper.dst(interval_tz) else 0
-        return self._interval_index_from_tz_dt(interval_tz, offset)
+        return self._interval_index_from_tz_dt(interval_tz, self.api.dt_helper.dst_offset(interval_tz))
 
     @staticmethod
-    def _interval_index_from_tz_dt(period_start_tz: dt, offset: int) -> int:
-        """Return the interval index (0-47) from a timezone-aware datetime and DST offset."""
-        return ((period_start_tz.hour - offset) * 2 + period_start_tz.minute // 30) if period_start_tz.hour - offset >= 0 else 0
+    def _interval_index_from_tz_dt(period_start_tz: dt, offset: timedelta) -> int:
+        """Return the interval index (0-47) from a timezone-aware datetime and its DST offset, early intervals capped at 0."""
+        return max(0, period_start_tz.hour * 2 + period_start_tz.minute // 30 - offset // timedelta(minutes=HALF_HOUR_MINUTES))
 
     @staticmethod
     def _tilt_incidence_gain(elevation: float, solar_azimuth: float, tilt: float, panel_azimuth: float) -> float:
@@ -1512,9 +1511,7 @@ class Dampening:
 
     def _adjusted_interval(self, interval: dict[str, Any]) -> int:
         """Adjust a forecast/actual interval as standard time."""
-        period_start_tz = interval[PERIOD_START].astimezone(self.api.tz)
-        offset = 1 if self.api.dt_helper.is_interval_dst(interval) else 0
-        return self._interval_index_from_tz_dt(period_start_tz, offset)
+        return self.adjusted_interval_dt(interval[PERIOD_START])
 
     def apply_adjustment(self, interval_pv50, factor, interval, delta_adjustment_model) -> float:
         """Applies selected delta_adjustment_model to past dampening factor."""
