@@ -25,6 +25,7 @@ from homeassistant.helpers import (
     aiohttp_client,
     config_validation as cv,
     entity_registry as er,
+    issue_registry as ir,
 )
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
@@ -86,6 +87,7 @@ from .instance import (
     entry_slug,
     instance_name,
     is_named_instance,
+    is_reserved_slug,
     shared_unique_id,
 )
 from .issues import refresh_issue_placeholders, sync_actuals_api_limit_issue
@@ -461,6 +463,25 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         release_entry_actions(hass, entry)
 
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove a named entry's cache files, crash store and repairs; the original entry's are never touched."""
+
+    # A reserved name from before the flow refused it would share the original entry's file names.
+    if not is_named_instance(entry.options) or is_reserved_slug(entry_slug(entry.options)):
+        return
+    cache = Path(cache_file_path(hass, entry.options))
+
+    def _remove_files() -> None:
+        for path in (cache, *cache.parent.glob(f"{cache.stem}-*")):
+            path.unlink(missing_ok=True)
+
+    await hass.async_add_executor_job(_remove_files)
+    await state.async_remove_named(hass, entry.entry_id)
+    for domain, issue_id in list(ir.async_get(hass).issues):
+        if domain == DOMAIN and issue_id.endswith(f"_{entry.entry_id}"):
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 async def tasks_cancel(hass: HomeAssistant, entry: ConfigEntry) -> bool:
