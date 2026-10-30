@@ -69,6 +69,7 @@ class Updater:
         self.accuracy_data: dict[str, Any] = {}
         self._intervals: list[dt] = []
         self._update_sequence: list[int] = []
+        self._checked_window: dt | None = None
         self._sunrise: dt
         self._sunrise_tomorrow: dt
         self._sunrise_yesterday: dt
@@ -235,6 +236,9 @@ class Updater:
             if len(self._intervals) > 0:
                 _now = self._coordinator.solcast.dt_helper.real_now_utc().replace(microsecond=0)
                 _from = _now.replace(minute=int(_now.minute / 5) * 5, second=0)
+                if _from == self._checked_window:
+                    return  # Setup and the five-minute timer can both run in one window; schedule each update once.
+                self._checked_window = _from
 
                 pop_expired: list[int] = []
                 for index, interval in enumerate(self._intervals):

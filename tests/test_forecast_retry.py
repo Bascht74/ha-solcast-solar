@@ -176,6 +176,11 @@ async def test_forecast_retry(
         coordinator = entry.runtime_data.coordinator
         solcast = coordinator.solcast
 
+        # A second check in the same five-minute window must not queue the pending update twice.
+        created = caplog.text.count("Create task pending_update_009")
+        await coordinator._updater.check_forecast_fetch()  # pyright: ignore[reportPrivateUsage]
+        assert caplog.text.count("Create task pending_update_009") == created == 1
+
         assert await async_setup_component(
             hass,
             "automation",
