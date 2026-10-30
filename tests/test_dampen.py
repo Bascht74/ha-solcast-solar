@@ -6,6 +6,7 @@ from collections.abc import Callable
 import copy
 import datetime
 from datetime import datetime as dt, timedelta
+import json
 import logging
 import math
 from pathlib import Path
@@ -35,8 +36,10 @@ from custom_components.solcast_solar.const import (
     ADVANCED_ESTIMATED_ACTUALS_LOG_APE_PERCENTILES,
     ADVANCED_ESTIMATED_ACTUALS_LOG_MAPE_BREAKDOWN,
     ADVANCED_HISTORY_MAX_DAYS,
+    ALL,
     AUTO_DAMPEN,
     AUTO_UPDATE,
+    BRK_SITE,
     DAMP_FACTOR,
     DAMPENING_FACTOR,
     DOMAIN,
@@ -1555,6 +1558,31 @@ async def test_accuracy_percentiles_exclude_gap_and_zero_days(
         assert len(attributes["undampened_ape_breakdown"]) == 2
         assert math.isfinite(attributes["undampened_p50_ape"])
         assert math.isfinite(attributes["undampened_p90_ape"])
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_options_change_keeps_automated_dampening_file(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+) -> None:
+    """Test an option change without reload keeps the automated dampening factors, and turning automated dampening off removes them."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        path = Path(solcast.dampening.get_filename())
+        path.write_text(json.dumps({ALL: [0.8] * 48}), encoding="utf-8")
+
+        hass.config_entries.async_update_entry(entry, options={**entry.options, BRK_SITE: not entry.options[BRK_SITE]})
+        await hass.async_block_till_done()
+        assert entry.runtime_data.coordinator.solcast is solcast  # Not reloaded
+        assert path.is_file()
+
+        hass.config_entries.async_update_entry(entry, options={**entry.options, AUTO_DAMPEN: False})
+        await hass.async_block_till_done()
+        assert not path.is_file()
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

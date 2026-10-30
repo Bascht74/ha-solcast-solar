@@ -606,7 +606,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
         if changed(AUTO_DAMPEN):
             reload = True
-        if coordinator.solcast.entry_options.get(AUTO_DAMPEN, False):
+        if changed(AUTO_DAMPEN) and coordinator.solcast.entry_options.get(AUTO_DAMPEN, False):
             # Turning auto-dampening off, so reset the granular dampening file content.
             path = Path(coordinator.solcast.dampening.get_filename())
             _LOGGER.debug("Unlink %s", path)
