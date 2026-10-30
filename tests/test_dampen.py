@@ -87,6 +87,7 @@ from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 from homeassistant.util import dt as dt_util
 
 from . import (
+    DEFAULT_INPUT1,
     DEFAULT_INPUT2,
     MOCK_CORRUPT_ACTUALS,
     ZONE_RAW,
@@ -1584,5 +1585,44 @@ async def test_options_change_keeps_automated_dampening_file(
         await hass.async_block_till_done()
         assert not path.is_file()
 
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_apply_forward_to_some_sites(recorder_mock: Recorder, hass: HomeAssistant) -> None:
+    """Dampening applied to some sites copies the forecasts of the other sites undampened."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        solcast.damp = {str(hour): 0.5 for hour in range(24)}
+        await solcast.dampening.apply_forward(applicable_sites=["1111-1111-1111-1111"])
+
+        today = solcast.dt_helper.day_start_utc()
+        for site, factor in (("1111-1111-1111-1111", 0.5), ("2222-2222-2222-2222", 1.0)):
+            undampened = {
+                f[PERIOD_START]: f[ESTIMATE] for f in solcast.data_undampened[SITE_INFO][site][FORECASTS] if f[PERIOD_START] >= today
+            }
+            dampened = {f[PERIOD_START]: f[ESTIMATE] for f in solcast.data[SITE_INFO][site][FORECASTS] if f[PERIOD_START] >= today}
+            assert dampened == {period: round(value * factor, 4) for period, value in undampened.items()}, site
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_auto_factor_for_a_period_only_a_later_site_has(recorder_mock: Recorder, hass: HomeAssistant) -> None:
+    """A forecast period that only a site fetched later reaches gets an automated dampening factor, so the build does not fail."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        first, second = (site[RESOURCE_ID] for site in solcast.sites[:2])
+        last = solcast.data_undampened[SITE_INFO][second][FORECASTS][-1][PERIOD_START]
+        for data in (solcast.data, solcast.data_undampened):
+            data[SITE_INFO][first][FORECASTS] = [f for f in data[SITE_INFO][first][FORECASTS] if f[PERIOD_START] < last]
+        solcast.dampening.auto_factors = {}
+
+        await solcast.dampening.apply_forward()
+        assert last in solcast.dampening.auto_factors
+        assert await solcast.build_forecast_data()
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

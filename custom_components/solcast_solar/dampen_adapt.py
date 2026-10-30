@@ -540,13 +540,14 @@ class DampeningAdaptive:
         )
         actuals: defaultdict[dt, list[float]] = defaultdict(lambda: [0.0] * INTERVALS_PER_DAY)
         for site in self.dampening.api.sites:
+            site_history = self.dampening.site_actuals(site[RESOURCE_ID])
             start, end = self.dampening.api.query.get_list_slice(
-                self.dampening.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS],
+                site_history,
                 earliest_common,
                 self.dampening.api.dt_helper.day_start_utc() - timedelta(minutes=30),
                 search_past=True,
             )
-            for actual in self.dampening.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS][start:end]:
+            for actual in site_history[start:end]:
                 ts: dt = actual[PERIOD_START].astimezone(self.dampening.api.tz)
                 day_start = self.dampening.api.dt_helper.day_start(ts)
 

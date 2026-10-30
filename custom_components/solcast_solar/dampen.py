@@ -312,6 +312,10 @@ class Dampening:
         """Set/clear allow reset granular dampening file to an empty dictionary by options change."""
         self.granular_allow_reset = enable
 
+    def site_actuals(self, site: str) -> list[dict[str, Any]]:
+        """Return a site's estimated actuals, none for a site that has none yet (a new site, or its first fetch failed)."""
+        return self.api.data_actuals[SITE_INFO].get(site, {}).get(FORECASTS, [])
+
     def adjusted_interval_dt(self, interval: dt) -> int:
         """Adjust a datetime as standard time."""
         interval_tz = interval.astimezone(self.api.tz)
@@ -396,15 +400,12 @@ class Dampening:
         if self.api.data_undampened[SITE_INFO]:
             _LOGGER.debug("Applying future dampening")
 
-            self.auto_factors = {
-                period_start: factor
-                for period_start, factor in self.auto_factors.items()
-                if period_start >= self.api.dt_helper.day_start_utc()
-            }
+            # Factors of this run only, so a period that only a later site reaches gets this run's factor, not the last run's.
+            auto_factors: dict[dt, float] = {}
 
             undampened_interval_pv50: defaultdict[dt, float] = defaultdict(float)
             for site in self.api.sites:
-                for forecast in self.api.data_undampened[SITE_INFO][site[RESOURCE_ID]][FORECASTS]:
+                for forecast in self.api.data_undampened[SITE_INFO].get(site[RESOURCE_ID], {}).get(FORECASTS, []):
                     period_start = forecast[PERIOD_START]
                     if period_start >= self.api.dt_helper.day_start_utc():
                         undampened_interval_pv50[period_start] += forecast[ESTIMATE] * 0.5
@@ -415,7 +416,7 @@ class Dampening:
                 # Load all forecasts.
                 forecasts_undampened_future = [
                     forecast
-                    for forecast in self.api.data_undampened[SITE_INFO][site_id][FORECASTS]
+                    for forecast in self.api.data_undampened[SITE_INFO].get(site_id, {}).get(FORECASTS, [])
                     if forecast[PERIOD_START]
                     >= (
                         self.api.dt_helper.day_start_utc()
@@ -448,8 +449,9 @@ class Dampening:
                             undampened_interval_pv50.get(period_start, -1),
                             record_adjustment=record_adjustment,
                         )
-                        if record_adjustment:
-                            self.auto_factors[period_start] = dampening_factor
+                        if record_adjustment or period_start not in auto_factors:
+                            # Also a period the first site lacks, as a site fetched at another time can reach further ahead.
+                            auto_factors[period_start] = dampening_factor
                         pv_dampened = round(pv * dampening_factor, 4)
                         pv10_dampened = round(pv10 * dampening_factor, 4)
                         pv90_dampened = round(pv90 * dampening_factor, 4)
@@ -471,6 +473,13 @@ class Dampening:
                 await self.api.fetcher.sort_and_prune(
                     site_id, self.api.data, self.api.advanced_options[ADVANCED_HISTORY_MAX_DAYS], forecasts
                 )
+
+            # Periods of sites left out of this run keep their factor.
+            self.auto_factors = {
+                period_start: factor
+                for period_start, factor in self.auto_factors.items()
+                if period_start >= self.api.dt_helper.day_start_utc() and period_start not in auto_factors
+            } | auto_factors
 
     async def apply_yesterday(self) -> None:
         """Apply dampening to yesterday's estimated actuals."""
@@ -500,11 +509,7 @@ class Dampening:
                 self._format_recovered_periods(periods),
             )
 
-            actuals_undampened = [
-                actual
-                for actual in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS]
-                if actual[PERIOD_START].timestamp() in periods
-            ]
+            actuals_undampened = [actual for actual in self.site_actuals(site[RESOURCE_ID]) if actual[PERIOD_START].timestamp() in periods]
             if not actuals_undampened:
                 continue
 
@@ -567,7 +572,7 @@ class Dampening:
         undampened_interval_pv50: defaultdict[dt, float] = defaultdict(float)
 
         for site in self.api.sites:
-            for forecast in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS]:
+            for forecast in self.site_actuals(site[RESOURCE_ID]):
                 period_start = forecast[PERIOD_START]
                 if period_start in applicable_periods:
                     undampened_interval_pv50[period_start] += forecast[ESTIMATE] * 0.5
@@ -583,7 +588,7 @@ class Dampening:
             {
                 forecast[PERIOD_START]
                 for site in self.api.sites
-                for forecast in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS]
+                for forecast in self.site_actuals(site[RESOURCE_ID])
                 if start <= forecast[PERIOD_START] < end
             }
         )
@@ -596,9 +601,7 @@ class Dampening:
                 end.strftime(DT_DATE_FORMAT),
             )
 
-            actuals_undampened = [
-                actual for actual in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS] if start <= actual[PERIOD_START] < end
-            ]
+            actuals_undampened = [actual for actual in self.site_actuals(site[RESOURCE_ID]) if start <= actual[PERIOD_START] < end]
             if not actuals_undampened:
                 continue
 
@@ -1835,21 +1838,20 @@ class Dampening:
             self.api.options.auto_dampen or self.api.advanced_options[ADVANCED_GRANULAR_DAMPENING_DELTA_ADJUSTMENT]
         ) and self.api.options.get_actuals:
             for site in self.api.sites:
+                site_history = self.site_actuals(site[RESOURCE_ID])
                 start, end = self.api.query.get_list_slice(
-                    self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS],
+                    site_history,
                     self.api.dt_helper.day_start_utc() - timedelta(days=model_days),
                     self.api.dt_helper.day_start_utc(),
                     search_past=True,
                 )
-                site_actuals = {
-                    actual[PERIOD_START]: actual for actual in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS][start:end]
-                }
-                for period_start, actual in site_actuals.items():
+                site_actuals = {actual[PERIOD_START]: actual for actual in site_history[start:end]}
+                for period_start, site_actual in site_actuals.items():
                     extant: float | None = actuals.get(period_start)
                     if extant is not None:
-                        actuals[period_start] += actual[ESTIMATE] * 0.5
+                        actuals[period_start] += site_actual[ESTIMATE] * 0.5
                     else:
-                        actuals[period_start] = actual[ESTIMATE] * 0.5
+                        actuals[period_start] = site_actual[ESTIMATE] * 0.5
 
             # Collect top intervals from the past MODEL_DAYS days.
             self.api.peak_intervals = dict.fromkeys(range(INTERVALS_PER_DAY), 0.0)
