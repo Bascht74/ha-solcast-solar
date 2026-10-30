@@ -12,10 +12,10 @@
   "dependencies": [
     "recorder"
   ],
-  "documentation": "https://github.com/BJReplay/ha-solcast-solar",
+  "documentation": "https://github.com/Bascht74/ha-solcast-solar",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/BJReplay/ha-solcast-solar/issues",
+  "issue_tracker": "https://github.com/Bascht74/ha-solcast-solar/issues",
   "requirements": [
     "aiofiles>=23.2.0",
     "asyncinotify>=4.2.0"
