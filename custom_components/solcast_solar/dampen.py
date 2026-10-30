@@ -6,6 +6,7 @@ import asyncio
 from collections import OrderedDict, defaultdict
 import copy
 from datetime import UTC, date, datetime as dt, timedelta
+from itertools import pairwise
 import json
 import math
 from operator import itemgetter
@@ -742,16 +743,15 @@ class Dampening:
         )
 
     @staticmethod
-    def _build_float_intervals(start: dt, interval_minutes: int, initial_value: float = 0.0) -> dict[dt, float]:
-        """Build a fixed one-day float map for the given interval size."""
-        return {
-            start + timedelta(minutes=minute): initial_value for minute in range(0, INTERVALS_PER_DAY * HALF_HOUR_MINUTES, interval_minutes)
-        }
+    def _build_float_intervals(start: dt, interval_minutes: int, initial_value: float = 0.0, end: dt | None = None) -> dict[dt, float]:
+        """Build a float map for the given interval size, from start to end (default one day)."""
+        minutes = int(((end or start + timedelta(days=1)) - start).total_seconds()) // 60
+        return {start + timedelta(minutes=minute): initial_value for minute in range(0, minutes, interval_minutes)}
 
     @staticmethod
-    def _build_half_hour_bool_intervals(start: dt) -> dict[dt, bool]:
-        """Build a fixed one-day half-hour bool map."""
-        return {start + timedelta(minutes=minute): False for minute in range(0, INTERVALS_PER_DAY * HALF_HOUR_MINUTES, HALF_HOUR_MINUTES)}
+    def _build_half_hour_bool_intervals(start: dt, end: dt | None = None) -> dict[dt, bool]:
+        """Build a half-hour bool map from start to end (default one day)."""
+        return dict.fromkeys(Dampening._build_float_intervals(start, HALF_HOUR_MINUTES, end=end), False)
 
     async def _get_entity_history(
         self,
@@ -780,7 +780,7 @@ class Dampening:
         recorder_instance: Any,
     ) -> dict[dt, float]:
         """Collect one day of PV generation intervals from configured entities."""
-        generation_intervals = self._build_float_intervals(prev_start, HALF_HOUR_MINUTES)
+        generation_intervals = self._build_float_intervals(prev_start, HALF_HOUR_MINUTES, end=day_start)
 
         for entity in self.api.options.generation_entities:
             r_entity = entity_registry.async_get(entity)
@@ -827,7 +827,9 @@ class Dampening:
                     sample_generation[0] = 0.0
                     sample_timedelta[0] = 0
 
-                entity_intervals = self._build_float_intervals(prev_start, HALF_HOUR_MINUTES)  # An ignored jump zeroes only this entity
+                entity_intervals = self._build_float_intervals(
+                    prev_start, HALF_HOUR_MINUTES, end=day_start
+                )  # An ignored jump zeroes only this entity
                 result: EnergyResult = compute_energy_intervals(
                     sample_time,
                     sample_generation,
@@ -961,25 +963,29 @@ class Dampening:
             _LOGGER.error("Site export entity %s is disabled, please enable it", entity)
             return
 
-        export_intervals = self._build_float_intervals(prev_start, _SITE_EXPORT_INTERVAL_MINUTES)
+        export_intervals = self._build_float_intervals(prev_start, _SITE_EXPORT_INTERVAL_MINUTES, end=day_start)
         entity_history = await self._get_entity_history(recorder_instance, prev_start, day_start, entity)
         if not entity_history.get(entity) or len(entity_history[entity]) == 0:
             _LOGGER.debug("No site export history found for %s", entity)
             return
 
         conversion_factor = self._get_conversion_factor(entity, entity_history[entity])
-        sample_time: list[dt] = [
-            self._bucket_interval_start(e.last_updated.astimezone(UTC), _SITE_EXPORT_INTERVAL_MINUTES)
-            for e in entity_history[entity]
-            if e.state.replace(".", "").isnumeric()
-        ]
-        sample_export: list[float] = [
-            0.0,
-            *diff([float(e.state) * conversion_factor for e in entity_history[entity] if e.state.replace(".", "").isnumeric()]),
+        readings = [
+            (e.last_updated.astimezone(UTC), float(e.state) * conversion_factor) for e in entity_history[entity] if _is_number(e.state)
         ]
 
-        for interval, kwh in zip(sample_time, sample_export, strict=True):
-            export_intervals[interval] += kwh
+        # Spread each export delta over the time since the previous reading, so a meter that reports every 15 minutes
+        # does not show three 5-minute intervals of export in one.
+        step = timedelta(minutes=_SITE_EXPORT_INTERVAL_MINUTES)
+        for (start, previous), (end, current) in pairwise(readings):
+            if end <= start:
+                continue
+            interval = self._bucket_interval_start(start, _SITE_EXPORT_INTERVAL_MINUTES)
+            while interval < end:
+                if interval in export_intervals:
+                    overlap = min(end, interval + step) - max(start, interval)
+                    export_intervals[interval] += (current - previous) * overlap / (end - start)
+                interval += step
 
         for interval, export in export_intervals.items():
             export_intervals[interval] = round(export * (60 / _SITE_EXPORT_INTERVAL_MINUTES), 3)
@@ -1010,8 +1016,9 @@ class Dampening:
 
         for day in range(days):
             # PV generation
-            day_start = self.api.dt_helper.day_start_utc(future=(-1 * day))
-            prev_start = day_start - timedelta(days=1)
+            # On UTC :00/:30 like the estimated actuals, also where local midnight is at :15 or :45 UTC
+            day_start = self._bucket_interval_start(self.api.dt_helper.day_start_utc(future=(-1 * day)))
+            prev_start = self._bucket_interval_start(self.api.dt_helper.day_start_utc(future=(-1 * day) - 1))  # 23 or 25 hours at DST
             generation_intervals = await self._collect_generation_intervals_for_day(
                 prev_start,
                 day_start,
@@ -1020,7 +1027,7 @@ class Dampening:
                 recorder_instance,
             )
 
-            export_limiting = self._build_half_hour_bool_intervals(prev_start)
+            export_limiting = self._build_half_hour_bool_intervals(prev_start, day_start)
             await self._apply_suppression_entity_limits(
                 export_limiting,
                 prev_start,

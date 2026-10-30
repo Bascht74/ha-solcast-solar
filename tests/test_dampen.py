@@ -1359,3 +1359,32 @@ async def test_generation_ignored_jump_keeps_other_entities(
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_generation_quarter_hour_time_zone(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test generation in a time zone offset by 45 minutes lands on the UTC half hours of the estimated actuals."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), timezone="Asia/Kathmandu", extra_sensors=ExtraSensors.YES)
+        assert entry.state is ConfigEntryState.LOADED
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+
+        async def history(_recorder: Any, start: dt, _end: dt, entity: str, *_args: Any) -> dict[str, list[State]]:
+            return {entity: _energy_readings(entity, start)}
+
+        monkeypatch.setattr(solcast.dampening, "_get_entity_history", history)
+        solcast.dampening.data_generation[GENERATION] = []
+        await solcast.dampening.get_pv_generation()
+
+        periods = {gen[PERIOD_START] for gen in solcast.dampening.data_generation[GENERATION]}
+        assert periods
+        assert {period.minute for period in periods} == {0, 30}
+        actuals = {actual[PERIOD_START] for actual in solcast.data_actuals[SITE_INFO]["1111-1111-1111-1111"][FORECASTS]}
+        assert periods & actuals  # Generation can be matched with estimated actuals
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
