@@ -1852,16 +1852,16 @@ class Dampening:
 
     def _get_granular_factor(self, site: str, period_start: dt, interval_pv50: float = -1.0, record_adjustment: bool = False) -> float:
         """Retrieve a granular dampening factor."""
-        factor = self.factors[site][
-            period_start.hour if len(self.factors[site]) == 24 else ((period_start.hour * 2) + (1 if period_start.minute > 0 else 0))
-        ]
+        index = period_start.hour if len(self.factors[site]) == 24 else period_start.hour * 2 + period_start.minute // 30
+        factor = self.factors[site][index]
         if (
             site == ALL
             and (self.api.options.auto_dampen or self.api.advanced_options[ADVANCED_GRANULAR_DAMPENING_DELTA_ADJUSTMENT])
             and self.factors.get(ALL)
         ):
             interval = self.adjusted_interval_dt(period_start)
-            factor = min(1.0, self.factors[ALL][interval])
+            # Automated factors are indexed in standard time, manual factors in local time with or without delta adjustment.
+            factor = min(1.0, self.factors[ALL][interval if self.api.options.auto_dampen else index])
             if (
                 not self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_NO_DELTA_ADJUSTMENT]
                 and self.adjustment_peak(interval) > 0

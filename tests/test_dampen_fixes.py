@@ -12,6 +12,9 @@ from zoneinfo import ZoneInfo
 
 from custom_components.solcast_solar.const import (
     ADVANCED_AUTOMATED_DAMPENING_GENERATION_HISTORY_LOAD_DAYS,
+    ADVANCED_AUTOMATED_DAMPENING_NO_DELTA_ADJUSTMENT,
+    ADVANCED_GRANULAR_DAMPENING_DELTA_ADJUSTMENT,
+    ALL,
     AUTO_DAMPEN,
     AUTO_UPDATE,
     EXPORT_LIMITING,
@@ -70,6 +73,28 @@ def test_target_timestamp_uses_local_date() -> None:
     past_ts = dt(2025, 1, 11, 2, 0, tzinfo=datetime.UTC)  # 13:00 on 11 January in Sydney
     target_day = dt(2025, 1, 25, tzinfo=ZoneInfo("Australia/Sydney"))
     assert dampening._target_timestamp(past_ts, target_day) == dt(2025, 1, 25, 2, 0, tzinfo=datetime.UTC)  # pyright: ignore[reportPrivateUsage]
+
+
+def _granular_dampening(auto_dampen: bool, factors: list[float]) -> Dampening:
+    dampening = Dampening.__new__(Dampening)
+    dampening.api = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+        tz=BERLIN,
+        dt_helper=DateTimeHelper(BERLIN),
+        options=SimpleNamespace(auto_dampen=auto_dampen),
+        advanced_options={ADVANCED_GRANULAR_DAMPENING_DELTA_ADJUSTMENT: True, ADVANCED_AUTOMATED_DAMPENING_NO_DELTA_ADJUSTMENT: True},
+    )
+    dampening.factors = {ALL: factors}
+    return dampening
+
+
+@pytest.mark.parametrize(("auto_dampen", "expected"), [(False, 0.24), (True, 0.22)])
+def test_granular_all_factor_index(auto_dampen: bool, expected: float) -> None:
+    """Manual ALL factors stay on local time with delta adjustment; automated factors are in standard time."""
+    period_start = dt(2025, 7, 1, 12, 0, tzinfo=BERLIN)  # Daylight saving time
+    dampening = _granular_dampening(auto_dampen, [round(i / 100, 2) for i in range(48)])
+    assert dampening._get_granular_factor(ALL, period_start, 1.0) == expected  # pyright: ignore[reportPrivateUsage]
+    hourly = _granular_dampening(False, [round(i / 100, 2) for i in range(24)])
+    assert hourly._get_granular_factor(ALL, period_start, 1.0) == 0.12  # pyright: ignore[reportPrivateUsage]
 
 
 async def _export_limiting(readings: list[tuple[dt, float]]) -> dict[dt, bool]:

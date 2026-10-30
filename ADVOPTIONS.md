@@ -305,6 +305,8 @@ Fetching estimated actuals is required.
 
 The adjustment will only apply to `ALL` factors, and not individual per-site dampening, which is in line with how automated dampening operates.
 
+Manually set half-hourly `ALL` factors are always indexed by local time, with or without this option: the first factor is 00:00 local time, also during daylight saving time. Factors written by automated dampening are indexed by standard time.
+
 ## General
 
 **Key: "api_raise_issues"**

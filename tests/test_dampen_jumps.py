@@ -328,6 +328,16 @@ async def test_matching_against_normalised_peak(monkeypatch: pytest.MonkeyPatch)
         assert dampening.adjustment_peak(34) == 0.349
 
 
+def test_quarter_hour_zone_manual_factors() -> None:
+    """In a zone with quarter-hour offsets 09:15 takes the factor of 09:00, as the automated factors do."""
+    tz = ZoneInfo("Asia/Kathmandu")
+    api = _api(tz)
+    dampening = Dampening(api)
+    dampening.factors = {"site": [round(i / 100, 2) for i in range(48)]}
+    assert dampening.get_factor("site", dt(2026, 10, 6, 9, 15, tzinfo=tz), -1.0) == 0.18  # Was 0.19, the factor of 09:30
+    assert dampening.adjusted_interval_dt(dt(2026, 10, 6, 9, 15, tzinfo=tz)) == 18
+
+
 class _NegativeDst(tzinfo):
     """A zone with negative summer time, as tzdata models Morocco during Ramadan."""
 
