@@ -401,7 +401,7 @@ The solar forecast has to be associated with a solar generation item in your Ene
 
 Edit a `Solar Panels` `Solar production` item you have previously created (or will create now). Do not add a separate `Solar production` item as things will just get weird.
 
-There can only be a single configuration of the total Solcast PV Forecast in the Energy dashboard covering all sites (arrays) in your Solcast account, it is not possible to split the forecast on the Energy dashboard for different solar arrays/Solcast sites.
+Each Solcast PV Forecast entry provides one forecast in the Energy dashboard, covering all of its sites (arrays) that are not excluded.
 
 > [!IMPORTANT]
 > If you do not have a solar generation sensor in your system then this integration will not work in the Energy dashboard. The graph and adding the forecast integration rely on there being a solar generation sensor set up.

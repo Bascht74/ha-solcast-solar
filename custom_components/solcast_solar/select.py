@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import ESTIMATE_MODE, KEY_ESTIMATE
 from .coordinator import SolcastUpdateCoordinator
 from .entity import build_service_device_info
+from .instance import shared_unique_id
 from .log import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -100,7 +101,7 @@ class EstimateModeEntity(SelectEntity):
         self.entity_description = entity_description
 
         self._entry = entry
-        self._attr_unique_id = f"{entity_description.key}"
+        self._attr_unique_id = shared_unique_id(entry.options, f"{entity_description.key}")
         self._attr_options = supported_options
         self._attr_current_option = current_option
         self._attr_entity_category = EntityCategory.CONFIG

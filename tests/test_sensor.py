@@ -5,9 +5,11 @@ import contextlib
 import copy
 from datetime import datetime as dt, timedelta
 import logging
+from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from custom_components.solcast_solar import sensor as sensor_module
 from custom_components.solcast_solar.const import (
     ADVANCED_ENTITY_LOGGING,
     ANALYSIS,
@@ -26,6 +28,7 @@ from custom_components.solcast_solar.const import (
     DEFAULT_FORECAST_DAYS,
     DETAILED_FORECAST,
     DETAILED_HOURLY,
+    DOMAIN,
     DT_TIME_FORMAT,
     ENTITY_FORECAST_NEXT_HOUR,
     ENTITY_FORECAST_REMAINING_TODAY,
@@ -35,6 +38,7 @@ from custom_components.solcast_solar.const import (
     ESTIMATE10,
     ESTIMATE90,
     FORECASTS,
+    NAME,
     PERIOD_START,
     RESOURCE_ID,
     SITE_ATTRIBUTE_AZIMUTH,
@@ -1171,3 +1175,30 @@ async def test_rooftop_unique_id_mig_removes_orphaned_stale_resource_id(
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_rooftop_unique_id_migrations_leave_conflicts_alone(entity_registry: er.EntityRegistry) -> None:
+    """Test rooftop unique ID migrations skip a missing or unchanged entity, and one whose new unique ID is taken."""
+
+    unique_ids = (
+        "solcast_solcast_api_old-site",
+        "solcast_solcast_api_new-site",
+        "solcast_solcast_api_same-site",
+        "solcast_solcast_api_Legacy Site",
+    )
+    entities = {unique_id: entity_registry.async_get_or_create("sensor", DOMAIN, unique_id) for unique_id in unique_ids}
+    coordinator = SimpleNamespace(
+        solcast=SimpleNamespace(
+            site_transfers={"missing-site": "other-site", "same-site": "same-site", "old-site": "new-site"},
+            sites=[{NAME: "Legacy Site", RESOURCE_ID: "new-site"}],
+        )
+    )
+
+    sensor_module._migrate_transferred_rooftop_unique_ids(entity_registry, coordinator)  # type: ignore[arg-type]
+    sensor_module._migrate_legacy_rooftop_unique_ids(entity_registry, coordinator)  # type: ignore[arg-type]
+
+    for unique_id, entity in entities.items():
+        registered = entity_registry.async_get(entity.entity_id)
+        assert registered is not None
+        assert registered.unique_id == unique_id
+    assert entity_registry.async_get_entity_id("sensor", DOMAIN, "solcast_solcast_api_other-site") is None

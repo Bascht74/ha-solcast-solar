@@ -66,6 +66,7 @@ from .const import (
 )
 from .coordinator import SolcastUpdateCoordinator
 from .entity import build_service_device_info
+from .instance import shared_unique_id
 from .log import get_logger
 from .redact import format_site_key, redact_api_key
 
@@ -581,7 +582,7 @@ async def async_setup_entry(
         }
         sen = SolcastSensor(coordinator, entry, k)
         entities.append(sen)
-        expecting_limits = [HARD_LIMIT]
+        expecting_limits = [shared_unique_id(entry.options, HARD_LIMIT)]
     else:
         for api_key in coordinator.solcast.options.api_key.split(","):
             k = {
@@ -596,7 +597,10 @@ async def async_setup_entry(
             }
             sen = SolcastSensor(coordinator, entry, k)
             entities.append(sen)
-        expecting_limits = [f"hard_limit_{_api_key_last_six(api_key)}" for api_key in coordinator.solcast.options.api_key.split(",")]
+        expecting_limits = [
+            shared_unique_id(entry.options, f"hard_limit_{_api_key_last_six(api_key)}")
+            for api_key in coordinator.solcast.options.api_key.split(",")
+        ]
 
     # Site sensors
     for site in coordinator.solcast.sites:
@@ -647,7 +651,7 @@ class SolcastSensor(CoordinatorEntity, SensorEntity):
 
         self.entity_description = sensor[DESCRIPTION]
         self._attr_extra_state_attributes = {}
-        self._attr_unique_id = f"{self.entity_description.key}"
+        self._attr_unique_id = shared_unique_id(entry.options, f"{self.entity_description.key}")
         self._coordinator = coordinator
         self._attr_entity_registry_enabled_default = sensor.get(ENABLED_BY_DEFAULT, True)
         self._sensor_data = None

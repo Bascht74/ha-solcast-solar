@@ -68,6 +68,7 @@ from .const import (
     HARD_LIMIT_API,
     HEADERS_ACCEPT,
     HEADERS_USER_AGENT,
+    INSTANCE_SLUG,
     KEY_ESTIMATE,
     LAST_ATTEMPT,
     SITE_DAMP,
@@ -79,6 +80,11 @@ from .const import (
 )
 from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, HistoryType, LoadStatus
+from .instance import (
+    entry_slug,
+    is_named_instance,
+    shared_unique_id,
+)
 from .issues import sync_actuals_api_limit_issue
 from .log import get_logger
 from .solcastapi import ConnectionOptions, SolcastApi
@@ -304,6 +310,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if ENTRY_OPTIONS_DEVELOPMENT:
         await async_migrate_entry(hass, entry)
 
+    if is_named_instance(entry.options) and INSTANCE_SLUG not in entry.options:
+        # Store the file slug once, so a later change of the transliteration cannot move this entry's files.
+        hass.config_entries.async_update_entry(entry, options={**entry.options, INSTANCE_SLUG: entry_slug(entry.options)})
+
     version = await get_version(hass)
     options = await __get_options(hass, entry)
 
@@ -508,10 +518,12 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
             entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
             if old_multi_key:
                 _LOGGER.debug("Hard limit changed from multi to single")
-                clean_up = [f"hard_limit_{api_key[-6:]}" for api_key in entry.options[CONF_API_KEY].split(",")]
+                clean_up = [
+                    shared_unique_id(entry.options, f"hard_limit_{api_key[-6:]}") for api_key in entry.options[CONF_API_KEY].split(",")
+                ]
             else:
                 _LOGGER.debug("Hard limit changed from single to multi")
-                clean_up = [HARD_LIMIT]
+                clean_up = [shared_unique_id(entry.options, HARD_LIMIT)]
             for entity in entities:
                 if entity.unique_id in clean_up:
                     _LOGGER.warning("Cleaning up orphaned %s", entity.entity_id)
