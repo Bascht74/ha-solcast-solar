@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 import contextlib
 import copy
 from datetime import UTC, datetime as dt, timedelta
@@ -45,6 +46,7 @@ from .const import (
     FORECASTS,
     FORMAT,
     GENERATION,
+    GENERATION_VERSION,
     INTEGRATION_VERSION,
     ISSUE_UNUSUAL_AZIMUTH_NORTHERN,
     ISSUE_UNUSUAL_AZIMUTH_SOUTHERN,
@@ -666,6 +668,15 @@ class SitesCache:
                     generation_data = await self.api.dampening.load_generation_data()
                     if generation_data:
                         self.api.dampening.data_generation = generation_data
+                    if (
+                        self.api.options.auto_dampen
+                        and self.api.options.generation_entities
+                        and self.api.dampening.data_generation[GENERATION]
+                        and self.api.dampening.data_generation.get(VERSION) != GENERATION_VERSION
+                        and await self._without_setup_abort(self.api.dampening.recheck_generation_gaps, "Check of cached generation")
+                    ):
+                        _LOGGER.debug("Generation days left out, so building the dampening history again")
+                        await self.api.hass.async_add_executor_job(Path(self.api.filename_dampening_history).unlink, True)
 
                     # if using adaptive dampening config load the data
                     if (
@@ -714,6 +725,18 @@ class SitesCache:
             self.api.status = SolcastApiStatus.DATA_CORRUPT
             await raise_and_record(self.api.hass, self.api.entry, ConfigEntryNotReady, EXCEPTION_INIT_CORRUPT, {"file": file})
         return True
+
+    async def _without_setup_abort(self, task: Callable[[], Awaitable[Any]], description: str) -> Any:
+        """Run a generation task while loading, logging a failure instead of failing the set-up.
+
+        Returns:
+            Any: The task's result, or None when it failed.
+        """
+        try:
+            return await task()
+        except Exception:
+            _LOGGER.exception("%s failed, continuing without it", description)
+            return None
 
     async def reset_api_usage(self, force: bool = False) -> None:
         """Reset the daily API usage counter.

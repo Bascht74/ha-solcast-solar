@@ -95,6 +95,7 @@ _SUPPRESSION_ENTITY_ON_STATES: Final[tuple[str, ...]] = ("on", "1", "true", "Tru
 _SUPPRESSION_ENTITY_STATES: Final[tuple[str, ...]] = ("on", "off", "1", "0", "true", "false", "True", "False")
 _SITE_EXPORT_INTERVAL_MINUTES: Final[int] = 5
 _GENERATION_GAP_FRACTION: Final[float] = 0.1  # Share of a day's expected energy without readings that excludes a generation day
+_GAP_DAYS_LOGGED: Final[int] = 5  # Days named in the log line of the one-time gap check
 
 _LOGGER = get_logger(__name__)
 
@@ -1111,6 +1112,7 @@ class Dampening:
         # Trim, sort and serialise.
         self.data_generation = {
             LAST_UPDATED: dt_util.now(UTC).replace(microsecond=0),
+            VERSION: GENERATION_VERSION,
             GENERATION: sorted(
                 filter(
                     lambda generated: generated[PERIOD_START] >= self.api.dt_helper.day_start_utc(future=-22),
@@ -1121,6 +1123,49 @@ class Dampening:
         }
         await self.api.sites_cache.serialise_data(self.data_generation, self.filename_generation)
         _LOGGER.debug("Task get_pv_generation took %.3f seconds", time.time() - start_time)
+
+    async def recheck_generation_gaps(self) -> bool:
+        """Leave out the cached days that have a reading gap, once for a cache written before gaps were checked.
+
+        Only a day the recorder still holds is checked. A day it has purged cannot be read again, so its cached
+        generation is the only copy left and stays.
+
+        Returns:
+            bool: Whether a day was left out.
+        """
+        generation: dict[dt, dict[str, Any]] = {generated[PERIOD_START]: generated for generated in self.data_generation[GENERATION]}
+        entity_registry = er.async_get(self.api.hass)
+        recorder_instance = get_instance(self.api.hass)
+        recorded_since = dt_util.now(UTC) - timedelta(days=recorder_instance.keep_days)
+        await self.prepare_data(only_peaks=True)
+        dropped: list[str] = []
+        day = 0
+        while generation and (day_start := self._bucket_interval_start(self.api.dt_helper.day_start_utc(future=-day))) > min(generation):
+            prev_start = self._bucket_interval_start(self.api.dt_helper.day_start_utc(future=-day - 1))
+            if prev_start < recorded_since:
+                break  # Older days may be purged from the recorder already.
+            intervals = [interval for interval in generation if prev_start <= interval < day_start]
+            if intervals:
+                _, gap = await self._collect_generation_intervals_for_day(
+                    prev_start, day_start, day, entity_registry, recorder_instance, recheck=True
+                )
+                if gap:
+                    dropped.append(prev_start.astimezone(self.api.tz).strftime(DT_DATE_ONLY_FORMAT))
+                    for interval in intervals:
+                        generation.pop(interval)
+            day += 1
+        if dropped:
+            dropped.sort()
+            _LOGGER.debug(
+                "Cached PV generation of %d day(s) has a gap in daylight readings, leaving it out: %s%s",
+                len(dropped),
+                ", ".join(dropped[:_GAP_DAYS_LOGGED]),
+                f" and {len(dropped) - _GAP_DAYS_LOGGED} more" if len(dropped) > _GAP_DAYS_LOGGED else "",
+            )
+        self.data_generation[GENERATION] = sorted(generation.values(), key=itemgetter(PERIOD_START))
+        self.data_generation[VERSION] = GENERATION_VERSION
+        await self.api.sites_cache.serialise_data(self.data_generation, self.filename_generation)
+        return bool(dropped)
 
     async def granular_data(self) -> bool:
         """Read the current granular dampening file.
