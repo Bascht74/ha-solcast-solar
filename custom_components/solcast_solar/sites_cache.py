@@ -710,6 +710,8 @@ class SitesCache:
                     await adds_moves_changes()
                     # Migrate un-dampened history data to the un-dampened cache if needed.
                     await self.api.dampening.migrate_undampened_history()
+                    # Fill a short adaptive dampening history from the cached generation and estimated actuals.
+                    await self.api.dampening.adaptive.update_history(include_yesterday=False)
                 else:
                     # There is no cached data, so start fresh.
                     self.api.data = copy.deepcopy(FRESH_DATA)

@@ -1905,11 +1905,16 @@ class Dampening:
         return min(1.0, factor)
 
     async def prepare_data(
-        self, only_peaks: bool = False
+        self, only_peaks: bool = False, until: dt | None = None, target_day: dt | None = None
     ) -> tuple[OrderedDict[dt, float], list[int], dict[dt, float], dict[int, list[dt]]]:
-        """Builds data required for dampening calculations."""
+        """Builds data required for dampening calculations, for the model days before until (default today).
+
+        target_day is the day the factors are modelled for (default today). With elevation adjustment the peaks kept for
+        delta adjustment are normalised to its sun.
+        """
         actuals: OrderedDict[dt, float] = OrderedDict()
         model_days: int = self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_MODEL_DAYS]
+        day_end = until or self.api.dt_helper.day_start_utc()
 
         _LOGGER.debug("Determining peak estimated actual intervals%s", " and dampening data" if not only_peaks else "")
         if (
@@ -1919,8 +1924,8 @@ class Dampening:
                 site_history = self.site_actuals(site[RESOURCE_ID])
                 start, end = self.api.query.get_list_slice(
                     site_history,
-                    self.api.dt_helper.day_start_utc() - timedelta(days=model_days),
-                    self.api.dt_helper.day_start_utc(),
+                    day_end - timedelta(days=model_days),
+                    day_end,
                     search_past=True,
                 )
                 site_actuals = {actual[PERIOD_START]: actual for actual in site_history[start:end]}
@@ -1951,14 +1956,15 @@ class Dampening:
             ignored_intervals.append(interval)
 
         model_intervals = model_days * INTERVALS_PER_DAY
+        recent = [gen for gen in self.data_generation[GENERATION] if until is None or gen[PERIOD_START] < until][-model_intervals:]
         export_limited_intervals = dict.fromkeys(range(INTERVALS_PER_DAY), False)
         if not no_limiting:
-            for gen in self.data_generation[GENERATION][-model_intervals:]:
+            for gen in recent:
                 if gen[EXPORT_LIMITING]:
                     export_limited_intervals[self._adjusted_interval(gen)] = True
 
         generation: dict[dt, float] = {}
-        for gen in self.data_generation[GENERATION][-model_intervals:]:
+        for gen in recent:
             if not no_limiting:
                 if not export_limited_intervals[self._adjusted_interval(gen)]:
                     generation[gen[PERIOD_START]] = gen[GENERATION]
@@ -1968,7 +1974,7 @@ class Dampening:
         # Delta adjustment compares a forecast with the peak the default model divides by, with elevation adjustment the
         # peak normalised to the target day's sun.
         self.target_peak_intervals = (
-            self._normalise_to_target_day(actuals, self.api.dt_helper.day_start_utc())[1]
+            self._normalise_to_target_day(actuals, target_day or self.api.dt_helper.day_start_utc())[1]
             if self.api.advanced_options.get(ADVANCED_AUTOMATED_DAMPENING_ELEVATION_ADJUSTMENT, False)
             else dict(self.api.peak_intervals)
         )

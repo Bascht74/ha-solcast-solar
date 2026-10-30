@@ -54,13 +54,13 @@ from custom_components.solcast_solar.const import (
     VALUE_ADAPTIVE_DAMPENING_NO_DELTA,
 )
 from custom_components.solcast_solar.dampen import Dampening
-from custom_components.solcast_solar.dampen_adapt import _prefer_default_model
+from custom_components.solcast_solar.dampen_adapt import DampeningAdaptive, _prefer_default_model
 from custom_components.solcast_solar.dates import DateTimeHelper, NoIndentEncoder
 from custom_components.solcast_solar.solcastapi import SolcastApi
 from freezegun.api import FrozenDateTimeFactory
 import pytest
 
-from homeassistant.components.recorder import Recorder
+from homeassistant.components.recorder import Recorder, get_instance
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
@@ -91,9 +91,11 @@ async def test_adaptive_auto_dampen(  # noqa: C901
     hass: HomeAssistant,
     caplog: pytest.LogCaptureFixture,
     freezer: FrozenDateTimeFactory,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test dampening adaptations."""
 
+    monkeypatch.setattr(DampeningAdaptive, "_days_to_fill", lambda self: [])  # This test builds the history day by day.
     entity_history["days_generation"] = 7
     entity_history["days_suppression"] = 7
     entity_history["offset"] = 2
@@ -393,11 +395,140 @@ async def test_adaptive_auto_dampen(  # noqa: C901
         await solcast.dampening.adaptive.load_history()
         assert "Dampening history file is corrupt" in caplog.text
 
+        # A history of the wrong structure is refused like a corrupt one, not raised.
+        for wrong in (
+            [1, 2],
+            {"x": {"0": [{"period_start": "2025-01-01T00:00:00+00:00", "factors": []}]}},
+            {"1": [1]},
+            {"1": {"0": [{"period_start": "2025-01-01T00:00:00+00:00"}]}},
+            {"1": {"0": [{"period_start": "not a date", "factors": []}]}},
+            {"99": {"0": [{"period_start": "2025-01-01T00:00:00+00:00", "factors": []}]}},
+        ):
+            caplog.clear()
+            Path(f"{config_dir}/solcast-dampening-history.json").write_text(json.dumps(wrong), encoding="utf-8")
+            assert await solcast.dampening.adaptive.load_history() is False
+            assert "Dampening history file has an unexpected structure" in caplog.text
+
     finally:
         entity_history["days_generation"] = 3
         entity_history["days_suppression"] = 3
         entity_history["offset"] = -1
         session_clear(MOCK_CORRUPT_ACTUALS)
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+@pytest.mark.parametrize("full_history", [False, True])
+async def test_fill_history_from_cache(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+    entity_registry: er.EntityRegistry,
+    full_history: bool,
+) -> None:
+    """Test a missing or short dampening history is filled from cached generation and actuals, and a full one is not."""
+
+    entity_history["days_generation"] = 7
+    entity_history["days_suppression"] = 7
+    entity_history["offset"] = 2
+
+    def levels(message: str) -> list[int]:
+        return [record.levelno for record in caplog.records if record.getMessage().startswith(message)]
+
+    async def assert_filled_like_calculate(solcast: SolcastApi) -> None:
+        """Filled days hold what calculate() gives for their window, and the peak intervals are left for today."""
+        dampening = solcast.dampening
+        peaks_after_fill = dict(solcast.peak_intervals)
+        await dampening.prepare_data(only_peaks=True)
+        assert solcast.peak_intervals == peaks_after_fill
+        yesterday = solcast.dt_helper.day_start_utc(future=-1)
+        filled = [
+            entry for entry in dampening.auto_factors_history[0][VALUE_ADAPTIVE_DAMPENING_NO_DELTA] if entry[PERIOD_START] < yesterday
+        ]
+        assert filled
+        for entry in filled:
+            day = entry[PERIOD_START]
+            actuals, ignored_intervals, generation, matching_intervals = await dampening.prepare_data(until=day + timedelta(days=1))
+            for model in range(4):
+                expected = await dampening.calculate(
+                    matching_intervals, generation, actuals, ignored_intervals, model, False, target_day=day
+                )
+                stored = next(e for e in dampening.auto_factors_history[model][VALUE_ADAPTIVE_DAMPENING_NO_DELTA] if e[PERIOD_START] == day)
+                assert stored["factors"] == expected
+        await dampening.prepare_data(only_peaks=True)
+
+    try:
+        config_dir = get_config_dir(hass.config.config_dir, create=True)
+        history_file = Path(f"{config_dir}/solcast-dampening-history.json")
+        write_advanced_options(hass.config.config_dir, {ADVANCED_AUTOMATED_DAMPENING_ADAPTIVE_MODEL_CONFIGURATION: True})
+        options = copy.deepcopy(DEFAULT_INPUT2)
+        options[AUTO_UPDATE] = 0
+        options[GET_ACTUALS] = True
+        options[USE_ACTUALS] = 1
+        options[AUTO_DAMPEN] = True
+        options[GENERATION_ENTITIES] = [
+            "sensor.solar_export_sensor_1111_1111_1111_1111",
+            "sensor.solar_export_sensor_2222_2222_2222_2222",
+        ]
+        entry = await async_init_integration(hass, options, extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+
+        if full_history:
+            days = [{"period_start": solcast.dt_helper.day_start_utc(future=-ago), "factors": [0.5] * 48} for ago in range(14, 0, -1)]
+            history = {model: dict.fromkeys(range(-1, 2), days) for model in range(4)}
+            history_file.write_text(json.dumps(history, cls=NoIndentEncoder, above_level=4), encoding="utf-8")
+
+        caplog.clear()
+        _, solcast = await reload_integration(hass, entry)
+        assert solcast is not None
+        if full_history:
+            assert "Filling" not in caplog.text
+            content = history_file.read_text(encoding="utf-8")
+            await solcast.dampening.adaptive.update_history(include_yesterday=False)
+            assert history_file.read_text(encoding="utf-8") == content
+            return
+
+        assert levels("No dampening history file found") == [logging.DEBUG]
+        assert "Filling" in caplog.text
+        assert sum(len(entries) for deltas in solcast.dampening.auto_factors_history.values() for entries in deltas.values()) > 12
+        await assert_filled_like_calculate(solcast)
+        yesterday = solcast.dt_helper.day_start_utc(future=-1)
+        both_entities = {
+            gen[PERIOD_START]: gen[GENERATION] for gen in solcast.dampening.data_generation[GENERATION] if gen[PERIOD_START] >= yesterday
+        }
+
+        # The filled history is still short of 14 days, which is expected while it builds.
+        caplog.clear()
+        _, solcast = await reload_integration(hass, entry)
+        assert levels("Load dampening history loaded") == [logging.DEBUG]
+        assert "Filling" not in caplog.text
+
+        # Changing the generation entities reloads, re-reads generation from the new entity and rebuilds the history.
+        caplog.clear()
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, GENERATION_ENTITIES: ["sensor.solar_export_sensor_2222_2222_2222_2222"]}
+        )
+        await hass.async_block_till_done()
+        solcast = entry.runtime_data.coordinator.solcast
+        assert "Generation entities changed" in caplog.text
+        assert "Retrieved day -1 PV generation data from entity: sensor.solar_export_sensor_2222_2222_2222_2222" in caplog.text
+        assert "PV generation data from entity: sensor.solar_export_sensor_1111_1111_1111_1111" not in caplog.text
+        assert levels("No dampening history file found") == [logging.DEBUG]
+        assert "Filling" in caplog.text
+        assert solcast.dampening.data_generation[GENERATION_ENTITIES] == ["sensor.solar_export_sensor_2222_2222_2222_2222"]
+        one_entity, _ = await solcast.dampening._collect_generation_intervals_for_day(
+            yesterday, yesterday + timedelta(days=1), 0, entity_registry, get_instance(hass)
+        )
+        cached = {
+            gen[PERIOD_START]: gen[GENERATION] for gen in solcast.dampening.data_generation[GENERATION] if gen[PERIOD_START] >= yesterday
+        }
+        assert cached == one_entity
+        assert 0 < sum(cached.values()) < sum(both_entities.values())
+        await assert_filled_like_calculate(solcast)
+
+    finally:
+        entity_history["days_generation"] = 3
+        entity_history["days_suppression"] = 3
+        entity_history["offset"] = -1
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 
 
@@ -483,7 +614,7 @@ async def test_update_history_with_an_estimated_actual_of_zero(
 
         _, ignored_intervals, generation, matching_intervals = await solcast.dampening.prepare_data()
 
-        async def actuals_of_zero() -> tuple[dict[dt, float], list[int], dict[dt, float], dict[int, list[dt]]]:
+        async def actuals_of_zero(*args: Any, **kwargs: Any) -> tuple[dict[dt, float], list[int], dict[dt, float], dict[int, list[dt]]]:
             return dict.fromkeys(half_hours, 0.0), ignored_intervals, generation, matching_intervals
 
         async def factors_of_0_706(*args: Any, **kwargs: Any) -> list[float]:
@@ -1091,9 +1222,6 @@ async def test_dampening_adaptations_development_flag(
     are called during async_setup_entry.
     """
     import custom_components.solcast_solar as solcast_module  # noqa: PLC0415
-    from custom_components.solcast_solar.dampen_adapt import (  # noqa: PLC0415
-        DampeningAdaptive,
-    )
 
     monkeypatch.setattr(solcast_module, "DAMPENING_ADAPTATIONS_DEVELOPMENT", True)
 
