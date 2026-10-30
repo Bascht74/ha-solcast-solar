@@ -938,6 +938,7 @@ async def test_config_flow_mixed_generation_registry_and_state_entity_types(
 def test_target_timestamp_shifts_to_target_day() -> None:
     """_target_timestamp should preserve the UTC time-of-day on the target day."""
     dampening = Dampening.__new__(Dampening)
+    dampening.api = SimpleNamespace(tz=datetime.UTC)  # pyright: ignore[reportAttributeAccessIssue]
     past_ts = dt(2025, 1, 10, 13, 30, tzinfo=datetime.UTC)
     target_day = dt(2025, 1, 25, 0, 0, tzinfo=datetime.UTC)
     result = dampening._target_timestamp(past_ts, target_day)  # type: ignore[attr-defined]

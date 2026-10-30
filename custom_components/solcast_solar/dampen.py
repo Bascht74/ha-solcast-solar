@@ -375,12 +375,9 @@ class Dampening:
         # Clamp to avoid extreme swings from numerical edge-cases.
         return max(0.5, min(2.0, ratio_sum / count))
 
-    @staticmethod
-    def _target_timestamp(past_ts: dt, target_day: dt) -> dt:
-        """Build a timestamp on target_day at the same UTC time-of-day as past_ts."""
-        past_midnight_utc = past_ts.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-        target_midnight_utc = target_day.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-        return past_ts + (target_midnight_utc - past_midnight_utc)
+    def _target_timestamp(self, past_ts: dt, target_day: dt) -> dt:
+        """Build a timestamp on the local date of target_day at the same UTC time-of-day as past_ts."""
+        return past_ts + timedelta(days=(target_day.astimezone(self.api.tz).date() - past_ts.astimezone(self.api.tz).date()).days)
 
     async def apply_forward(self, applicable_sites: list[str] | None = None, do_past_hours: int = 0) -> None:
         """Apply dampening to forward forecasts."""
