@@ -1,0 +1,102 @@
+name: Auto release
+
+# After the tests pass for a push to main, release the version in manifest.json once: build
+# solcast_solar.zip as release.yml does, and create the release v<version> with the notes from
+# .github/release-notes/<version>.md. A release created with GITHUB_TOKEN starts no other workflow,
+# so release.yml does not build the ZIP a second time.
+
+on:
+  workflow_run:  # zizmor: ignore[dangerous-triggers] only a successful push to main of this repository is released
+    workflows: ["Tests"]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release the tested version
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_branch == 'main'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write  # Create the tag and the release, and attach the ZIP
+    steps:
+      - name: Checkout the tested commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Read the version
+        id: version
+        shell: bash
+        run: |
+          version=$(jq -r '.version' custom_components/solcast_solar/manifest.json)
+          if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+            echo "::error::manifest.json has no plain version number: $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether the version is released
+        id: released
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --silent 2> /dev/null; then
+            echo "Tag $TAG exists, nothing to release"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the release notes
+        if: steps.released.outputs.exists == 'false'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ ! -s ".github/release-notes/$VERSION.md" ]; then
+            echo "::error::.github/release-notes/$VERSION.md is missing, so $VERSION is not released"
+            exit 1
+          fi
+
+      - name: Adjust version number
+        if: steps.released.outputs.exists == 'false'
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          yq -i -o json ".version=\"$TAG\"" custom_components/solcast_solar/manifest.json
+
+      - name: ZIP the integration directory
+        if: steps.released.outputs.exists == 'false'
+        shell: bash
+        run: |
+          cd custom_components/solcast_solar
+          zip solcast_solar.zip -r ./
+
+      - name: Create the release with the ZIP file
+        if: steps.released.outputs.exists == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh release create "$TAG" custom_components/solcast_solar/solcast_solar.zip \
+            --repo "$GITHUB_REPOSITORY" --target "$SHA" --title "$TAG" \
+            --notes-file ".github/release-notes/$VERSION.md"
