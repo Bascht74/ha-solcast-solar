@@ -59,6 +59,7 @@ from .const import (
     EVENT_START_DATETIME,
     EXCEPTION_ACTUALS_NOT_ENABLED,
     EXCEPTION_ACTUALS_WITHOUT_GET,
+    EXCEPTION_API_ERROR,
     EXCEPTION_AUTO_USE_FORCE,
     EXCEPTION_AUTO_USE_NORMAL,
     EXCEPTION_DAMP_AUTO_ENABLED,
@@ -72,6 +73,7 @@ from .const import (
     EXCEPTION_DAMPEN_WITHOUT_GENERATION,
     EXCEPTION_EXPORT_NO_ENTITY,
     EXCEPTION_EXPORT_NO_LIMIT,
+    EXCEPTION_EXPORT_NOT_SENSOR,
     EXCEPTION_INIT_KEY_INVALID,
     EXCEPTION_INSTANCE_REQUIRED,
     EXCEPTION_INSTANCE_UNKNOWN,
@@ -139,6 +141,7 @@ from .const import (
 from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, LoadStatus
 from .instance import (
+    check_rooftops,
     instance_name,
     repair_issue_id,
     repair_placeholders,
@@ -160,7 +163,9 @@ from .validators import (
     validate_api_limit_value,
     validate_auto_update_value,
     validate_custom_hours_value,
+    validate_export_entity,
     validate_export_limit_value,
+    validate_generation_entities,
     validate_hard_limit_value,
     validate_key_estimate_value,
     validate_use_actuals_value,
@@ -753,6 +758,41 @@ class ServiceActions:
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_EXPORT_NO_ENTITY)
         if opt.get(SITE_EXPORT_LIMIT, 0) == 0.0 and opt.get(SITE_EXPORT_ENTITY, ""):
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_EXPORT_NO_LIMIT)
+        # The options flow offers only energy sensors.
+        if SITE_EXPORT_ENTITY in call.data and opt[SITE_EXPORT_ENTITY] and validate_export_entity(self._hass, opt[SITE_EXPORT_ENTITY]):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key=EXCEPTION_EXPORT_NOT_SENSOR,
+                translation_placeholders={"entity": opt[SITE_EXPORT_ENTITY]},
+            )
+
+        # Validate new generation entities as the options flow does.
+        error, entity = (
+            validate_generation_entities(self._hass, opt[GENERATION_ENTITIES]) if GENERATION_ENTITIES in call.data else (None, "")
+        )
+        if error is not None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key=error, translation_placeholders={"entity": entity} if entity else None
+            )
+
+        # Refuse a key Solcast does not accept, a site fetched by two entries and an entry without a site, as the flows do.
+        from .config_flow import validate_sites  # noqa: PLC0415
+
+        rooftops: list[str] = []
+        new_key = opt[CONF_API_KEY] != self._entry.options[CONF_API_KEY]
+        if new_key:
+            status, message, rooftops = await validate_sites(self._hass, opt)
+            if status != 200:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN, translation_key=EXCEPTION_API_ERROR, translation_placeholders={"error_detail": message}
+                )
+        elif opt.get(EXCLUDE_SITES, []) != self._entry.options.get(EXCLUDE_SITES, []):
+            rooftops = [site[RESOURCE_ID] for site in self._solcast.sites_all]
+        excluded, error, placeholders = check_rooftops(self._hass, self._entry.entry_id, rooftops, opt.get(EXCLUDE_SITES, []), new_key)
+        if error is not None:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key=error, translation_placeholders=placeholders or None)
+        if rooftops:
+            opt[EXCLUDE_SITES] = excluded
 
         # Sync legacy keys before updating the entry to keep downgrade compatibility.
         sync_legacy_keys(opt)

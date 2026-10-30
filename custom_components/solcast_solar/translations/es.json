@@ -182,6 +182,9 @@
     "api_duplicate": {
       "message": "Se especificó una clave API duplicada."
     },
+    "api_error": {
+      "message": "Error de la API de Solcast: {error_detail}"
+    },
     "api_key_empty": {
       "message": "La clave API no debe estar vacía."
     },
@@ -241,6 +244,15 @@
     },
     "export_no_limit": {
       "message": "El límite de exportación del sitio debe especificarse si se establece una entidad de exportación del sitio."
+    },
+    "export_not_sensor": {
+      "message": "{entity} no es un sensor de energía existente."
+    },
+    "generation_mixed_types": {
+      "message": "Las entidades de generación fotovoltaica deben ser todas del mismo tipo (toda la energía o toda la potencia, no una mezcla)"
+    },
+    "generation_not_sensor": {
+      "message": "{entity} no es un sensor de energía o potencia existente."
     },
     "hard_empty": {
       "message": "Valor límite duro vacío."
@@ -420,6 +432,7 @@
       "export_no_entity": "La entidad de exportación del sitio debe ser especificada si se establece un límite de exportación del sitio",
       "export_no_limit": "El límite de exportación del sitio debe especificarse si se establece una entidad de exportación del sitio",
       "generation_mixed_types": "Las entidades de generación fotovoltaica deben ser todas del mismo tipo (toda la energía o toda la potencia, no una mezcla)",
+      "generation_not_sensor": "{entity} no es un sensor de energía o potencia existente.",
       "hard_not_positive_number": "El límite duro no es un número positivo",
       "hard_too_many": "Se introducen más límites duros que claves",
       "internal_error": "Se produjo un error inesperado. Consulte los registros para obtener más información.",

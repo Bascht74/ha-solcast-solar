@@ -182,6 +182,9 @@
     "api_duplicate": {
       "message": "Bol zadaný duplicitný kľúč API."
     },
+    "api_error": {
+      "message": "Chyba API Solcast: {error_detail}"
+    },
     "api_key_empty": {
       "message": "Kľúč API nesmie byť prázdny."
     },
@@ -241,6 +244,15 @@
     },
     "export_no_limit": {
       "message": "Limit exportu lokality musí byť špecifikovaný, ak je nastavená entita exportu lokality."
+    },
+    "export_not_sensor": {
+      "message": "{entity} nie je existujúci senzor energie."
+    },
+    "generation_mixed_types": {
+      "message": "Všetky jednotky na výrobu fotovoltaiky musia byť rovnakého typu (iba energia alebo iba výkon, nie zmiešané)"
+    },
+    "generation_not_sensor": {
+      "message": "{entity} nie je existujúci senzor energie ani výkonu."
     },
     "hard_empty": {
       "message": "Prázdna hodnota pevného limitu."
@@ -420,6 +432,7 @@
       "export_no_entity": "Export lokality musí byť špecifikovaný, ak je nastavený limit exportu lokality",
       "export_no_limit": "Limit exportu lokality musí byť špecifikovaný, ak je nastavená entita exportu lokality",
       "generation_mixed_types": "Všetky jednotky na výrobu fotovoltaiky musia byť rovnakého typu (iba energia alebo iba výkon, nie zmiešané)",
+      "generation_not_sensor": "{entity} nie je existujúci senzor energie ani výkonu.",
       "hard_not_positive_number": "Pevný limit nie je kladné číslo",
       "hard_too_many": "Je zadaných viac tvrdých limitov ako kľúčov",
       "internal_error": "Vyskytla sa neočakávaná chyba. Ďalšie informácie nájdete v denníkoch.",

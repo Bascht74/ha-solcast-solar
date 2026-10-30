@@ -182,6 +182,9 @@
     "api_duplicate": {
       "message": "Określono duplikat klucza API."
     },
+    "api_error": {
+      "message": "Błąd API Solcast: {error_detail}"
+    },
     "api_key_empty": {
       "message": "Klucz API nie może być pusty."
     },
@@ -241,6 +244,15 @@
     },
     "export_no_limit": {
       "message": "Limit eksportu witryny musi być określony, jeśli ustawiono jednostkę eksportu witryny."
+    },
+    "export_not_sensor": {
+      "message": "{entity} nie jest istniejącym czujnikiem energii."
+    },
+    "generation_mixed_types": {
+      "message": "Wszystkie jednostki generujące energię fotowoltaiczną muszą być tego samego typu (cała energia lub cała moc, a nie mieszanka)"
+    },
+    "generation_not_sensor": {
+      "message": "{entity} nie jest istniejącym czujnikiem energii ani mocy."
     },
     "hard_empty": {
       "message": "Pusta wartość twardego limitu."
@@ -420,6 +432,7 @@
       "export_no_entity": "Jednostka eksportu witryny musi być określona, jeśli jest ustawiony limit eksportu witryny",
       "export_no_limit": "Limit eksportu witryny musi być określony, jeśli jest ustawiona jednostka eksportu witryny.",
       "generation_mixed_types": "Wszystkie jednostki generujące energię fotowoltaiczną muszą być tego samego typu (cała energia lub cała moc, a nie mieszanka)",
+      "generation_not_sensor": "{entity} nie jest istniejącym czujnikiem energii ani mocy.",
       "hard_not_positive_number": "Twardy limit nie jest liczbą dodatnią",
       "hard_too_many": "Wprowadzono więcej sztywnych limitów niż kluczy",
       "internal_error": "Wystąpił nieoczekiwany błąd. Więcej informacji znajdziesz w dziennikach.",

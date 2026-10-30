@@ -182,6 +182,9 @@
     "api_duplicate": {
       "message": "重複したAPIキーが指定されました。"
     },
+    "api_error": {
+      "message": "Solcast APIエラー: {error_detail}"
+    },
     "api_key_empty": {
       "message": "APIキーは空にすることはできません。"
     },
@@ -241,6 +244,15 @@
     },
     "export_no_limit": {
       "message": "サイトエクスポートエンティティが設定されている場合は、サイトエクスポートの上限を指定する必要があります。"
+    },
+    "export_not_sensor": {
+      "message": "{entity} は既存のエネルギーセンサーではありません。"
+    },
+    "generation_mixed_types": {
+      "message": "PV発電エンティティはすべて同じ型（すべてエネルギーまたはすべて電力、混在なし）である必要があります"
+    },
+    "generation_not_sensor": {
+      "message": "{entity} は既存のエネルギーまたは電力センサーではありません。"
     },
     "hard_empty": {
       "message": "ハードリミット値が空です。"
@@ -420,6 +432,7 @@
       "export_no_entity": "サイトエクスポートリミットが設定されている場合は、サイトエクスポートエンティティを指定する必要があります",
       "export_no_limit": "サイトエクスポートエンティティが設定されている場合は、サイトエクスポートの上限を指定する必要があります。",
       "generation_mixed_types": "PV発電エンティティはすべて同じ型（すべてエネルギーまたはすべて電力、混在なし）である必要があります",
+      "generation_not_sensor": "{entity} は既存のエネルギーまたは電力センサーではありません。",
       "hard_not_positive_number": "ハードリミットは正の数字ではありません",
       "hard_too_many": "入力されたハードリミットの数がキーの数より多すぎます",
       "internal_error": "予期しないエラーが発生しました。詳細についてはログを確認してください。",

@@ -1267,7 +1267,18 @@ async def test_remaining_actions(
         assert entry.options[USE_ACTUALS] == 1
 
         _LOGGER.debug("Test set_options generation entities and exclude sites")
+        hass.states.async_set("sensor.pv1", "1", {"device_class": "power"})
+        hass.states.async_set("sensor.pv2", "1", {"device_class": "power"})
+        hass.states.async_set("sensor.pv3", "1", {"device_class": "energy"})
         hass.states.async_set("sensor.grid_export", "1", {"device_class": "energy"})
+        for generation, error in (
+            ("sensor.pv1, sensor.missing", "generation_not_sensor"),
+            ("sensor.pv1, sensor.pv3", "generation_mixed_types"),
+        ):
+            with pytest.raises(ServiceValidationError) as raised:
+                await hass.services.async_call(DOMAIN, SERVICE_SET_OPTIONS, {GENERATION_ENTITIES: generation}, blocking=True)
+            assert raised.value.translation_key == error
+        assert entry.options[GENERATION_ENTITIES] == []
         await hass.services.async_call(
             DOMAIN,
             SERVICE_SET_OPTIONS,

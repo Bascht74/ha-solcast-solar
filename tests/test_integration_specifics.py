@@ -47,6 +47,8 @@ from custom_components.solcast_solar.const import (
     SERVICE_SET_OPTIONS,
     SERVICE_UPDATE,
     SITE,
+    SITE_EXPORT_ENTITY,
+    SITE_EXPORT_LIMIT,
     SITE_INFO,
     TASK_NEW_DAY_ACTUALS,
     TASK_NEW_DAY_GENERATION,
@@ -689,5 +691,30 @@ async def test_config_folder_migration(
         assert entry.state is ConfigEntryState.LOADED, f"Expected entry state ConfigEntryState.LOADED, got {entry.state}"
         assert f"Migrating config directory file {config_file_old} to {config_file_new}" in caplog.text
         no_error_or_exception(caplog)
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_set_options_validates_the_export_entity(recorder_mock: Recorder, hass: HomeAssistant) -> None:
+    """The set_options action stores only an existing energy sensor as site export entity, as the options flow offers."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        hass.states.async_set("sensor.grid_export", "1", {"device_class": "energy"})
+        hass.states.async_set("sensor.grid_power", "1", {"device_class": "power"})
+        for entity in ("sensor.missing", "sensor.grid_power", "switch.grid_export"):
+            with pytest.raises(ServiceValidationError) as raised:
+                await hass.services.async_call(
+                    DOMAIN, SERVICE_SET_OPTIONS, {SITE_EXPORT_ENTITY: entity, SITE_EXPORT_LIMIT: 5.0}, blocking=True
+                )
+            assert raised.value.translation_key == "export_not_sensor"
+            assert raised.value.translation_placeholders == {"entity": entity}
+        assert entry.options[SITE_EXPORT_ENTITY] == ""
+
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SET_OPTIONS, {SITE_EXPORT_ENTITY: "sensor.grid_export", SITE_EXPORT_LIMIT: 5.0}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert entry.options[SITE_EXPORT_ENTITY] == "sensor.grid_export"
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

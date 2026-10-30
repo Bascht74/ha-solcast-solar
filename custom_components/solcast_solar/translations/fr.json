@@ -182,6 +182,9 @@
     "api_duplicate": {
       "message": "Clé API en double spécifiée."
     },
+    "api_error": {
+      "message": "Erreur de l'API Solcast : {error_detail}"
+    },
     "api_key_empty": {
       "message": "La clé API ne doit pas être vide."
     },
@@ -241,6 +244,15 @@
     },
     "export_no_limit": {
       "message": "Une limite d'exportation de site doit être spécifiée si une entité d'exportation de site est définie."
+    },
+    "export_not_sensor": {
+      "message": "{entity} n'est pas un capteur d'énergie existant."
+    },
+    "generation_mixed_types": {
+      "message": "Les unités de production photovoltaïque doivent toutes être du même type (toute énergie ou toute puissance, pas un mélange)."
+    },
+    "generation_not_sensor": {
+      "message": "{entity} n'est pas un capteur d'énergie ou de puissance existant."
     },
     "hard_empty": {
       "message": "Valeur limite stricte vide."
@@ -420,6 +432,7 @@
       "export_no_entity": "Le site d'exportation doit être spécifié si la limite d'exportation du site est définie",
       "export_no_limit": "La limite d'exportation du site doit être spécifiée si une entité d'exportation du site est définie.",
       "generation_mixed_types": "Les unités de production photovoltaïque doivent toutes être du même type (toute énergie ou toute puissance, pas un mélange).",
+      "generation_not_sensor": "{entity} n'est pas un capteur d'énergie ou de puissance existant.",
       "hard_not_positive_number": "La limite dure n'est pas un nombre positif",
       "hard_too_many": "Il y a plus de limites strictes saisies que de clés",
       "internal_error": "Une erreur inattendue est survenue. Consultez les journaux pour plus d'informations.",

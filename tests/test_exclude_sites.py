@@ -118,9 +118,14 @@ async def test_excluded_site_is_not_fetched(
         selector = next(value for key, value in result["data_schema"].schema.items() if key == EXCLUDE_SITES)  # type: ignore[union-attr]
         assert [option["value"] for option in selector.config["options"]] == [SITE1, SITE2]
 
-        # Excluding every site is refused by the options flow.
+        # Excluding every site is refused by the options flow and the set_options action.
         result = await flow.async_step_init({**entry.options, SITE_EXPORT_ENTITY: [], EXCLUDE_SITES: [SITE1, SITE2]})
         assert result.get("errors") == {"base": EXCEPTION_ALL_SITES_EXCLUDED}
+        with pytest.raises(ServiceValidationError) as raised:
+            await hass.services.async_call(
+                DOMAIN, SERVICE_SET_OPTIONS, {CONFIG_ENTRY_ID: entry.entry_id, EXCLUDE_SITES: f"{SITE1},{SITE2}"}, blocking=True
+            )
+        assert raised.value.translation_key == EXCEPTION_ALL_SITES_EXCLUDED
         assert entry.options[EXCLUDE_SITES] == [SITE1]
 
         # The excluded site is known, so the health check does not report it.

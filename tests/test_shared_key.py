@@ -82,6 +82,81 @@ async def _set_options(hass: HomeAssistant, entry: MockConfigEntry | config_entr
     await hass.async_block_till_done()
 
 
+async def test_new_key_shared_with_another_entry(recorder_mock: Recorder, hass: HomeAssistant, issue_registry: ir.IssueRegistry) -> None:
+    """Every flow that sets a new key excludes the sites another entry fetches, and refuses a key that leaves no site."""
+
+    west_options = _options("20", **{CONF_API_KEY: KEY2, INSTANCE_NAME: "West"})
+    shared_key = f"{KEY2},{KEY1}"
+    try:
+        original = await async_init_integration(hass, _options("20"))
+        west = await async_init_integration(hass, west_options, unique_id="solcast_west", title="Solcast West", orphan_hard_limit=False)
+
+        async def _reset() -> None:
+            hass.config_entries.async_update_entry(west, options={**west.options, CONF_API_KEY: KEY2, EXCLUDE_SITES: []})
+            await hass.async_block_till_done()
+            assert issue_registry.async_get_issue(DOMAIN, SHARED_ISSUE) is None
+
+        def _shared() -> None:
+            assert west.options[CONF_API_KEY] == shared_key
+            assert west.options[EXCLUDE_SITES] == [SITE1, SITE2]
+            assert west.state is ConfigEntryState.LOADED
+            assert [site[RESOURCE_ID] for site in west.runtime_data.coordinator.solcast.sites] == [SITE3]
+            assert west.runtime_data.coordinator.solcast.api_sites_per_key == {KEY2: 1}
+            # West fetches nothing with the original's key, so its limit for that key does not add up with the original's.
+            assert issue_registry.async_get_issue(DOMAIN, SHARED_ISSUE) is None
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": west.entry_id}, data=west.data
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_API_KEY: shared_key, API_LIMIT: "20", AUTO_UPDATE: "1"}
+        )
+        assert result.get("reason") == AFFIRMATION_RECONFIGURED
+        await hass.async_block_till_done()
+        _shared()
+        await _reset()
+
+        result = await west.start_reauth_flow(hass)
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_API_KEY: shared_key})
+        assert result.get("reason") == AFFIRMATION_REAUTH_SUCCESSFUL
+        await hass.async_block_till_done()
+        _shared()
+        await _reset()
+
+        flow = SolcastSolarOptionFlowHandler(west)
+        flow.hass = hass
+        result = await flow.async_step_init({**west.options, SITE_EXPORT_ENTITY: [], CONF_API_KEY: shared_key})
+        assert result.get("reason") == AFFIRMATION_RECONFIGURED
+        await hass.async_block_till_done()
+        _shared()
+        await _reset()
+
+        await _set_options(hass, west, **{CONF_API_KEY: shared_key})
+        _shared()
+
+        # The original still fetches both sites of the key, so they count once each.
+        assert [site[RESOURCE_ID] for site in original.runtime_data.coordinator.solcast.sites] == [SITE1, SITE2]
+
+        # A new key whose every site the entry excludes leaves nothing to fetch.
+        hass.config_entries.async_update_entry(
+            west,
+            options={
+                **west.options,
+                CONF_API_KEY: KEY2,
+                EXCLUDE_SITES: ["4444-4444-4444-4444", "5555-5555-5555-5555", "6666-6666-6666-6666"],
+            },
+        )
+        await hass.async_block_till_done()
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": west.entry_id}, data=west.data
+        )
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_API_KEY: "3", API_LIMIT: "20", AUTO_UPDATE: "1"})
+        assert result.get("errors") == {"base": EXCEPTION_ALL_SITES_EXCLUDED}
+        assert west.options[CONF_API_KEY] == KEY2
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
 async def test_refusal_caused_by_another_entry_is_logged(
     recorder_mock: Recorder,
     hass: HomeAssistant,

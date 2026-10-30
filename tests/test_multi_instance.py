@@ -651,6 +651,101 @@ async def test_action_routing(
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 
 
+async def test_rooftop_counted_once(
+    recorder_mock: Recorder, hass: HomeAssistant, entity_registry: er.EntityRegistry, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Each rooftop is counted by one entry only, also against an entry that is not loaded; entries may share an API key."""
+
+    user_input = {CONF_API_KEY: KEY1, API_LIMIT: "10", AUTO_UPDATE: "1", INSTANCE_NAME: "Zwei"}
+    try:
+        original = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input)
+        assert result.get("errors") == {"base": EXCEPTION_ROOFTOP_IN_USE}
+        assert result.get("description_placeholders") == {
+            "rooftops": "1111-1111-1111-1111, 2222-2222-2222-2222",
+            "entries": original.title,
+        }
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input | {CONF_API_KEY: "1a"})
+        assert result.get("errors") == {"base": EXCEPTION_ROOFTOP_IN_USE}
+
+        # An entry that shares the key loads, and counts the rooftop the original excludes.
+        hass.config_entries.async_update_entry(original, options={**original.options, EXCLUDE_SITES: ["2222-2222-2222-2222"]})
+        await hass.async_block_till_done()
+        zwei_options = copy.deepcopy(DEFAULT_INPUT1) | {INSTANCE_NAME: "Zwei", EXCLUDE_SITES: ["1111-1111-1111-1111"]}
+        zwei = await async_init_integration(hass, zwei_options, unique_id="solcast_zwei", title="Solcast Zwei", orphan_hard_limit=False)
+        assert zwei.state is ConfigEntryState.LOADED
+
+        # After a restart each shared rooftop's sensor belongs to the entry that counts it.
+        caplog.clear()
+        await hass.config_entries.async_reload(original.entry_id)
+        await hass.config_entries.async_reload(zwei.entry_id)
+        await hass.async_block_till_done()
+        assert "does not generate unique IDs" not in caplog.text
+        assert "is also counted by" not in caplog.text
+        assert entity_registry.async_get_entity_id("sensor", DOMAIN, "solcast_solcast_api_2222-2222-2222-2222") in {
+            entity.entity_id for entity in er.async_entries_for_config_entry(entity_registry, zwei.entry_id)
+        }
+
+        # Counting the first rooftop in both entries is refused; unchanged settings still save.
+        flow = SolcastSolarOptionFlowHandler(zwei)
+        flow.hass = hass
+        form = {**zwei.options, SITE_EXPORT_ENTITY: []}
+        result = await flow.async_step_init({**form, EXCLUDE_SITES: []})
+        assert result.get("errors") == {"base": EXCEPTION_ROOFTOP_IN_USE}
+        result = await flow.async_step_init(form)
+        assert result.get("reason") == AFFIRMATION_UNCHANGED
+
+        # A new key whose rooftops other entries count is refused by every flow.
+        west = await async_init_integration(hass, _west_options(), unique_id="solcast_west", title="Solcast West", orphan_hard_limit=False)
+        for api_key, error in ((KEY1, EXCEPTION_ROOFTOP_IN_USE), ("1a", EXCEPTION_ROOFTOP_IN_USE)):
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": west.entry_id}, data=west.data
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {CONF_API_KEY: api_key, API_LIMIT: "10", AUTO_UPDATE: "1"}
+            )
+            assert result.get("errors") == {"base": error}, api_key
+            result = await west.start_reauth_flow(hass)
+            result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_API_KEY: api_key})
+            assert result.get("errors") == {"base": error}, api_key
+            flow = SolcastSolarOptionFlowHandler(west)
+            flow.hass = hass
+            result = await flow.async_step_init({**west.options, SITE_EXPORT_ENTITY: [], CONF_API_KEY: api_key})
+            assert result.get("errors") == {"base": error}, api_key
+        assert west.options[CONF_API_KEY] == KEY2
+
+        # The set_options action refuses the same, and a key Solcast refuses or cannot check now.
+        for entry, change, error in (
+            (zwei, {EXCLUDE_SITES: "2222-2222-2222-2222"}, EXCEPTION_ROOFTOP_IN_USE),
+            (west, {CONF_API_KEY: "1a"}, EXCEPTION_ROOFTOP_IN_USE),
+            (west, {CONF_API_KEY: KEY1}, EXCEPTION_ROOFTOP_IN_USE),
+            (west, {CONF_API_KEY: "unknown"}, EXCEPTION_API_ERROR),
+        ):
+            with pytest.raises(ServiceValidationError) as raised:
+                await hass.services.async_call(DOMAIN, SERVICE_SET_OPTIONS, {CONFIG_ENTRY_ID: entry.entry_id, **change}, blocking=True)
+            assert raised.value.translation_key == error, change
+        assert raised.value.translation_placeholders is not None
+        assert "403" in raised.value.translation_placeholders["error_detail"]
+        session_set(MOCK_BUSY)
+        with pytest.raises(ServiceValidationError) as raised:
+            await hass.services.async_call(DOMAIN, SERVICE_SET_OPTIONS, {CONFIG_ENTRY_ID: west.entry_id, CONF_API_KEY: "3"}, blocking=True)
+        assert raised.value.translation_key == EXCEPTION_API_ERROR
+        session_clear(MOCK_BUSY)
+        assert zwei.options[EXCLUDE_SITES] == ["1111-1111-1111-1111"]
+        assert west.options[CONF_API_KEY] == KEY2
+
+        # An entry that is not loaded still counts the rooftops of its sensors.
+        await hass.config_entries.async_unload(original.entry_id)
+        await hass.async_block_till_done()
+        with pytest.raises(ServiceValidationError) as raised:
+            await hass.services.async_call(DOMAIN, SERVICE_SET_OPTIONS, {CONFIG_ENTRY_ID: west.entry_id, CONF_API_KEY: "1a"}, blocking=True)
+        assert raised.value.translation_key == EXCEPTION_ROOFTOP_IN_USE
+        assert raised.value.translation_placeholders == {"rooftops": "1111-1111-1111-1111", "entries": original.title}
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
 async def test_entries_together_and_apart(
     recorder_mock: Recorder,
     hass: HomeAssistant,

@@ -182,6 +182,9 @@
     "api_duplicate": {
       "message": "Doppelter API-Schlüssel angegeben."
     },
+    "api_error": {
+      "message": "Solcast-API-Fehler: {error_detail}"
+    },
     "api_key_empty": {
       "message": "API-Schlüssel darf nicht leer sein."
     },
@@ -241,6 +244,15 @@
     },
     "export_no_limit": {
       "message": "Das Site-Export-Limit muss angegeben werden, wenn eine Site-Export-Entität festgelegt ist."
+    },
+    "export_not_sensor": {
+      "message": "{entity} ist kein vorhandener Energiesensor."
+    },
+    "generation_mixed_types": {
+      "message": "PV-Erzeugungsentitäten müssen alle denselben Typ haben (entweder alle Energie oder alle Leistung, keine Mischung)"
+    },
+    "generation_not_sensor": {
+      "message": "{entity} ist kein vorhandener Energie- oder Leistungssensor."
     },
     "hard_empty": {
       "message": "Leerer fester Grenzwert."
@@ -420,6 +432,7 @@
       "export_no_entity": "Die Site-Export-Entität muss angegeben werden, wenn das Site-Export-Limit festgelegt ist.",
       "export_no_limit": "Das Site-Export-Limit muss angegeben werden, wenn eine Site-Export-Entität festgelegt ist.",
       "generation_mixed_types": "PV-Erzeugungsentitäten müssen alle denselben Typ haben (entweder alle Energie oder alle Leistung, keine Mischung)",
+      "generation_not_sensor": "{entity} ist kein vorhandener Energie- oder Leistungssensor.",
       "hard_not_positive_number": "Der fester Grenzwert ist keine positive Zahl",
       "hard_too_many": "Es sind mehr harte Grenzen als Schlüssel eingegeben",
       "internal_error": "Ein unerwarteter Fehler ist aufgetreten. Weitere Informationen finden Sie in den Protokollen.",

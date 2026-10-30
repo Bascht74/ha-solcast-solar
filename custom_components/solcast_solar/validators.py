@@ -4,13 +4,19 @@ import re
 import sys
 from typing import Any
 
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import CONF_API_KEY
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     API_LIMIT,
     EXCEPTION_API_DUPLICATE,
     EXCEPTION_API_KEY_EMPTY,
     EXCEPTION_API_LOOKS_LIKE_SITE,
+    EXCEPTION_EXPORT_NOT_SENSOR,
+    EXCEPTION_GENERATION_MIXED_TYPES,
+    EXCEPTION_GENERATION_NOT_SENSOR,
     EXCEPTION_HARD_NOT_POSITIVE_NUMBER,
     EXCEPTION_HARD_TOO_MANY,
     EXCEPTION_INVALID_AUTO_UPDATE,
@@ -237,3 +243,44 @@ def validate_export_limit_value(value: str) -> tuple[float, str | None]:
     if val < 0.0 or val > 100.0:
         return 0.0, EXCEPTION_INVALID_EXPORT_LIMIT
     return val, None
+
+
+def _sensor_device_class(hass: HomeAssistant, entity_registry: er.EntityRegistry, entity: str) -> str | None:
+    """Return the device class of an energy or power sensor from the entity registry or its state, else None."""
+    registry_entry = entity_registry.async_get(entity)
+    device_class = registry_entry.device_class or registry_entry.original_device_class if registry_entry is not None else None
+    if device_class not in (SensorDeviceClass.ENERGY, SensorDeviceClass.POWER):
+        entity_state = hass.states.get(entity)
+        device_class = entity_state.attributes.get("device_class") if entity_state is not None else None
+    return device_class if device_class in (SensorDeviceClass.ENERGY, SensorDeviceClass.POWER) else None
+
+
+def validate_export_entity(hass: HomeAssistant, entity: str) -> str | None:
+    """Validate a site export entity: an existing energy sensor, as the options flow offers.
+
+    Returns:
+        str | None: The error key or None.
+
+    """
+    if entity.startswith("sensor.") and _sensor_device_class(hass, er.async_get(hass), entity) == SensorDeviceClass.ENERGY:
+        return None
+    return EXCEPTION_EXPORT_NOT_SENSOR
+
+
+def validate_generation_entities(hass: HomeAssistant, entities: list[str]) -> tuple[str | None, str]:
+    """Validate generation entities: each an existing energy or power sensor, and not both kinds mixed.
+
+    Returns:
+        tuple[str | None, str]: The error key or None, and the entity the error concerns, if one.
+
+    """
+    entity_registry = er.async_get(hass)
+    device_classes: set[str] = set()
+    for entity in entities:
+        device_class = _sensor_device_class(hass, entity_registry, entity)
+        if device_class is None:
+            return EXCEPTION_GENERATION_NOT_SENSOR, entity
+        device_classes.add(device_class)
+    if len(device_classes) > 1:
+        return EXCEPTION_GENERATION_MIXED_TYPES, ""
+    return None, ""
