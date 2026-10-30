@@ -1564,7 +1564,7 @@ async def test_accuracy_percentiles_exclude_gap_and_zero_days(
     recorder_mock: Recorder,
     hass: HomeAssistant,
 ) -> None:
-    """Accuracy leaves out a gap day and a day with nothing to compare."""
+    """Accuracy leaves out a gap day, a day without generation (as curtailed), and a day with nothing to compare."""
 
     try:
         entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
@@ -1597,6 +1597,13 @@ async def test_accuracy_percentiles_exclude_gap_and_zero_days(
         assert len(attributes["undampened_ape_breakdown"]) == 2
         assert math.isfinite(attributes["undampened_p50_ape"])
         assert math.isfinite(attributes["undampened_p90_ape"])
+
+        # A day with generation entries that add up to nothing is far below its usual share, so it is left out.
+        solcast.dampening.data_generation[GENERATION] = generation_for({3: 0.0, 2: 0.5, 1: 0.5})
+        await coordinator._updater.calculate_accuracy_metrics()
+        attributes = accuracy()
+        assert attributes["infinity_excluded"] is False
+        assert len(attributes["undampened_ape_breakdown"]) == 2
 
         # A day whose generation is all export limited has nothing to compare: an infinite error, which is left out.
         solcast.advanced_options[ADVANCED_AUTOMATED_DAMPENING_NO_LIMITING_CONSISTENCY] = True
