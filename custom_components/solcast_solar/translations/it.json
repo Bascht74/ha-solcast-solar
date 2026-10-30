@@ -308,6 +308,12 @@
     },
     "limit_exceeds_maximum": {
       "message": "Il limite API non può superare 50 (e probabilmente dovrebbe essere 10 o meno)."
+    },
+    "instance_required": {
+      "message": "È attivata o selezionata più di una voce Solcast. Scegli una voce Solcast."
+    },
+    "instance_unknown": {
+      "message": "La voce o la destinazione scelta non appartiene a una voce Solcast caricata."
     }
   },
   "issues": {
@@ -541,19 +547,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Elimina il file solcast.json per rimuovere tutti i dati del sito Solcast correnti.",
-      "name": "Cancella tutti i dati Solcast salvati"
+      "name": "Cancella tutti i dati Solcast salvati",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "diagnostic": {
       "description": "Esegue un autotest diagnostico per verificare la connettività API, l'integrità dei file di cache, l'accessibilità delle entità di generazione e lo stato generale della configurazione.",
-      "name": "Autotest diagnostico"
+      "name": "Autotest diagnostico",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "force_update_estimates": {
       "description": "Forza il recupero dei più recenti dati reali stimati da Solcast.",
-      "name": "Forza l'aggiornamento dei valori effettivi stimati"
+      "name": "Forza l'aggiornamento dei valori effettivi stimati",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Recupera forzatamente gli ultimi dati delle previsioni da Solcast.",
-      "name": "Aggiornamento forzato"
+      "name": "Aggiornamento forzato",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "get_dampening": {
       "description": "Ottieni i fattori di smorzamento delle previsioni.",
@@ -561,13 +591,23 @@
         "site": {
           "description": "Sito opzionale per ottenere lo smorzamento. (Nota: non funzionerà se lo smorzamento granulare non è abilitato.)",
           "name": "ID sito"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Ottieni smorzamento delle previsioni"
     },
     "get_options": {
       "description": "Ottieni le opzioni di configurazione attuali dell'integrazione.",
-      "name": "Ottieni opzioni"
+      "name": "Ottieni opzioni",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "query_estimate_data": {
       "description": "Restituisce un set di dati per una determinata query.",
@@ -579,6 +619,10 @@
         "start_date_time": {
           "description": "Interroga gli eventi di dati reali stimati a partire dalla data e dall'ora.",
           "name": "Ora della data di inizio"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Interroga i dati reali stimati"
@@ -601,13 +645,23 @@
         "undampened": {
           "description": "Booleano opzionale per recuperare la previsione non smorzata",
           "name": "Non smorzato"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Interroga i dati delle previsioni"
     },
     "remove_hard_limit": {
       "description": "Rimuovi il limite impostato.",
-      "name": "Rimuovi il limite rigido delle previsioni dell'inverter"
+      "name": "Rimuovi il limite rigido delle previsioni dell'inverter",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     },
     "set_custom_hours": {
       "description": "Imposta il numero di ore personalizzato del sensore X.",
@@ -615,6 +669,10 @@
         "hours": {
           "description": "Numero di ore da impostare (1-144).",
           "name": "Ore"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Imposta il sensore orario personalizzato"
@@ -629,6 +687,10 @@
         "site": {
           "description": "Sito opzionale per impostare lo smorzamento per sito. (Nota: l'omissione del sito cancella lo smorzamento per sito a meno che non siano presenti 48 valori.)",
           "name": "ID sito"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Imposta lo smorzamento delle previsioni"
@@ -639,6 +701,10 @@
         "hard_limit": {
           "description": "Imposta il valore massimo in Watt che l'inverter può produrre. Usare 0 per disabilitare il limite.",
           "name": "Valore limite in Watt"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Imposta il limite rigido delle previsioni dell'inverter"
@@ -725,13 +791,23 @@
         "use_actuals": {
           "description": "Storico previsioni per il dashboard Energia: 0=previsioni, 1=valori effettivi, 2=valori effettivi attenuati.",
           "name": "Usa valori effettivi"
+        },
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
         }
       },
       "name": "Imposta opzioni"
     },
     "update_forecasts": {
       "description": "Recupera gli ultimi dati delle previsioni da Solcast.",
-      "name": "Aggiorna"
+      "name": "Aggiorna",
+      "fields": {
+        "config_entry_id": {
+          "name": "Voce Solcast",
+          "description": "La voce Solcast a cui si applica questa azione. Senza di essa decide la destinazione scelta; senza destinazione si usa la voce senza nome o l'unica voce."
+        }
+      }
     }
   },
   "system_health": {

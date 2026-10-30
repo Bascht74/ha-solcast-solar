@@ -308,6 +308,12 @@
     },
     "set_options_empty": {
       "message": "少なくとも1つのオプションを指定する必要があります。"
+    },
+    "instance_required": {
+      "message": "複数のSolcastエントリが有効になっているか選択されています。Solcastエントリを1つ選んでください。"
+    },
+    "instance_unknown": {
+      "message": "選択したエントリまたはターゲットは、読み込まれたSolcastエントリに属していません。"
     }
   },
   "issues": {
@@ -541,19 +547,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "solcast.json ファイルを削除し、現在保存されているすべての Solcast サイトデータを消去します。",
-      "name": "保存済みのSolcastデータをすべて消去"
+      "name": "保存済みのSolcastデータをすべて消去",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
+        }
+      }
     },
     "diagnostic": {
       "description": "診断自己テストを実行して、API接続、キャッシュファイルの整合性、発電エンティティのアクセス可能性、および全体的な設定の健全性を検証します。",
-      "name": "診断自己テスト"
+      "name": "診断自己テスト",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
+        }
+      }
     },
     "force_update_estimates": {
       "description": "Solcastから最新の推定実績値データを強制的に取得します。",
-      "name": "推定実績値を強制更新"
+      "name": "推定実績値を強制更新",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Solcastから最新の予報データを強制的に取得します。",
-      "name": "予報を強制更新"
+      "name": "予報を強制更新",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
+        }
+      }
     },
     "get_dampening": {
       "description": "予報のダンペニングファクターを取得します。",
@@ -561,13 +591,23 @@
         "site": {
           "description": "ダンペニングを取得する対象のオプションサイト。（注：サイト別ダンペニングが有効でない場合は機能しません。）",
           "name": "サイトID"
+        },
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
         }
       },
       "name": "予報ダンペニングを取得"
     },
     "get_options": {
       "description": "現在の統合設定オプションを取得します。",
-      "name": "オプションを取得"
+      "name": "オプションを取得",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
+        }
+      }
     },
     "query_estimate_data": {
       "description": "特定のクエリのデータセットを返します。",
@@ -579,6 +619,10 @@
         "start_date_time": {
           "description": "推定実績値データをこの日時から取得します。",
           "name": "開始日時"
+        },
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
         }
       },
       "name": "推定実績値データをクエリ"
@@ -601,13 +645,23 @@
         "undampened": {
           "description": "ダンペニング前の予報を取得するオプションの真偽値",
           "name": "ダンペニングなし"
+        },
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
         }
       },
       "name": "予報データをクエリ"
     },
     "remove_hard_limit": {
       "description": "設定されているハードリミットを削除します。",
-      "name": "インバータ予報ハードリミットを削除"
+      "name": "インバータ予報ハードリミットを削除",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
+        }
+      }
     },
     "set_custom_hours": {
       "description": "カスタムX時間センサーの時間数を設定します。",
@@ -615,6 +669,10 @@
         "hours": {
           "description": "設定する時間数（1-144）。",
           "name": "時間"
+        },
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
         }
       },
       "name": "カスタム時間センサーを設定"
@@ -629,6 +687,10 @@
         "site": {
           "description": "サイト別ダンペニングを設定する対象のオプションサイト。（注：サイトを省略すると、48個の値が指定されていない限り、サイト別ダンペニングはクリアされます。）",
           "name": "サイトID"
+        },
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
         }
       },
       "name": "予報ダンペニングを設定"
@@ -639,6 +701,10 @@
         "hard_limit": {
           "description": "インバーターが出力できる最大値をワットで設定します。ハードリミットを無効にするには0を使用してください。",
           "name": "ワット単位のリミット値"
+        },
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
         }
       },
       "name": "インバータ予報ハードリミットを設定"
@@ -725,13 +791,23 @@
         "use_actuals": {
           "description": "エネルギーダッシュボード用の予報履歴：0=予報、1=実績値、2=ダンペニングされた実績値。",
           "name": "履歴データの種類"
+        },
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
         }
       },
       "name": "オプションを設定"
     },
     "update_forecasts": {
       "description": "Solcastから最新の予報データを取得します。",
-      "name": "更新"
+      "name": "更新",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcastエントリ",
+          "description": "このアクションを適用するSolcastエントリ。指定しない場合は選択したターゲットで決まり、ターゲットもない場合は名前のないエントリまたは唯一のエントリが使われます。"
+        }
+      }
     }
   },
   "system_health": {

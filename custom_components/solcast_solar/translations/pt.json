@@ -308,6 +308,12 @@
     },
     "limit_exceeds_maximum": {
       "message": "O limite da API não pode exceder 50 (e provavelmente deve ser 10 ou menos)."
+    },
+    "instance_required": {
+      "message": "Está ativada ou selecionada mais de uma entrada Solcast. Escolha uma entrada Solcast."
+    },
+    "instance_unknown": {
+      "message": "A entrada ou o alvo escolhido não pertence a nenhuma entrada Solcast carregada."
     }
   },
   "issues": {
@@ -541,19 +547,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Elimina o ficheiro solcast.json para remover todos os dados atuais do site Solcast.",
-      "name": "Limpar todos os dados Solcast guardados"
+      "name": "Limpar todos os dados Solcast guardados",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
+        }
+      }
     },
     "diagnostic": {
       "description": "Executa um autoteste de diagnóstico para validar a conectividade da API, a integridade dos ficheiros de cache, a acessibilidade das entidades de geração e o estado geral da configuração.",
-      "name": "Autoteste de diagnóstico"
+      "name": "Autoteste de diagnóstico",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
+        }
+      }
     },
     "force_update_estimates": {
       "description": "O Force busca os últimos dados reais estimados do Solcast.",
-      "name": "Forçar Atualização de Dados Reais Estimados"
+      "name": "Forçar Atualização de Dados Reais Estimados",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Busca forçadamente os dados de previsão mais recentes do Solcast.",
-      "name": "Atualização Forçada"
+      "name": "Atualização Forçada",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
+        }
+      }
     },
     "get_dampening": {
       "description": "Obter os fatores de amortecimento da previsão.",
@@ -561,13 +591,23 @@
         "site": {
           "description": "Site opcional para obter amortecimento. (Nota: Não funcionará se o amortecimento granular não estiver ativado.)",
           "name": "ID do Site"
+        },
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
         }
       },
       "name": "Obter amortecimento das previsões"
     },
     "get_options": {
       "description": "Obter as opções de configuração atuais da integração.",
-      "name": "Obter opções"
+      "name": "Obter opções",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
+        }
+      }
     },
     "query_estimate_data": {
       "description": "Devolver um conjunto de dados para uma determinada consulta.",
@@ -579,6 +619,10 @@
         "start_date_time": {
           "description": "Interroga eventos de dados reais estimados a partir da data e hora.",
           "name": "Data e hora de início"
+        },
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
         }
       },
       "name": "Interroga dados reais estimados"
@@ -601,13 +645,23 @@
         "undampened": {
           "description": "Booleano opcional para recuperar a previsão não amortecida",
           "name": "Não amortecido"
+        },
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
         }
       },
       "name": "Consultar dados de previsão"
     },
     "remove_hard_limit": {
       "description": "Remover o limite definido.",
-      "name": "Remover limite rígido da previsão do inversor"
+      "name": "Remover limite rígido da previsão do inversor",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
+        }
+      }
     },
     "set_custom_hours": {
       "description": "Defina o número de horas do sensor personalizado X.",
@@ -615,6 +669,10 @@
         "hours": {
           "description": "Número de horas para configurar (1-144).",
           "name": "Horas"
+        },
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
         }
       },
       "name": "Configurar sensor de horas personalizado"
@@ -629,6 +687,10 @@
         "site": {
           "description": "Site opcional para definir o amortecimento por site. (Nota: Omitir o site limpa o amortecimento por site, a menos que 48 valores.)",
           "name": "ID do Site"
+        },
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
         }
       },
       "name": "Definir amortecimento das previsões"
@@ -639,6 +701,10 @@
         "hard_limit": {
           "description": "Definir o valor máximo em Watts que o inversor pode produzir. Use 0 para desativar o limite.",
           "name": "Valor do limite em Watts"
+        },
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
         }
       },
       "name": "Definir limite rígido da previsão do inversor"
@@ -725,13 +791,23 @@
         "use_actuals": {
           "description": "Histórico de previsões para o painel de energia: 0=previsões, 1=valores reais, 2=valores reais amortecidos.",
           "name": "Usar valores reais"
+        },
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
         }
       },
       "name": "Definir opções"
     },
     "update_forecasts": {
       "description": "Busca os dados de previsão mais recentes do Solcast.",
-      "name": "Atualizar"
+      "name": "Atualizar",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada Solcast",
+          "description": "A entrada Solcast a que esta ação se aplica. Sem ela, decide o alvo escolhido; sem alvo, é usada a entrada sem nome ou a única entrada."
+        }
+      }
     }
   },
   "system_health": {

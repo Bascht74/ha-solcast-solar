@@ -308,6 +308,12 @@
     },
     "limit_exceeds_maximum": {
       "message": "La limite de l'API ne peut pas dépasser 50 (et devrait probablement être de 10 ou moins)."
+    },
+    "instance_required": {
+      "message": "Plus d'une entrée Solcast est activée ou ciblée. Choisissez une entrée Solcast."
+    },
+    "instance_unknown": {
+      "message": "L'entrée ou la cible choisie n'appartient à aucune entrée Solcast chargée."
     }
   },
   "issues": {
@@ -541,19 +547,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Supprime le fichier solcast.json pour supprimer toutes les données actuelles du site solcast.",
-      "name": "Effacer toutes les données Solcast enregistrées"
+      "name": "Effacer toutes les données Solcast enregistrées",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
+        }
+      }
     },
     "diagnostic": {
       "description": "Exécute un autotest de diagnostic pour valider la connectivité API, l'intégrité des fichiers de cache, l'accessibilité des entités de génération et l'état général de la configuration.",
-      "name": "Autotest de diagnostic"
+      "name": "Autotest de diagnostic",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
+        }
+      }
     },
     "force_update_estimates": {
       "description": "Force récupère les dernières données réelles estimées de Solcast.",
-      "name": "Forcer la mise à jour des valeurs réelles estimées"
+      "name": "Forcer la mise à jour des valeurs réelles estimées",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Force récupère les dernières données de prévisions de Solcast.",
-      "name": "Forcer la mise à jour"
+      "name": "Forcer la mise à jour",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
+        }
+      }
     },
     "get_dampening": {
       "description": "Obtenez les facteurs d’amortissement prévus.",
@@ -561,13 +591,23 @@
         "site": {
           "description": "Site facultatif pour obtenir un amortissement. (Remarque : ne fonctionnera pas si l'amortissement granulaire n'est pas activé.)",
           "name": "Identifiant du site"
+        },
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
         }
       },
       "name": "Obtenez des prévisions amorties"
     },
     "get_options": {
       "description": "Obtenir les options de configuration actuelles de l'intégration.",
-      "name": "Obtenir les options"
+      "name": "Obtenir les options",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
+        }
+      }
     },
     "query_estimate_data": {
       "description": "Renvoie un ensemble de données ou une valeur pour une requête donnée.",
@@ -579,6 +619,10 @@
         "start_date_time": {
           "description": "Interroger les événements de données réelles estimées à partir de la date et de l'heure.",
           "name": "Date et heure de début"
+        },
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
         }
       },
       "name": "Interroger les données réelles estimées"
@@ -601,13 +645,23 @@
         "undampened": {
           "description": "Booléen facultatif pour récupérer les prévisions non amorties",
           "name": "Non amorti"
+        },
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
         }
       },
       "name": "Interroger les données de prévision"
     },
     "remove_hard_limit": {
       "description": "Supprimer la limite définie.",
-      "name": "Supprimer la limite stricte de prévision de l'onduleur"
+      "name": "Supprimer la limite stricte de prévision de l'onduleur",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
+        }
+      }
     },
     "set_custom_hours": {
       "description": "Définissez le nombre d'heures personnalisé du capteur X.",
@@ -615,6 +669,10 @@
         "hours": {
           "description": "Nombre d'heures à régler (1-144).",
           "name": "Heures"
+        },
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
         }
       },
       "name": "Configurer le capteur d'heures personnalisé"
@@ -629,6 +687,10 @@
         "site": {
           "description": "Site facultatif pour définir l’amortissement par site. (Remarque : l'omission du site supprime l'amortissement par site, sauf si les valeurs sont 48.)",
           "name": "Identifiant du site"
+        },
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
         }
       },
       "name": "Définir le coefficient des prévisions"
@@ -639,6 +701,10 @@
         "hard_limit": {
           "description": "Définissez la valeur maximale en watts que l'onduleur peut produire. Utilisez 0 pour désactiver la limite.",
           "name": "Valeur limite en Watts"
+        },
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
         }
       },
       "name": "Définir la limite stricte de prévision de l'onduleur"
@@ -725,13 +791,23 @@
         "use_actuals": {
           "description": "Historique des prévisions pour le tableau de bord Énergie : 0=prévisions, 1=valeurs réelles, 2=valeurs réelles atténuées.",
           "name": "Utiliser les valeurs réelles"
+        },
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
         }
       },
       "name": "Définir les options"
     },
     "update_forecasts": {
       "description": "Récupère les dernières données de prévisions de Solcast.",
-      "name": "Mise à jour"
+      "name": "Mise à jour",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrée Solcast",
+          "description": "L'entrée Solcast à laquelle cette action s'applique. Sans elle, la cible choisie décide ; sans cible, l'entrée sans nom ou la seule entrée est utilisée."
+        }
+      }
     }
   },
   "system_health": {

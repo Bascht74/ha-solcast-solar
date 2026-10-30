@@ -1,22 +1,31 @@
 """Solcast service actions."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_API_KEY
+from homeassistant.const import (
+    ATTR_AREA_ID,
+    ATTR_DEVICE_ID,
+    ATTR_ENTITY_ID,
+    ATTR_FLOOR_ID,
+    ATTR_LABEL_ID,
+    CONF_API_KEY,
+)
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationError
 from homeassistant.helpers import (
     config_validation as cv,
     entity_registry as er,
     issue_registry as ir,
+    service,
 )
 from homeassistant.util import dt as dt_util
+from homeassistant.util.hass_dict import HassKey
 
 from .advanced import async_is_allow_exceed_api_limit
 from .const import (
@@ -40,6 +49,7 @@ from .const import (
     BRK_SITE,
     BRK_SITE_DETAILED,
     COMPLETION,
+    CONFIG_ENTRY_ID,
     CUSTOM_HOURS,
     DAILY_TYPICAL_FORECAST_UPDATES,
     DAMP_FACTOR,
@@ -62,6 +72,8 @@ from .const import (
     EXCEPTION_EXPORT_NO_ENTITY,
     EXCEPTION_EXPORT_NO_LIMIT,
     EXCEPTION_INIT_KEY_INVALID,
+    EXCEPTION_INSTANCE_REQUIRED,
+    EXCEPTION_INSTANCE_UNKNOWN,
     EXCEPTION_INTEGRATION_NOT_LOADED,
     EXCEPTION_INVALID_QUERY_RANGE,
     EXCEPTION_NOT_A_SITE,
@@ -125,7 +137,10 @@ from .const import (
 )
 from .coordinator import SolcastUpdateCoordinator
 from .enums import AutoUpdate, LoadStatus
-from .log import get_logger
+from .instance import (
+    instance_name,
+)
+from .log import get_logger, set_log_instance
 from .migration import sync_legacy_keys
 from .solcastapi import SolcastApi
 from .updater import Updater
@@ -148,10 +163,15 @@ from .validators import (
     validate_use_actuals_value,
 )
 
+# Every action names its entry by config_entry_id or by a target (device, entity, area, floor, label).
+_ENTRY_FIELDS: Final = {Optional(CONFIG_ENTRY_ID): cv.string, **cv.TARGET_SERVICE_FIELDS}
+_TARGET_KEYS: Final = (ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_FLOOR_ID, ATTR_LABEL_ID)
+
 SERVICE_DAMP_SCHEMA: Final = All(
     {
         Required(DAMP_FACTOR): cv.string,
         Optional(SITE): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_QUERY_ESTIMATE_SCHEMA: Final = All(
@@ -160,11 +180,13 @@ SERVICE_QUERY_ESTIMATE_SCHEMA: Final = All(
         Optional(EVENT_END_DATETIME): cv.datetime,
         Optional(DAMPENED): cv.boolean,
         Optional(SITE): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_DAMP_GET_SCHEMA: Final = All(
     {
         Optional(SITE): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_QUERY_SCHEMA: Final = All(
@@ -173,6 +195,7 @@ SERVICE_QUERY_SCHEMA: Final = All(
         Required(EVENT_END_DATETIME): cv.datetime,
         Optional(UNDAMPENED): cv.boolean,
         Optional(SITE): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_SET_OPTIONS_SCHEMA: Final = All(
@@ -197,6 +220,7 @@ SERVICE_SET_OPTIONS_SCHEMA: Final = All(
         Optional(EXCLUDE_SITES): cv.string,
         Optional(SITE_EXPORT_ENTITY): cv.string,
         Optional(SITE_EXPORT_LIMIT): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 
@@ -204,11 +228,13 @@ SERVICE_SET_OPTIONS_SCHEMA: Final = All(
 SERVICE_HARD_LIMIT_SCHEMA: Final = All(
     {
         Required(HARD_LIMIT): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 SERVICE_CUSTOM_HOURS_SCHEMA: Final = All(
     {
         Required(HOURS): cv.string,
+        **_ENTRY_FIELDS,
     }
 )
 
@@ -383,17 +409,19 @@ class ServiceActions:
         }
 
     def _register(self) -> None:
-        """Register all service actions with Home Assistant."""
+        """Register all service actions with Home Assistant; each one dispatches to the entry the call names."""
+        self._hass.data.setdefault(_OWNERS, {})[self._entry.entry_id] = self
         for action, call in self._get_service_actions().items():
             _LOGGER.debug("Register action %s.%s", DOMAIN, action)
             self._hass.services.async_remove(DOMAIN, action)  # Remove the stub action
+            handler = _dispatcher(self._hass, call[ACTION].__name__)
             if call.get(SUPPORTS_RESPONSE_KEY):
-                self._hass.services.async_register(DOMAIN, action, call[ACTION], call[SCHEMA], call[SUPPORTS_RESPONSE_KEY])
+                self._hass.services.async_register(DOMAIN, action, handler, call[SCHEMA], call[SUPPORTS_RESPONSE_KEY])
                 continue
             if call.get(SCHEMA):
-                self._hass.services.async_register(DOMAIN, action, call[ACTION], call[SCHEMA])
+                self._hass.services.async_register(DOMAIN, action, handler, call[SCHEMA])
                 continue
-            self._hass.services.async_register(DOMAIN, action, call[ACTION])
+            self._hass.services.async_register(DOMAIN, action, handler)
 
     async def async_get_forecast_data(self, call: ServiceCall) -> dict[str, Any] | None:
         """Handle query forecast data action.
@@ -668,7 +696,7 @@ class ServiceActions:
             ServiceValidationError: Notify that a validation error has occurred.
 
         """
-        if not call.data:
+        if not {key for key in call.data if key not in (CONFIG_ENTRY_ID, *_TARGET_KEYS)}:
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_SET_OPTIONS_EMPTY)
 
         _LOGGER.info("Action: Set options")
@@ -1087,6 +1115,77 @@ def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoo
         "export_entity": export_entity_check,
         "recorder_available": recorder_available,
     }
+
+
+_OWNERS: HassKey[dict[str, ServiceActions]] = HassKey(f"{DOMAIN}_actions")
+
+
+async def _target_entry_ids(hass: HomeAssistant, call: ServiceCall) -> set[str]:
+    """Return the config entries a call's target refers to, areas, floors and labels included."""
+
+    extract: Callable[..., Awaitable[set[str]]] = service.async_extract_config_entry_ids
+    try:
+        return await extract(call)
+    except TypeError:  # Home Assistant before 2026.1 takes hass first.
+        return await extract(hass, call)
+
+
+async def _entry_id_for_call(hass: HomeAssistant, call: ServiceCall) -> str:
+    """Pick the loaded entry an action applies to.
+
+    The config_entry_id field wins, then a target. Without either, the original
+    unnamed entry is used while it is loaded, otherwise the only entry that is
+    not disabled. An entry that failed to load still counts, so an action never
+    reaches another entry than the one the caller may mean.
+    """
+
+    owners = hass.data.get(_OWNERS, {})
+    if (entry_id := call.data.get(CONFIG_ENTRY_ID)) is not None:
+        if entry_id in owners:
+            return str(entry_id)
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_UNKNOWN)
+
+    if any(call.data.get(key) for key in _TARGET_KEYS):
+        targeted = [entry_id for entry_id in await _target_entry_ids(hass, call) if entry_id in owners]
+        if len(targeted) == 1:
+            return targeted[0]
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_REQUIRED if targeted else EXCEPTION_INSTANCE_UNKNOWN
+        )
+
+    unnamed = [entry_id for entry_id in owners if not instance_name(_entry_options(hass, entry_id))]
+    if len(unnamed) == 1:
+        return unnamed[0]
+    enabled = [entry.entry_id for entry in hass.config_entries.async_entries(DOMAIN) if entry.disabled_by is None]
+    if len(enabled) == 1 and enabled[0] in owners:
+        return enabled[0]
+    raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_INSTANCE_REQUIRED)
+
+
+def _entry_options(hass: HomeAssistant, entry_id: str) -> Mapping[str, Any] | None:
+    """Return the options of a config entry."""
+
+    return entry.options if (entry := hass.config_entries.async_get_entry(entry_id)) is not None else None
+
+
+def _dispatcher(hass: HomeAssistant, method_name: str) -> Callable[[ServiceCall], Any]:
+    """Return an action handler that forwards to the selected entry."""
+
+    async def handler(call: ServiceCall) -> Any:
+        entry_id = await _entry_id_for_call(hass, call)
+        set_log_instance(instance_name(_entry_options(hass, entry_id)))
+        return await getattr(hass.data[_OWNERS][entry_id], method_name)(call)
+
+    return handler
+
+
+def release_entry_actions(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Drop one entry. Services stay until the last entry is gone."""
+
+    owners = hass.data.get(_OWNERS, {})
+    owners.pop(entry.entry_id, None)
+    if not owners:
+        unregister_actions(hass)
 
 
 async def stub_action(call: ServiceCall) -> None:

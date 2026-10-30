@@ -30,7 +30,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
 from . import entry_state, state
-from .actions import ServiceActions, register_stub_actions, unregister_actions
+from .actions import ServiceActions, register_stub_actions, release_entry_actions
 from .const import (
     ADVANCED_AUTOMATED_DAMPENING_ADAPTIVE_MODEL_CONFIGURATION,
     ADVANCED_USER_AGENT,
@@ -457,7 +457,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        unregister_actions(hass)
+        release_entry_actions(hass, entry)
 
     return unload_ok
 

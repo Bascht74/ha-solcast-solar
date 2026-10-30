@@ -308,6 +308,12 @@
     },
     "limit_exceeds_maximum": {
       "message": "El límite de API no puede superar 50 (y probablemente debería ser 10 o menos)."
+    },
+    "instance_required": {
+      "message": "Hay más de una entrada de Solcast activada o seleccionada. Elija una entrada de Solcast."
+    },
+    "instance_unknown": {
+      "message": "La entrada o el destino elegido no pertenece a ninguna entrada de Solcast cargada."
     }
   },
   "issues": {
@@ -541,19 +547,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Elimina el archivo solcast.json para eliminar todos los datos actuales del sitio solcast.",
-      "name": "Borrar todos los datos guardados de Solcast"
+      "name": "Borrar todos los datos guardados de Solcast",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
+        }
+      }
     },
     "diagnostic": {
       "description": "Ejecuta una prueba de autodiagnóstico para validar la conectividad API, la integridad de los archivos de caché, la accesibilidad de las entidades de generación y el estado general de la configuración.",
-      "name": "Autodiagnóstico"
+      "name": "Autodiagnóstico",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
+        }
+      }
     },
     "force_update_estimates": {
       "description": "Force obtiene los últimos datos reales estimados de Solcast.",
-      "name": "Forzar actualización de datos reales estimados"
+      "name": "Forzar actualización de datos reales estimados",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Obtiene a la fuerza los últimos datos de pronóstico de Solcast.",
-      "name": "Forzar actualización"
+      "name": "Forzar actualización",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
+        }
+      }
     },
     "get_dampening": {
       "description": "Obtenga los factores de amortiguación del pronóstico.",
@@ -561,13 +591,23 @@
         "site": {
           "description": "Sitio opcional para obtener amortiguación. (Nota: no funcionará si la amortiguación granular no está habilitada).",
           "name": "ID del sitio"
+        },
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
         }
       },
       "name": "Obtener pronósticos de amortiguación"
     },
     "get_options": {
       "description": "Obtener las opciones de configuración actuales de la integración.",
-      "name": "Obtener opciones"
+      "name": "Obtener opciones",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
+        }
+      }
     },
     "query_estimate_data": {
       "description": "Devuelve un conjunto de datos para una consulta determinada.",
@@ -579,6 +619,10 @@
         "start_date_time": {
           "description": "Consulta de datos de eventos reales estimados a partir de la fecha y hora.",
           "name": "Fecha de inicio y hora"
+        },
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
         }
       },
       "name": "Consulta de datos reales estimados"
@@ -601,13 +645,23 @@
         "undampened": {
           "description": "Valor booleano opcional para recuperar el pronóstico no amortiguado",
           "name": "Sin amortiguar"
+        },
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
         }
       },
       "name": "Consultar datos de previsión"
     },
     "remove_hard_limit": {
       "description": "Eliminar límite establecido.",
-      "name": "Eliminar el límite estricto de previsión del inversor"
+      "name": "Eliminar el límite estricto de previsión del inversor",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
+        }
+      }
     },
     "set_custom_hours": {
       "description": "Establezca el número de horas del sensor X personalizado.",
@@ -615,6 +669,10 @@
         "hours": {
           "description": "Número de horas a configurar (1-144).",
           "name": "Horas"
+        },
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
         }
       },
       "name": "Establecer sensor de horas personalizado"
@@ -629,6 +687,10 @@
         "site": {
           "description": "Sitio opcional para configurar la amortiguación por sitio. (Nota: si se omite el sitio, se borra la amortiguación por sitio, a menos que haya 48 valores).",
           "name": "ID del sitio"
+        },
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
         }
       },
       "name": "Los pronósticos se están atenuando"
@@ -639,6 +701,10 @@
         "hard_limit": {
           "description": "Establezca el valor máximo en vatios que puede producir el inversor. Use 0 para desactivar el límite.",
           "name": "Valor límite en Watts"
+        },
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
         }
       },
       "name": "Establecer límite estricto de previsión del inversor"
@@ -725,13 +791,23 @@
         "use_actuals": {
           "description": "Historial de pronósticos para el panel de energía: 0=pronósticos, 1=reales, 2=reales amortiguados.",
           "name": "Usar valores reales"
+        },
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
         }
       },
       "name": "Establecer opciones"
     },
     "update_forecasts": {
       "description": "Obtiene los últimos datos de pronósticos de Solcast.",
-      "name": "Actualizar"
+      "name": "Actualizar",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrada de Solcast",
+          "description": "La entrada de Solcast a la que se aplica esta acción. Sin ella, decide el destino elegido; sin destino, se usa la entrada sin nombre o la única entrada."
+        }
+      }
     }
   },
   "system_health": {

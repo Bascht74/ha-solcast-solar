@@ -306,6 +306,12 @@
     "set_options_empty": {
       "message": "Mindestens eine Option muss angegeben werden."
     },
+    "instance_required": {
+      "message": "Mehr als ein Solcast-Eintrag ist aktiviert oder gewählt. Wählen Sie einen Solcast-Eintrag."
+    },
+    "instance_unknown": {
+      "message": "Der gewählte Eintrag oder das Ziel gehört zu keinem geladenen Solcast-Eintrag."
+    },
     "limit_exceeds_maximum": {
       "message": "Das API-Limit darf 50 nicht überschreiten (und sollte wahrscheinlich 10 oder weniger betragen)."
     }
@@ -541,19 +547,43 @@
   "services": {
     "clear_all_solcast_data": {
       "description": "Alle gespeicherten Solcast-Daten werden  entfernt. Die Datei solcast.json wird dadurch gelöscht.",
-      "name": "Solcast-Daten zurücksetzen"
+      "name": "Solcast-Daten zurücksetzen",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
+        }
+      }
     },
     "diagnostic": {
       "description": "Führt einen diagnostischen Selbsttest durch, um API-Konnektivität, Cache-Dateiintegrität, Zugang zu Erzeugungsentitäten und den allgemeinen Konfigurationszustand zu überprüfen.",
-      "name": "Diagnostischer Selbsttest"
+      "name": "Diagnostischer Selbsttest",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
+        }
+      }
     },
     "force_update_estimates": {
       "description": "Force ruft die neuesten geschätzten Ist-Daten von Solcast ab.",
-      "name": "Aktualisierung der geschätzten Ist-Werte erzwingen"
+      "name": "Aktualisierung der geschätzten Ist-Werte erzwingen",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
+        }
+      }
     },
     "force_update_forecasts": {
       "description": "Force ruft die neuesten Prognosedaten von Solcast ab.",
-      "name": "Aktualisierung erzwingen"
+      "name": "Aktualisierung erzwingen",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
+        }
+      }
     },
     "get_dampening": {
       "description": "Erhalten Sie die prognostizierten Dämpfungsfaktoren.",
@@ -561,13 +591,23 @@
         "site": {
           "description": "Optionaler Standort zur Dämpfung. (Hinweis: Funktioniert nicht, wenn die granulare Dämpfung nicht aktiviert ist.)",
           "name": "Site-ID"
+        },
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
         }
       },
       "name": "Erhalten Sie dämpfende Prognosen"
     },
     "get_options": {
       "description": "Aktuelle Integrationskonfigurationsoptionen abrufen.",
-      "name": "Optionen abrufen"
+      "name": "Optionen abrufen",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
+        }
+      }
     },
     "query_estimate_data": {
       "description": "Es werden die aktuellen Prognosedaten heruntergeladen.",
@@ -579,6 +619,10 @@
         "start_date_time": {
           "description": "Abfrage geschätzter Ist-Datenereignisse ab Datum und Uhrzeit.",
           "name": "Anfangsdatum und /-uhrzeit"
+        },
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
         }
       },
       "name": "Geschätzte Ist-Daten abfragen"
@@ -601,13 +645,23 @@
         "undampened": {
           "description": "Optionaler boolescher Wert zum Abrufen einer ungedämpften Prognose",
           "name": "Ungedämpft"
+        },
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
         }
       },
       "name": "Prognosedaten herunterladen"
     },
     "remove_hard_limit": {
       "description": "Eingestelltes Limit entfernen.",
-      "name": "Entfernen Sie die fester Grenze der Wechselrichterprognose"
+      "name": "Entfernen Sie die fester Grenze der Wechselrichterprognose",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
+        }
+      }
     },
     "set_custom_hours": {
       "description": "Legen Sie die benutzerdefinierte Anzahl der Stunden für den X-Stunden-Sensor fest.",
@@ -615,6 +669,10 @@
         "hours": {
           "description": "Anzahl der einzustellenden Stunden (1-144).",
           "name": "Std"
+        },
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
         }
       },
       "name": "Set custom hours sensor"
@@ -629,6 +687,10 @@
         "site": {
           "description": "Optionaler Standort zum Einstellen der Dämpfung pro Standort. (Hinweis: Durch Weglassen der Site wird die Dämpfung pro Site gelöscht, es sei denn, es liegen 48 Werte vor.)",
           "name": "Site-ID"
+        },
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
         }
       },
       "name": "Setzen Sie dämpfende Prognosen"
@@ -639,6 +701,10 @@
         "hard_limit": {
           "description": "Stellen Sie den maximalen Wert in Watt ein, den der Wechselrichter erzeugen kann. Verwenden Sie 0, um den Grenzwert zu deaktivieren.",
           "name": "Grenzwert in Watt"
+        },
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
         }
       },
       "name": "Legen Sie den fester Grenzwert für die Wechselrichterprognose fest"
@@ -725,13 +791,23 @@
         "use_actuals": {
           "description": "Prognosehistorie für das Energie-Dashboard: 0=Prognosen, 1=Istwerte, 2=gedämpfte Istwerte.",
           "name": "Istwerte verwenden"
+        },
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
         }
       },
       "name": "Optionen setzen"
     },
     "update_forecasts": {
       "description": "Ruft die neuesten Prognosedaten von Solcast ab.",
-      "name": "Aktualisieren"
+      "name": "Aktualisieren",
+      "fields": {
+        "config_entry_id": {
+          "name": "Solcast-Eintrag",
+          "description": "Der Solcast-Eintrag, für den diese Aktion gilt. Ohne ihn entscheidet das gewählte Ziel; ohne Ziel gilt der Eintrag ohne Namen oder der einzige Eintrag."
+        }
+      }
     }
   },
   "system_health": {
