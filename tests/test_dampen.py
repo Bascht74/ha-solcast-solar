@@ -44,6 +44,7 @@ from custom_components.solcast_solar.const import (
     EXCEPTION_GENERATION_MIXED_TYPES,
     EXCLUDE_SITES,
     FORECASTS,
+    GENERATION,
     GENERATION_ENTITIES,
     GET_ACTUALS,
     INTEGRATION,
@@ -74,7 +75,7 @@ from homeassistant.components.recorder import Recorder, get_instance
 from homeassistant.components.recorder.history import state_changes_during_period
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_registry import RegistryEntryDisabler
@@ -1303,3 +1304,58 @@ def test_delta_adjustment_model_1_loosens_only_below_peak() -> None:
     # The default model behaves the same way above the peak.
     assert dampening.apply_adjustment(3.0, 0.6, 20, 0) == pytest.approx(0.6)
     assert dampening.apply_adjustment(0.5, 0.6, 20, 0) == pytest.approx(0.877)
+
+
+_GENERATION_ENTITIES = [
+    "sensor.solar_export_sensor_1111_1111_1111_1111",
+    "sensor.solar_export_sensor_2222_2222_2222_2222",
+]
+
+
+def _auto_dampen_options() -> dict[str, Any]:
+    """Options for automated dampening from the two extra generation sensors."""
+    options = copy.deepcopy(DEFAULT_INPUT2)
+    options[GET_ACTUALS] = True
+    options[USE_ACTUALS] = 1
+    options[AUTO_DAMPEN] = True
+    options[GENERATION_ENTITIES] = list(_GENERATION_ENTITIES)
+    return options
+
+
+def _energy_readings(entity: str, start: dt, jump_at: int | None = None) -> list[State]:
+    """A kWh reading every ten minutes, 0.1 kWh apart, with an optional catch-up jump at a minute of the day."""
+    states: list[State] = []
+    value = 0.0
+    for minute in range(0, 1440, 10):
+        value += 0.1 + (5.0 if minute == jump_at else 0.0)
+        states.append(State(entity, f"{value:.1f}", {"unit_of_measurement": "kWh"}, last_updated=start + timedelta(minutes=minute)))
+    return states
+
+
+async def test_generation_ignored_jump_keeps_other_entities(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test generation of two entities adds up, and a catch-up jump ignored for one entity zeroes only that entity."""
+
+    try:
+        entry = await async_init_integration(hass, _auto_dampen_options(), extra_sensors=ExtraSensors.YES)
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        yesterday = solcast.dt_helper.day_start_utc(future=-1)
+
+        async def history(_recorder: Any, start: dt, _end: dt, entity: str, *_args: Any) -> dict[str, list[State]]:
+            return {entity: _energy_readings(entity, start, jump_at=120 if entity == _GENERATION_ENTITIES[1] else None)}
+
+        monkeypatch.setattr(solcast.dampening, "_get_entity_history", history)
+        solcast.dampening.data_generation[GENERATION] = []
+        await solcast.dampening.get_pv_generation()
+        generation = {gen[PERIOD_START]: gen[GENERATION] for gen in solcast.dampening.data_generation[GENERATION]}
+
+        assert generation[yesterday + timedelta(hours=12)] == pytest.approx(0.6)  # Both entities, 0.3 kWh each
+        # The jump at 02:00 is ignored for the second entity in its interval and the one before; the first entity still counts.
+        assert generation[yesterday + timedelta(hours=2)] == pytest.approx(0.3)
+        assert generation[yesterday + timedelta(hours=1, minutes=30)] == pytest.approx(0.3)
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

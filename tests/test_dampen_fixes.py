@@ -2,7 +2,26 @@ import datetime
 from datetime import datetime as dt
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
-from custom_components.solcast_solar.dampen import Dampening
+from custom_components.solcast_solar.dampen import Dampening, _is_number
+import pytest
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("12.5", True),
+        ("-3", True),
+        ("1e-05", True),
+        ("0", True),
+        ("unknown", False),
+        ("unavailable", False),
+        ("nan", False),
+        ("inf", False),
+    ],
+)
+def test_is_number(state: str, expected: bool) -> None:
+    """Negative and exponent readings are numbers, non-finite and non-numeric states are not."""
+    assert _is_number(state) is expected
 
 
 def test_target_timestamp_uses_local_date() -> None:

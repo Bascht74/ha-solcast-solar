@@ -264,6 +264,14 @@ def compute_energy_intervals(
     return EnergyResult(uniform_increment=uniform_increment, upper=upper, ignored=ignored)
 
 
+def _is_number(state: str) -> bool:
+    """Return whether a state is a finite number, also negative or in exponent notation."""
+    try:
+        return math.isfinite(float(state))
+    except ValueError:
+        return False
+
+
 class Dampening:
     """Manages all dampening-related operations for Solcast forecasts."""
 
@@ -793,7 +801,7 @@ class Dampening:
                     power_readings: list[tuple[dt, float]] = [
                         (e.last_updated.astimezone(UTC), float(e.state) * conversion_factor)
                         for e in entity_history[entity]
-                        if e.state.replace(".", "").isnumeric()
+                        if _is_number(e.state)
                     ]
 
                     if not compute_power_intervals(power_readings, generation_intervals):
@@ -805,7 +813,7 @@ class Dampening:
                 numeric_entries = [
                     (e.last_updated.astimezone(UTC), float(e.state) * conversion_factor)
                     for e in entity_history[entity]
-                    if e.state.replace(".", "").isnumeric()
+                    if _is_number(e.state)
                 ]
                 sample_time: list[dt] = [self._bucket_interval_start(ts) for ts, _ in numeric_entries]
                 sample_generation: list[float] = [0.0, *diff([v for _, v in numeric_entries])]
@@ -819,15 +827,18 @@ class Dampening:
                     sample_generation[0] = 0.0
                     sample_timedelta[0] = 0
 
+                entity_intervals = self._build_float_intervals(prev_start, HALF_HOUR_MINUTES)  # An ignored jump zeroes only this entity
                 result: EnergyResult = compute_energy_intervals(
                     sample_time,
                     sample_generation,
                     sample_generation_time,
                     sample_timedelta,
-                    generation_intervals,
+                    entity_intervals,
                     prev_start,
                     day_start,
                 )
+                for interval_start, generation in entity_intervals.items():
+                    generation_intervals[interval_start] += generation
                 _LOGGER.debug(
                     f"%s increments detected for entity: %s, outlier upper bound: {'%.3f kWh' if result.uniform_increment else '%d seconds'}",  # noqa: G004
                     "Generation-consistent" if result.uniform_increment else "Time-consistent",
