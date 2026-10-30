@@ -2,6 +2,7 @@
   "config": {
     "abort": {
       "internal_error": "Wystąpił nieoczekiwany błąd. Więcej informacji znajdziesz w dziennikach.",
+      "already_in_progress": "Wpis o tej nazwie jest już konfigurowany.",
       "reauth_successful": "Nowy klucz API został pomyślnie zastosowany",
       "reconfigured": "Zastosowano nową konfigurację",
       "unchanged": "Konfiguracja bez zmian"
@@ -15,7 +16,11 @@
       "limit_not_number": "Limit API nie jest liczbą",
       "limit_one_or_greater": "Limit API musi wynosić jeden lub więcej",
       "limit_too_many": "Wprowadzono więcej limitów API niż kluczy",
-      "limit_exceeds_maximum": "Limit API nie może przekraczać 50 (i prawdopodobnie powinien wynosić 10 lub mniej)."
+      "limit_exceeds_maximum": "Limit API nie może przekraczać 50 (i prawdopodobnie powinien wynosić 10 lub mniej).",
+      "instance_name_required": "Kolejny wpis wymaga nazwy.",
+      "instance_name_invalid": "Nazwa musi zawierać literę lub cyfrę.",
+      "instance_name_duplicate": "Ta nazwa jest już używana.",
+      "instance_name_reserved": "Ta nazwa jest zarezerwowana dla plików pierwszego wpisu. Wybierz inną nazwę."
     },
     "step": {
       "reauth_confirm": {
@@ -44,13 +49,15 @@
         "data": {
           "api_key": "Klucz API",
           "api_limit": "Limit API",
-          "auto_update": "Automatyczna aktualizacja"
+          "auto_update": "Automatyczna aktualizacja",
+          "instance_name": "Nazwa"
         },
         "description": "Dane konta Solcast\n\n(Jeśli nie ma automatycznej aktualizacji, wymagana jest automatyzacja - zobacz dokumentację integracji)\n\nAPI Solcast musi być dostępne, aby wstępnie skonfigurować tę integrację. Jeśli otrzymasz komunikat o stanie '429 / Try again later', API jest niedostępne i konfiguracja nie może zostać ukończona. Musisz poczekać. Należy pamiętać, że strona stanu API pod adresem status.solcast.com prawie na pewno nie pokaże żadnych problemów z API. Przyczyną jest najprawdopodobniej pojedynczy nieodpowiedzialny użytkownik API, który wpływa na dostępność dla wszystkich hobbystów.",
         "data_description": {
           "api_key": "Wprowadź jeden lub więcej kluczy API Solcast, oddzielonych przecinkami",
           "api_limit": "Wprowadź dzienny limit aktualizacji prognozy, rozdzielony przecinkami przy użyciu wielu kluczy",
-          "auto_update": "Jeśli nie używasz automatycznej aktualizacji, utwórz automatyzację, która okresowo wywołuje akcję \"solcast_solar.update_forecasts\", przestrzegając zalecanego przez Solcast maksymalnego łącznego limitu (zwykle łącznie dziesięć razy dziennie dla jednego miejsca dachowego, a przy dwóch miejscach pięć razy dziennie)"
+          "auto_update": "Jeśli nie używasz automatycznej aktualizacji, utwórz automatyzację, która okresowo wywołuje akcję \"solcast_solar.update_forecasts\", przestrzegając zalecanego przez Solcast maksymalnego łącznego limitu (zwykle łącznie dziesięć razy dziennie dla jednego miejsca dachowego, a przy dwóch miejscach pięć razy dziennie)",
+          "instance_name": "Nazwa tej instalacji, na przykład Zachód. Pozostaw puste tylko dla pierwszego wpisu. Kolejne wpisy wymagają nazwy, aby ich pliki i czujniki pozostały oddzielne."
         }
       }
     }

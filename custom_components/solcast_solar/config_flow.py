@@ -68,6 +68,8 @@ from .const import (
     GENERATION_ENTITIES,
     GET_ACTUALS,
     HARD_LIMIT_API,
+    INSTANCE_NAME,
+    INSTANCE_SLUG,
     KEY_ESTIMATE,
     NAME,
     RESOURCE_ID,
@@ -83,9 +85,14 @@ from .enums import HistoryType, LoadStatus
 from .instance import (
     advanced_file_path,
     cache_file_path,
+    entry_slug,
+    entry_title,
+    instance_name,
+    instance_slug,
     is_named_instance,
+    is_reserved_slug,
 )
-from .log import get_logger
+from .log import get_logger, set_log_instance
 from .migration import sync_legacy_keys
 from .solcastapi import ConnectionOptions, SolcastApi
 from .state import set_sensitive
@@ -145,6 +152,7 @@ async def validate_sites(hass: HomeAssistant, user_input: dict[str, Any]) -> tup
         tuple[int, str]: The test HTTP status and non-blank message for failures.
 
     """
+    set_log_instance(instance_name(user_input))
     session = async_get_clientsession(hass)
     options = ConnectionOptions(
         user_input[CONF_API_KEY],
@@ -360,12 +368,26 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             submitted_input = {**user_input}
+            raw_name = instance_name(user_input)
+            slug = instance_slug(raw_name)
+            existing_entries = self.hass.config_entries.async_entries(DOMAIN)
+            if not raw_name:
+                if existing_entries:
+                    errors[INSTANCE_NAME] = "instance_name_required"
+            elif not slug:
+                errors[INSTANCE_NAME] = "instance_name_invalid"
+            elif is_reserved_slug(slug):
+                errors[INSTANCE_NAME] = "instance_name_reserved"
+            elif any(entry_slug(existing.options) == slug for existing in existing_entries):
+                errors[INSTANCE_NAME] = "instance_name_duplicate"
+
             api_key, api_count, abort = validate_api_key(user_input)
             api_limit = "10"
             if abort is not None:
                 errors[BASE] = abort
             if not errors:
-                allow_exceed = await _async_is_allow_exceed_api_limit(self.hass)
+                name_options = {INSTANCE_NAME: raw_name} if raw_name else None
+                allow_exceed = await _async_is_allow_exceed_api_limit(self.hass, name_options)
                 api_limit, abort = validate_api_limit(user_input, api_count, allow_exceed=allow_exceed)
                 if abort is not None:
                     errors[BASE] = abort
@@ -393,6 +415,11 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                     SITE_EXPORT_LIMIT: 0.0,
                     AUTO_DAMPEN: False,
                 }
+                if raw_name:
+                    options[INSTANCE_NAME] = raw_name
+                    options[INSTANCE_SLUG] = slug
+                # A second flow for the same name aborts while this one is still open.
+                await self.async_set_unique_id(slug or DOMAIN)
 
                 status, message = await validate_sites(self.hass, options)
                 if status != 200:
@@ -400,23 +427,30 @@ class SolcastSolarFlowHandler(ConfigFlow, domain=DOMAIN):
                     description_placeholders["error_detail"] = message
                 else:
                     return self.async_create_entry(
-                        title=TITLE, data={}, options=options | {f"damp{factor:02d}": 1.0 for factor in range(24)}
+                        title=entry_title(options), data={}, options=options | {f"damp{factor:02d}": 1.0 for factor in range(24)}
                     )
 
-        solcast_json_exists = Path(f"{self.hass.config.config_dir}/solcast.json").is_file()
-        _LOGGER.debug(
-            "File solcast.json %s",
-            "exists, defaulting to auto-update off" if solcast_json_exists else "does not exist, defaulting to auto-update on",
-        )
+        name_required = bool(self.hass.config_entries.async_entries(DOMAIN))
+        if name_required:
+            auto_default = "1"
+        else:
+            solcast_json_exists = await self.hass.async_add_executor_job(Path(cache_file_path(self.hass, {})).is_file)
+            _LOGGER.debug(
+                "File solcast.json %s",
+                "exists, defaulting to auto-update off" if solcast_json_exists else "does not exist, defaulting to auto-update on",
+            )
+            auto_default = str(int(not solcast_json_exists))
+        name_field = Required(INSTANCE_NAME) if name_required else Optional(INSTANCE_NAME, default="")
 
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
                 Schema(
                     {
+                        name_field: str,
                         Required(CONF_API_KEY, default=""): str,
                         Required(API_LIMIT, default="10"): str,
-                        Required(AUTO_UPDATE, default=str(int(not solcast_json_exists))): SelectSelector(
+                        Required(AUTO_UPDATE, default=auto_default): SelectSelector(
                             SelectSelectorConfig(options=AUTO_UPDATE_OPTIONS, mode=SelectSelectorMode.DROPDOWN, translation_key=AUTO_UPDATE)
                         ),
                     }

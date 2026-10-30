@@ -114,6 +114,16 @@ _LOGGER = logging.getLogger(__name__)
 pytestmark = pytest.mark.xdist_group("solcast_config_flow")
 
 
+def _user_flow(hass: HomeAssistant) -> SolcastSolarFlowHandler:
+    """Return a user flow outside the flow manager, with the context the unique ID needs."""
+
+    flow = SolcastSolarFlowHandler()
+    flow.hass = hass
+    flow.handler = DOMAIN
+    flow.context = {"source": config_entries.SOURCE_USER}
+    return flow
+
+
 def _attr_breakdown_input(data: dict[str, Any]) -> list[str]:
     """Build options-flow attr_breakdown multiselect payload."""
 
@@ -239,8 +249,7 @@ async def test_create_entry(hass: HomeAssistant) -> None:
 
     await async_setup_aioresponses()
 
-    flow = SolcastSolarFlowHandler()
-    flow.hass = hass
+    flow = _user_flow(hass)
 
     expected_options: dict[str, Any] = {
         CONF_API_KEY: KEY1,
@@ -272,8 +281,7 @@ async def test_create_entry(hass: HomeAssistant) -> None:
 async def test_init_api_key(hass: HomeAssistant, user_input: dict[str, Any], reason: str | None) -> None:
     """Test that valid/invalid API key is handled in config flow."""
 
-    flow = SolcastSolarFlowHandler()
-    flow.hass = hass
+    flow = _user_flow(hass)
 
     result = await flow.async_step_user()
     assert result.get("type") == FlowResultType.FORM
@@ -289,8 +297,7 @@ async def test_config_api_key_invalid(hass: HomeAssistant) -> None:
 
     await async_setup_aioresponses()
 
-    flow = SolcastSolarFlowHandler()
-    flow.hass = hass
+    flow = _user_flow(hass)
 
     user_input = {CONF_API_KEY: " 555 ", API_LIMIT: "10", AUTO_UPDATE: "1"}
     result = await flow.async_step_user(user_input)
@@ -314,8 +321,7 @@ async def test_config_api_key_invalid(hass: HomeAssistant) -> None:
 async def test_config_api_quota(hass: HomeAssistant, options: dict[str, Any], user_input: dict[str, Any], reason: str | None) -> None:
     """Test that valid/invalid API quota is handled in config flow."""
 
-    flow = SolcastSolarFlowHandler()
-    flow.hass = hass
+    flow = _user_flow(hass)
 
     result = await flow.async_step_user()
     assert result.get("type") == FlowResultType.FORM

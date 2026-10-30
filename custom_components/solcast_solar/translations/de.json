@@ -2,6 +2,7 @@
   "config": {
     "abort": {
       "internal_error": "Ein unerwarteter Fehler ist aufgetreten. Weitere Informationen finden Sie in den Protokollen.",
+      "already_in_progress": "Ein Eintrag mit diesem Namen wird bereits eingerichtet.",
       "reauth_successful": "Neuer API-Schlüssel erfolgreich angewendet",
       "reconfigured": "Neue Konfiguration angewendet",
       "unchanged": "Konfiguration unverändert"
@@ -15,7 +16,11 @@
       "limit_not_number": "Das API-Limit ist keine Zahl",
       "limit_one_or_greater": "Das API-Limit muss eins oder größer sein",
       "limit_too_many": "Es wurden mehr API-Limit-Zähler als Schlüssel eingegeben",
-      "limit_exceeds_maximum": "Das API-Limit darf 50 nicht überschreiten (und sollte wahrscheinlich 10 oder weniger betragen)."
+      "limit_exceeds_maximum": "Das API-Limit darf 50 nicht überschreiten (und sollte wahrscheinlich 10 oder weniger betragen).",
+      "instance_name_required": "Ein weiterer Eintrag braucht einen Namen.",
+      "instance_name_invalid": "Der Name muss einen Buchstaben oder eine Ziffer enthalten.",
+      "instance_name_duplicate": "Dieser Name ist schon vergeben.",
+      "instance_name_reserved": "Dieser Name ist für die Dateien des ersten Eintrags reserviert. Wählen Sie einen anderen Namen."
     },
     "step": {
       "reauth_confirm": {
@@ -44,13 +49,15 @@
         "data": {
           "api_key": "API-Schlüssel",
           "api_limit": "API-Kontingent",
-          "auto_update": "Automatische Aktualisierung"
+          "auto_update": "Automatische Aktualisierung",
+          "instance_name": "Name"
         },
         "description": "Solcast-Kontodaten\n\n(Wenn keine automatische Aktualisierung erfolgt, ist eine Automatisierung erforderlich – siehe Integrationsdokumentation)\n\nDie Solcast-API muss verfügbar sein, um diese Integration erstmalig konfigurieren zu können. Wenn Sie die Statusmeldung '429 / Try again later' erhalten, ist die API nicht verfügbar und die Konfiguration kann nicht abgeschlossen werden. Sie müssen warten. Beachten Sie, dass die API-Statusseite unter status.solcast.com höchstwahrscheinlich keine API-Probleme anzeigt. Die Ursache liegt höchstwahrscheinlich bei einem einzelnen schlechten API-Nutzer, der die Verfügbarkeit für alle Hobbyanwender beeinträchtigt.",
         "data_description": {
           "api_key": "Geben Sie einen oder mehrere Solcast-API-Schlüssel ein, durch Kommas getrennt",
           "api_limit": "Geben Sie ein tägliches Prognoseaktualisierungslimit ein, bei mehreren Schlüsseln kommagetrennt",
-          "auto_update": "Wenn Sie keine automatische Aktualisierung verwenden, erstellen Sie eine Automatisierung, die die Aktion \"solcast_solar.update_forecasts\" regelmäßig aufruft, und halten Sie dabei das von Solcast empfohlene maximale Gesamtlimit ein (in der Regel insgesamt zehnmal pro Tag für einen Dachstandort oder bei zwei Standorten fünfmal pro Tag)"
+          "auto_update": "Wenn Sie keine automatische Aktualisierung verwenden, erstellen Sie eine Automatisierung, die die Aktion \"solcast_solar.update_forecasts\" regelmäßig aufruft, und halten Sie dabei das von Solcast empfohlene maximale Gesamtlimit ein (in der Regel insgesamt zehnmal pro Tag für einen Dachstandort oder bei zwei Standorten fünfmal pro Tag)",
+          "instance_name": "Name dieser Anlage, zum Beispiel West. Leer nur beim ersten Eintrag. Weitere Einträge brauchen einen Namen, damit Dateien und Sensoren getrennt bleiben."
         }
       }
     }

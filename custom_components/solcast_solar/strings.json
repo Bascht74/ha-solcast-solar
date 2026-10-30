@@ -2,6 +2,7 @@
   "config": {
     "abort": {
       "internal_error": "An unexpected error occurred. Check the logs for more information.",
+      "already_in_progress": "An entry with this name is already being set up.",
       "reauth_successful": "New API key applied successfully",
       "reconfigured": "New configuration applied successfully",
       "unchanged": "Configuration unchanged"
@@ -15,7 +16,11 @@
       "limit_not_number": "API limit is not a number",
       "limit_one_or_greater": "API limit must be one or greater",
       "limit_too_many": "There are more API limit counts entered than keys",
-      "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less)."
+      "limit_exceeds_maximum": "API limit cannot exceed 50 (and likely should be 10 or less).",
+      "instance_name_required": "Another entry needs a name.",
+      "instance_name_invalid": "The name must contain a letter or a digit.",
+      "instance_name_duplicate": "That name is already used.",
+      "instance_name_reserved": "That name is reserved for the files of the first entry. Choose another name."
     },
     "step": {
       "reauth_confirm": {
@@ -44,12 +49,14 @@
         "data": {
           "api_key": "API key",
           "api_limit": "API limit",
-          "auto_update": "Auto-update"
+          "auto_update": "Auto-update",
+          "instance_name": "Name"
         },
         "data_description": {
           "api_key": "Enter one or more Solcast API keys, separated by commas",
           "api_limit": "Enter a forecast update daily limit, comma separated when using multiple keys",
-          "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)"
+          "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)",
+          "instance_name": "Name of this plant, for example West. Leave empty only for the first entry. Further entries need a name so their files and sensors stay separate."
         },
         "description": "Solcast Account Details\n\n(If not using auto-update then an automation is required - see the integration documentation)\n\nThe Solcast API must be available to initially configure this integration. If you receive a status message '429 / Try again later' then the API is unavailable and configuration cannot be completed. You need to wait. Note that the API status page at status.solcast.com will almost certainly not show any API issues. The cause most likely lies with a single bad API user who is affecting availability for all hobbyists."
       }
