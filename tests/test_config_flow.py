@@ -364,7 +364,8 @@ async def test_reauth_api_key(
                 _assert_flow_error(result, test[_reason])
                 assert _schema_suggested_values(result) == test[_user_input]
 
-        await hass.config_entries.async_unload(entry.entry_id)
+        # Remove the entry, which keeps the cache files of the entry without a name; its key must not be in use.
+        await hass.config_entries.async_remove(entry.entry_id)
         await hass.async_block_till_done()
 
         # Really change key '1' (last test above used API keys '1' and '2', so these are in cached sites/usage)

@@ -27,6 +27,7 @@ from custom_components.solcast_solar.const import (
 )
 from custom_components.solcast_solar.enums import UpdateOutcome, UpdateResult
 from custom_components.solcast_solar.fetcher import Fetcher
+from custom_components.solcast_solar.instance import repair_placeholders
 from freezegun.api import FrozenDateTimeFactory
 import pytest
 
@@ -37,6 +38,7 @@ from homeassistant.setup import async_setup_component
 
 from . import (
     DEFAULT_INPUT1,
+    KEY1,
     MOCK_BUSY,
     async_cleanup_integration_tests,
     async_init_integration,
@@ -202,6 +204,39 @@ async def test_forecast_retry(
         assert issue_registry.async_get_issue(DOMAIN, ISSUE_API_UNAVAILABLE) is None, "Issue ISSUE_API_UNAVAILABLE should be removed"
         await solcast.tasks_cancel()
         await coordinator.tasks_cancel()
+
+    finally:
+        await async_cleanup_integration_tests(hass)
+
+
+@pytest.mark.asyncio
+async def test_api_available_trigger_needs_cleared_issue(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """The API-available automation runs only when a successful call clears the api_unavailable repair."""
+
+    try:
+        write_advanced_options(hass.config.config_dir, {ADVANCED_TRIGGER_ON_API_AVAILABLE: "Automation available"})
+        entry = await async_init_integration(hass, DEFAULT_INPUT1)
+        fetcher = entry.runtime_data.coordinator.solcast.fetcher
+        with mock.patch("custom_components.solcast_solar.fetcher.async_trigger_automation_by_name") as trigger:
+            assert await fetcher.fetch_data(hours=24, path=FORECASTS, site="1111-1111-1111-1111", api_key=KEY1, force=True)
+            trigger.assert_not_called()
+
+            ir.async_create_issue(
+                hass,
+                DOMAIN,
+                ISSUE_API_UNAVAILABLE,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_API_UNAVAILABLE,
+                translation_placeholders=repair_placeholders(entry),
+            )
+            assert await fetcher.fetch_data(hours=24, path=FORECASTS, site="1111-1111-1111-1111", api_key=KEY1, force=True)
+            trigger.assert_called_once_with(hass, "Automation available")
+            assert issue_registry.async_get_issue(DOMAIN, ISSUE_API_UNAVAILABLE) is None
 
     finally:
         await async_cleanup_integration_tests(hass)

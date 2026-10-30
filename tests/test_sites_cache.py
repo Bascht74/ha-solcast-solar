@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import UTC, timedelta
+from datetime import timedelta
 import json
 import logging
 from pathlib import Path
@@ -146,8 +146,8 @@ async def test_backup_caches_prunes_old_creates_current(tmp_path: Path) -> None:
     cache_file = tmp_path / "solcast.json"
     cache_file.write_text("{}", encoding="utf-8")
 
-    old_day = (dt_util.now(UTC) - timedelta(days=1)).strftime("%y%m%d")
-    today = dt_util.now(UTC).strftime("%y%m%d")
+    old_day = (dt_util.utcnow() - timedelta(days=1)).strftime("%y%m%d")
+    today = dt_util.utcnow().strftime("%y%m%d")
     old_backup = tmp_path / f"solcast-{old_day}.json.bak"
     old_backup.write_text("{}", encoding="utf-8")
     legacy_backup = tmp_path / f"solcast-{today}-auto_backup.json"
@@ -158,6 +158,32 @@ async def test_backup_caches_prunes_old_creates_current(tmp_path: Path) -> None:
     assert not old_backup.exists()
     assert not legacy_backup.exists()
     assert (tmp_path / f"solcast-{today}.json.bak").is_file()
+
+
+@pytest.mark.asyncio
+async def test_backup_caches_only_own_entry(tmp_path: Path) -> None:
+    """The original entry and a named entry back up only their own cache files."""
+
+    for name in (
+        "solcast.json",
+        "solcast-sites.json",
+        "solcast-usage-abc.json",
+        "solcast-west.json",
+        "solcast-west-sites.json",
+        "solcastx.json",
+    ):
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+    today = dt_util.utcnow().strftime("%y%m%d")
+
+    await _make_sites_cache(tmp_path)._backup_json_caches()
+    backups = sorted(path.name for path in tmp_path.glob("*.bak"))
+    assert backups == [f"solcast-{today}.json.bak", f"solcast-sites-{today}.json.bak", f"solcast-usage-abc-{today}.json.bak"]
+
+    named = SitesCache(SimpleNamespace(config_dir=str(tmp_path), filename=str(tmp_path / "solcast-west.json"), hass=_ExecutorHass()))  # pyright: ignore[reportArgumentType]
+    await named._backup_json_caches()
+    assert sorted(path.name for path in tmp_path.glob("*.bak")) == sorted(
+        [*backups, f"solcast-west-{today}.json.bak", f"solcast-west-sites-{today}.json.bak"]
+    )
 
 
 @pytest.mark.asyncio
