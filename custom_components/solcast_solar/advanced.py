@@ -153,7 +153,7 @@ class AdvancedOptions:
 
         advanced_options_proposal: dict[str, Any] = copy.deepcopy(self.api.advanced_options)
         change = False
-        if Path(self.api.filename_advanced).exists():
+        if await self.api.hass.async_add_executor_job(Path(self.api.filename_advanced).exists):
             _LOGGER.debug("Advanced options file %s exists", self.api.filename_advanced)
             deprecated_in_use: dict[str, str] = {}
             problems: list[str] = []

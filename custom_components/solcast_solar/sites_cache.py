@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 import contextlib
 import copy
 from datetime import UTC, datetime as dt
+from functools import partial
 import json
 from pathlib import Path
 import re
@@ -100,7 +101,7 @@ from .redact import (
     redact_msg_api_key,
 )
 from .state import raise_and_record
-from .util import split_and_strip
+from .util import split_and_strip, write_file_atomic
 
 if TYPE_CHECKING:
     from .solcastapi import SolcastApi
@@ -338,8 +339,8 @@ class SitesCache:
                             break
                     _LOGGER.debug("Re-serialising sites cache for %s", redact_api_key(api_key))
                     payload = json.dumps({SITES: [site for site in self.api.sites if site.get(API_KEY) == api_key]}, ensure_ascii=False)
-                    async with self.api.serialise_lock, aiofiles.open(cache_filename, "w") as file:
-                        await file.write(payload)
+                    async with self.api.serialise_lock:
+                        await self.api.hass.async_add_executor_job(write_file_atomic, cache_filename, payload)
 
         async def from_single_site_to_multi(api_keys: list[str]):
             """Transition from a single API key to multiple API keys."""
@@ -438,8 +439,7 @@ class SitesCache:
         )
         self._extant_sites, self._extant_usage = await load_extant_sites_and_usage(all_sites, all_usage)
         if cache_mutation_allowed:
-            remove_orphans(multi_key_sites, multi_sites)
-            remove_orphans(multi_key_usage, multi_usage)
+            await self.api.hass.async_add_executor_job(remove_orphans, multi_key_sites + multi_key_usage, multi_sites + multi_usage)
 
         status, message, api_key_in_error = await self._sites_data(prior_crash=prior_crash, use_cache=use_cache)
         if self.api.sites_status == LoadStatus.OK:
@@ -466,7 +466,7 @@ class SitesCache:
                 async def load_data(filename: str, set_loaded: bool = True) -> dict[str, Any] | None:
                     nonlocal file
 
-                    if Path(filename).is_file():
+                    if await self._is_file(filename):
                         file = filename
                         async with aiofiles.open(filename) as data_file:
                             json_data: dict[str, Any] = json.loads(await data_file.read(), cls=JSONDecoder)
@@ -810,9 +810,9 @@ class SitesCache:
         """
         if self.api.loaded_data and data[LAST_UPDATED] != dt.fromtimestamp(0, UTC):
             data[INTEGRATION_VERSION] = self.api.integration_version
-            payload = json.dumps(data, ensure_ascii=False, cls=DateTimeEncoder)
-            async with self.api.serialise_lock, aiofiles.open(filename, "w") as file:
-                await file.write(payload)
+            payload = await self.api.hass.async_add_executor_job(partial(json.dumps, data, ensure_ascii=False, cls=DateTimeEncoder))
+            async with self.api.serialise_lock:
+                await self.api.hass.async_add_executor_job(write_file_atomic, filename, payload)
             log_file = {
                 self.api.filename: "dampened",
                 self.api.filename_undampened: "undampened",
@@ -852,8 +852,8 @@ class SitesCache:
             RESET: self._api_used_reset[api_key],
         }
         payload = json.dumps(json_content, ensure_ascii=False, cls=DateTimeEncoder)
-        async with self.api.serialise_lock, aiofiles.open(filename, "w") as file:
-            await file.write(payload)
+        async with self.api.serialise_lock:
+            await self.api.hass.async_add_executor_job(write_file_atomic, filename, payload)
 
     async def _backup_json_caches(self) -> None:
         """Backup all JSON caches.
@@ -1070,8 +1070,8 @@ class SitesCache:
             if not cache_mutation_allowed:
                 return
             _LOGGER.debug("Writing sites cache for %s", redact_api_key(api_key))
-            async with self.api.serialise_lock, aiofiles.open(cache_filename, "w") as file:
-                await file.write(json.dumps(response_json, ensure_ascii=False))
+            async with self.api.serialise_lock:
+                await self.api.hass.async_add_executor_job(write_file_atomic, cache_filename, json.dumps(response_json, ensure_ascii=False))
 
         async def load_dismissals(cache_filename: str) -> None:
             _LOGGER.debug("Loading warning dismissals for %s", redact_api_key(api_key))
@@ -1193,7 +1193,7 @@ class SitesCache:
                 response_json: dict[str, Any] = {}
                 api_key = api_key.strip()
                 cache_filename = self._get_sites_cache_filename(api_key)
-                cache_exists = Path(cache_filename).is_file()
+                cache_exists = await self._is_file(cache_filename)
                 if not cache_exists:
                     prior_crash = False
                 else:
@@ -1320,7 +1320,7 @@ class SitesCache:
                 for api_key in api_keys:
                     api_key = api_key.strip()
                     cache_filename = self._get_sites_cache_filename(api_key)
-                    if Path(cache_filename).is_file():  # Cache exists, so load it
+                    if await self._is_file(cache_filename):  # Cache exists, so load it
                         response_json = await load_cache(cache_filename)
                         set_sites(response_json, api_key)
                         _ = check_rekey(response_json, api_key)

@@ -611,8 +611,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
             # Turning auto-dampening off, so reset the granular dampening file content.
             path = Path(coordinator.solcast.dampening.get_filename())
             _LOGGER.debug("Unlink %s", path)
-            if path.exists():
-                path.unlink()
+            await hass.async_add_executor_job(path.unlink, True)
 
         if changed(SITE_DAMP):
             damp_changed = True
@@ -620,8 +619,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 if coordinator.solcast.dampening.allow_granular_reset():
                     coordinator.solcast.dampening.factors = {}
                     path = Path(coordinator.solcast.dampening.get_filename())
-                    if path.exists():
-                        path.unlink()
+                    await hass.async_add_executor_job(path.unlink, True)
             await coordinator.solcast.dampening.apply_forward()
 
         if damp_changed or changed(USE_ACTUALS):

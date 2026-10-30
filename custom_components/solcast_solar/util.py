@@ -1,11 +1,29 @@
 """Solcast utilities."""
 
 import math
+import os
+from pathlib import Path
+import threading
 from typing import Any
 
 from .log import get_logger
 
 _LOGGER = get_logger(__name__)
+
+
+def write_file_atomic(filename: str, payload: str) -> None:
+    """Write a file through a temporary file and an atomic rename, so a crash never leaves a truncated file."""
+
+    path = Path(filename)
+    # One temporary name per writing thread: two writers of the same file must not share a temporary file.
+    temporary = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")
+    try:
+        with open(temporary, "w", encoding="utf-8") as file:
+            file.write(payload)
+        os.replace(temporary, path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def split_and_strip(value: str) -> list[str]:

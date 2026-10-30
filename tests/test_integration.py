@@ -1563,6 +1563,7 @@ async def test_usage_typical_forecast_updates_default(
             cast(bool, DEFAULT_INPUT1[AUTO_DAMPEN]),
         )
         solcast = SolcastApi(session, connection_options, hass)
+        await solcast.async_migrate_config_files()
         usage_file = Path(solcast.sites_cache._get_usage_cache_filename(api_key))
         usage_file.write_text(
             json.dumps(

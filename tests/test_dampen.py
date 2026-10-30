@@ -1351,6 +1351,29 @@ async def test_calculate_models_1_to_3_real_north_roof(monkeypatch: pytest.Monke
     assert [factors[interval] for factors in models] == pytest.approx([0.926, 0.823, 0.734], abs=0.001)
 
 
+async def test_serialise_granular_stays_flagged_until_the_mtime_is_known(
+    hass: HomeAssistant, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file watcher ignores a write of the integration only while the flag is up, so it stays up until the new mtime is stored."""
+
+    dampening = Dampening.__new__(Dampening)
+    dampening.api = SimpleNamespace(hass=hass, serialise_lock=asyncio.Lock(), tz=datetime.UTC)  # pyright: ignore[reportAttributeAccessIssue]
+    dampening.factors = {}
+    dampening.get_filename = lambda: str(tmp_path / "solcast-dampening.json")  # pyright: ignore[reportAttributeAccessIssue]
+    flag_at_mtime: list[bool] = []
+
+    def mtime(_filename: str) -> float:
+        flag_at_mtime.append(dampening.granular_serialising)
+        return 1.0
+
+    monkeypatch.setattr("custom_components.solcast_solar.dampen._file_mtime", mtime)
+    await dampening.serialise_granular()
+
+    assert flag_at_mtime == [True]
+    assert dampening.factors_mtime == 1.0
+    assert dampening.granular_serialising is False
+
+
 def test_delta_adjustment_model_1_loosens_only_below_peak() -> None:
     """Delta adjustment model 1 loosens a factor for a forecast below the peak only, and never above 1.0."""
 

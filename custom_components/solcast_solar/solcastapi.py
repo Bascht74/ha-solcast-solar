@@ -9,7 +9,6 @@ from datetime import date, datetime as dt, timedelta, tzinfo
 from hashlib import md5
 from operator import itemgetter
 from pathlib import Path
-import sys
 import time
 from types import MappingProxyType
 from typing import Any
@@ -129,9 +128,6 @@ _STATUS_TRANSLATE: dict[int, str] = {
     997: "Connect call failed",
     999: "Prior crash",
 }
-
-# Return the function name at a specified caller depth. 0=current, 1=caller, 2=caller of caller, etc.
-FunctionName = lambda n=0: sys._getframe(n + 1).f_code.co_name  # noqa: E731, SLF001 # type: ignore[no-redef]
 
 
 @dataclass
@@ -317,7 +313,6 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
 
         # Configuration directory and file paths.
         self.config_dir = f"{hass.config.config_dir}/{CONFIG_DISCRETE_NAME}" if CONFIG_FOLDER_DISCRETE else hass.config.config_dir
-        (Path(self.config_dir).mkdir(parents=False, exist_ok=True)) if CONFIG_FOLDER_DISCRETE else None
         _LOGGER.debug("Configuration directory is %s", self.config_dir)
 
         file_path = Path(self.config_dir) / Path(options.file_path).name
@@ -340,6 +335,7 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
     def _migrate_config_files(self) -> list[str]:
         """Migrate config files to discrete folder if required."""
 
+        (Path(self.config_dir).mkdir(parents=False, exist_ok=True)) if CONFIG_FOLDER_DISCRETE else None
         source_path = Path(self.config_dir) / ".." if CONFIG_FOLDER_DISCRETE else Path(self.config_dir) / "solcast_solar"
         if source_path.exists():
             for file in source_path.glob("solcast*.json"):

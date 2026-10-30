@@ -8,6 +8,7 @@ from datetime import timedelta
 import json
 import logging
 from pathlib import Path
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -28,6 +29,7 @@ from custom_components.solcast_solar.const import (
 from custom_components.solcast_solar.enums import LoadStatus
 from custom_components.solcast_solar.sites_cache import SitesCache
 from custom_components.solcast_solar.solcastapi import SolcastApi
+from custom_components.solcast_solar.util import write_file_atomic
 from multidict import CIMultiDict, CIMultiDictProxy
 import pytest
 from yarl import URL
@@ -421,3 +423,66 @@ async def test_sites_request_times_out(tmp_path: Path, caplog: pytest.LogCapture
     assert status == 999
     assert api.sites_status is LoadStatus.API_BUSY  # Set-up is retried later
     assert "Error retrieving sites" in caplog.text
+
+
+def test_write_file_atomic_keeps_old_file_on_failure(tmp_path: Path) -> None:
+    """A failed write leaves the previous file whole and no temporary file behind."""
+
+    target = tmp_path / "solcast.json"
+    write_file_atomic(str(target), '{"old": true}')
+    assert json.loads(target.read_text(encoding="utf-8")) == {"old": True}
+
+    blocked = tmp_path / "blocked.json"
+    blocked.mkdir()
+    with pytest.raises(OSError):
+        write_file_atomic(str(blocked), '{"new": true}')
+    assert blocked.is_dir()
+    assert not list(tmp_path.glob("blocked.json*.tmp"))
+
+    write_file_atomic(str(target), '{"new": true}')
+    assert json.loads(target.read_text(encoding="utf-8")) == {"new": True}
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["blocked.json", "solcast.json"]
+
+
+def test_write_file_atomic_from_two_threads(tmp_path: Path) -> None:
+    """Two threads that write one file at the same time use their own temporary file, so neither write fails."""
+
+    target = tmp_path / "solcast-usage.json"
+    failures: list[OSError] = []
+
+    def write_often() -> None:
+        for count in range(500):
+            try:
+                write_file_atomic(str(target), json.dumps({"count": count}))
+            except OSError as err:
+                failures.append(err)
+
+    writers = [threading.Thread(target=write_often) for _ in range(2)]
+    for writer in writers:
+        writer.start()
+    for writer in writers:
+        writer.join()
+
+    assert failures == []
+    assert json.loads(target.read_text(encoding="utf-8")) == {"count": 499}
+    assert [path.name for path in tmp_path.iterdir()] == ["solcast-usage.json"]  # No temporary file is left
+
+
+def test_migrated_and_zero_length_files_do_not_log_api_key(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Moving a key-named cache into the config folder and removing it as empty keeps the key out of logs and the repair."""
+    api_key = "SECRETKEY1234567890"
+    (tmp_path / f"solcast-sites-{api_key}.json").write_text("", encoding="utf-8")
+    api = SimpleNamespace(
+        config_dir=str(tmp_path / "solcast_solar"),
+        options=SimpleNamespace(api_key=api_key),
+        sites_cache=SimpleNamespace(is_this_entry_cache=lambda _file: True),
+    )
+    caplog.set_level(logging.INFO)
+
+    unlinked = SolcastApi._migrate_config_files(api)  # pyright: ignore[reportArgumentType]
+
+    assert unlinked == ["solcast-sites-******567890.json"]
+    assert not (tmp_path / "solcast_solar" / f"solcast-sites-{api_key}.json").exists()
+    assert "Migrating config directory file" in caplog.text
+    assert "Removing zero-length file" in caplog.text
+    assert api_key not in caplog.text

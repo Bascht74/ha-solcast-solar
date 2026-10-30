@@ -1,5 +1,6 @@
 """Schema migration, legacy key sync, and cache cleanup helpers."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -41,8 +42,14 @@ def sync_legacy_keys(data: dict[str, Any]) -> None:
 
 async def clear_cache(filename: str, warn: bool = True):
     """Deletes filename if it exists."""
-    if Path(filename).is_file():
-        Path(filename).unlink()
+
+    def _unlink() -> bool:
+        if Path(filename).is_file():
+            Path(filename).unlink()
+            return True
+        return False
+
+    if await asyncio.get_running_loop().run_in_executor(None, _unlink):
         _LOGGER.debug("Deleted cache file %s", Path(filename).name)
     elif warn:
         _LOGGER.warning("There is no %s to delete", Path(filename).name)

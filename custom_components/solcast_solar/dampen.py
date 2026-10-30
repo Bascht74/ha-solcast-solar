@@ -83,9 +83,12 @@ from .dates import JSONDecoder, NoIndentEncoder
 from .enums import EnergyResult
 from .log import get_logger
 from .redact import format_site_key
-from .util import diff, interquartile_bounds, percentile
 from .util import (
+    diff,
     ease_insignificant,
+    interquartile_bounds,
+    percentile,
+    write_file_atomic,
 )
 
 if TYPE_CHECKING:
@@ -127,6 +130,14 @@ except ImportError:  # pragma: no cover
 
     def _astral_azimuth(loc: Any, ts: dt) -> float:  # pyright: ignore[reportAssignmentType]
         return loc.solar_azimuth(ts)
+
+
+def _file_mtime(filename: str) -> float:
+    """Return the modification time of a file, or 0 when it does not exist (blocking, run it in the executor)."""
+    try:
+        return Path(filename).stat().st_mtime
+    except FileNotFoundError:
+        return 0
 
 
 def compute_power_intervals(
@@ -1211,13 +1222,12 @@ class Dampening:
 
         error = False
         return_value = False
-        mtime = True
         filename = self.get_filename()
         try:
-            if not Path(filename).is_file():
+            # Taken before reading, so a change while reading is seen next time, and before an options update can start.
+            self.factors_mtime = await self.api.hass.async_add_executor_job(_file_mtime, filename)
+            if not self.factors_mtime:
                 self.factors = {}
-                self.factors_mtime = 0
-                mtime = False
                 return option(GRANULAR_DAMPENING_OFF)
             async with aiofiles.open(filename) as file:
                 content = await file.read()
@@ -1270,8 +1280,6 @@ class Dampening:
                         return_value = option(GRANULAR_DAMPENING_ON, SET_ALLOW_RESET)
             return return_value
         finally:
-            if mtime:
-                self.factors_mtime = Path(filename).stat().st_mtime if Path(filename).exists() else 0
             if error:
                 self.factors = {}
 
@@ -1282,7 +1290,7 @@ class Dampening:
             dict[str, Any] | None: The loaded generation data, or None if not found.
         """
         data = None
-        if Path(self.filename_generation).is_file():
+        if await self.api.hass.async_add_executor_job(Path(self.filename_generation).is_file):
             async with aiofiles.open(self.filename_generation) as data_file:
                 json_data: dict[str, Any] = json.loads(await data_file.read(), cls=JSONDecoder)
                 # Note that the generation data cache does not have a version number
@@ -1504,15 +1512,14 @@ class Dampening:
 
     async def refresh_granular_data(self) -> None:
         """Load granular dampening data if the file has changed."""
-        if Path(self.get_filename()).is_file():
-            mtime = Path(self.get_filename()).stat().st_mtime
-            if mtime != self.factors_mtime:
-                await self.granular_data()
-                _LOGGER.info("Granular dampening loaded")
-                _LOGGER.debug(
-                    "Granular dampening file mtime %s",
-                    dt.fromtimestamp(mtime, self.api.tz).strftime(DT_DATE_FORMAT),
-                )
+        mtime = await self.api.hass.async_add_executor_job(_file_mtime, self.get_filename())
+        if mtime and mtime != self.factors_mtime:
+            await self.granular_data()
+            _LOGGER.info("Granular dampening loaded")
+            _LOGGER.debug(
+                "Granular dampening file mtime %s",
+                dt.fromtimestamp(mtime, self.api.tz).strftime(DT_DATE_FORMAT),
+            )
 
     async def serialise_granular(self) -> None:
         """Serialise the site dampening file."""
@@ -1526,11 +1533,11 @@ class Dampening:
         )
         self.granular_serialising = True
         try:
-            async with self.api.serialise_lock, aiofiles.open(filename, "w") as file:
-                await file.write(payload)
+            async with self.api.serialise_lock:
+                await self.api.hass.async_add_executor_job(write_file_atomic, filename, payload)
+            self.factors_mtime = await self.api.hass.async_add_executor_job(_file_mtime, filename)
         finally:
             self.granular_serialising = False
-        self.factors_mtime = Path(filename).stat().st_mtime
         _LOGGER.debug(
             "Granular dampening file mtime %s",
             dt.fromtimestamp(self.factors_mtime, self.api.tz).strftime(DT_DATE_FORMAT),

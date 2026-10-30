@@ -613,7 +613,7 @@ class ServiceActions:
         """
         _LOGGER.info("Action: Diagnostic")
 
-        return {"data": build_health_check_report(self._hass, self._coordinator, self._solcast)}
+        return {"data": await build_health_check_report(self._hass, self._coordinator, self._solcast)}
 
     async def async_get_dampening(self, call: ServiceCall) -> dict[str, Any] | None:
         """Handle get dampening action.
@@ -981,7 +981,7 @@ def _check_entity_status(
     return check
 
 
-def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoordinator, solcast: SolcastApi) -> dict[str, Any]:
+async def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoordinator, solcast: SolcastApi) -> dict[str, Any]:
     """Build the structured Solcast health report used by diagnostics surfaces."""
     issues: list[str] = []
 
@@ -1045,18 +1045,19 @@ def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoo
     if not solcast.sites:
         issues.append("No sites configured")
 
-    cache_files: dict[str, bool] = {}
-    for label, filepath in (
-        ("forecast", solcast.filename),
-        ("undampened", solcast.filename_undampened),
-        ("actuals", solcast.filename_actuals),
-        ("actuals_dampened", solcast.filename_actuals_dampened),
-        ("dampening", solcast.filename_dampening),
-        ("dampening_history", solcast.filename_dampening_history),
-        ("generation", solcast.filename_generation),
-        ("advanced", solcast.filename_advanced),
-    ):
-        cache_files[label] = Path(filepath).exists()
+    cache_paths = {
+        "forecast": solcast.filename,
+        "undampened": solcast.filename_undampened,
+        "actuals": solcast.filename_actuals,
+        "actuals_dampened": solcast.filename_actuals_dampened,
+        "dampening": solcast.filename_dampening,
+        "dampening_history": solcast.filename_dampening_history,
+        "generation": solcast.filename_generation,
+        "advanced": solcast.filename_advanced,
+    }
+    cache_files: dict[str, bool] = await hass.async_add_executor_job(
+        lambda: {label: Path(filepath).exists() for label, filepath in cache_paths.items()}
+    )
 
     if not cache_files.get("forecast", False):
         issues.append("Forecast cache file missing")

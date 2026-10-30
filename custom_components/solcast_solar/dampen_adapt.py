@@ -50,7 +50,7 @@ from .const import (
     VALUE_ADAPTIVE_DAMPENING_NO_DELTA,
 )
 from .dates import NoIndentEncoder
-from .util import ordinal
+from .util import ordinal, write_file_atomic
 
 if TYPE_CHECKING:
     from .dampen import Dampening
@@ -259,7 +259,7 @@ class DampeningAdaptive:
         if not self.dampening.auto_factors_history:
             self.dampening.auto_factors_history = {m: {d: [] for d in _DELTA_RANGE_EXTENDED} for m in _MODEL_RANGE}
 
-        if Path(self.dampening.api.filename_dampening_history).is_file():
+        if await self.dampening.api.hass.async_add_executor_job(Path(self.dampening.api.filename_dampening_history).is_file):
             async with aiofiles.open(self.dampening.api.filename_dampening_history) as file:
                 try:
                     raw = json.loads(await file.read(), cls=_JSONDecoder)
@@ -432,8 +432,10 @@ class DampeningAdaptive:
                     ]
 
             payload = json.dumps(serialisable, ensure_ascii=False, indent=2, cls=NoIndentEncoder, above_level=4)
-            async with self.dampening.api.serialise_lock, aiofiles.open(self.dampening.api.filename_dampening_history, "w") as file:
-                await file.write(payload)
+            async with self.dampening.api.serialise_lock:
+                await self.dampening.api.hass.async_add_executor_job(
+                    write_file_atomic, self.dampening.api.filename_dampening_history, payload
+                )
 
             _LOGGER.debug("Task dampening update_history took %.3f seconds", time.time() - start_time)
 
@@ -1006,8 +1008,8 @@ class DampeningAdaptive:
         payload = json.dumps(data, ensure_ascii=False, cls=NoIndentEncoder, indent=2, above_level=2)
         self.dampening.api.suppress_advanced_watchdog_reload = True  # Suppress reload for this file write
 
-        async with self.dampening.api.serialise_lock, aiofiles.open(self.dampening.api.filename_advanced, "w") as file:
-            await file.write(payload)
+        async with self.dampening.api.serialise_lock:
+            await self.dampening.api.hass.async_add_executor_job(write_file_atomic, self.dampening.api.filename_advanced, payload)
 
         _LOGGER.debug("Task serialise_advanced_options took %.3f seconds", time.time() - start_time)
 
