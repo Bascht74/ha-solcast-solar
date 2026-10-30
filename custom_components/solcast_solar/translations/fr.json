@@ -20,7 +20,8 @@
       "instance_name_required": "Une autre entrée a besoin d'un nom.",
       "instance_name_invalid": "Le nom doit contenir une lettre ou un chiffre.",
       "instance_name_duplicate": "Ce nom est déjà utilisé.",
-      "instance_name_reserved": "Ce nom est réservé aux fichiers de la première entrée. Choisissez un autre nom."
+      "instance_name_reserved": "Ce nom est réservé aux fichiers de la première entrée. Choisissez un autre nom.",
+      "all_sites_excluded": "Tous les sites sont exclus. Gardez au moins un site."
     },
     "step": {
       "reauth_confirm": {
@@ -173,6 +174,9 @@
     },
     "actuals_without_get": {
       "message": "Les valeurs réelles estimées ne peuvent pas être utilisées sans les obtenir."
+    },
+    "all_sites_excluded": {
+      "message": "Tous les sites de cette entrée sont exclus. Gardez au moins un site."
     },
     "api_duplicate": {
       "message": "Clé API en double spécifiée."
@@ -411,7 +415,8 @@
       "limit_not_number": "La limite de l'API n'est pas un nombre",
       "limit_one_or_greater": "La limite de l'API doit être égale ou supérieure à un",
       "limit_too_many": "Il y a plus de limites d'API saisies que de clés",
-      "limit_exceeds_maximum": "La limite de l'API ne peut pas dépasser 50 (et devrait probablement être de 10 ou moins)."
+      "limit_exceeds_maximum": "La limite de l'API ne peut pas dépasser 50 (et devrait probablement être de 10 ou moins).",
+      "all_sites_excluded": "Tous les sites sont exclus. Gardez au moins un site."
     },
     "step": {
       "dampen": {
@@ -478,7 +483,7 @@
           "auto_update": "Mise à jour automatique (s'il n'y a pas de mise à jour automatique, une automatisation doit être utilisée à la place)",
           "config_damp": "Modifier les facteurs d'amortissement horaires",
           "custom_hours": "Capteur personnalisé des X prochaines heures",
-          "exclude_sites": "Site(s) à exclure du tableau de bord Énergie et des totaux des capteurs",
+          "exclude_sites": "Site(s) à exclure",
           "generation_entities": "Entité(s) de production PV",
           "get_actuals": "Valeurs réelles estimées mises à jour à minuit",
           "hard_limit_api": "Limite stricte de l'onduleur (kW)",
@@ -497,7 +502,7 @@
           "auto_update": "Si vous n'utilisez pas la mise à jour automatique, créez une automatisation qui appelle périodiquement l'action \"solcast_solar.update_forecasts\", tout en respectant la limite totale maximale conseillée par Solcast (généralement dix fois au total par jour pour un site sur toit, ou avec deux sites cinq fois par jour)",
           "config_damp": "Cliquez sur soumettre pour accéder à l'éditeur de facteurs d'amortissement",
           "custom_hours": "Nombre d'heures pour le capteur personnalisé (minimum 1, maximum 144)",
-          "exclude_sites": "Site(s) à exclure du tableau de bord Énergie et des totaux des capteurs lors de l'ajout de clés API de sites locaux et distants pour un déploiement local/distant unique de Home Assistant",
+          "exclude_sites": "Un site exclu n'est pas interrogé auprès de Solcast : pas de prévision, pas de valeurs réelles estimées, pas d'appels API et pas de capteur de site",
           "generation_entities": "Pour l'amortissement automatisé : énergie (Wh/kWh/MWh, total croissant) ou puissance (W/kW/MW, instantanée)",
           "get_actuals": "Utilise un appel API par site par jour — voir la documentation d'intégration ; une limite d'API réduite est recommandée",
           "hard_limit_api": "Voir la documentation d'intégration ; séparez plusieurs valeurs pour chaque clé par des virgules",

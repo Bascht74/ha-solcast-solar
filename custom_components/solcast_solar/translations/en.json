@@ -8,6 +8,7 @@
       "unchanged": "Configuration unchanged"
     },
     "error": {
+      "all_sites_excluded": "Every site is excluded. Keep at least one site.",
       "api_duplicate": "Duplicate API key specified",
       "api_error": "Solcast API error: {error_detail}",
       "api_key_empty": "API key must not be empty",
@@ -173,6 +174,9 @@
     },
     "actuals_without_get": {
       "message": "Estimated actuals cannot be used without getting them."
+    },
+    "all_sites_excluded": {
+      "message": "Every site of this entry is excluded. Keep at least one site."
     },
     "api_duplicate": {
       "message": "Duplicate API key specified."
@@ -397,6 +401,7 @@
     "error": {
       "actuals_not_enabled": "Estimated actuals acquisition is not enabled",
       "actuals_without_get": "Estimated actuals cannot be used without getting them",
+      "all_sites_excluded": "Every site is excluded. Keep at least one site.",
       "api_duplicate": "Duplicate API key specified",
       "api_error": "Solcast API error: {error_detail}",
       "api_key_empty": "API key must not be empty",
@@ -481,7 +486,7 @@
           "auto_update": "Auto-update",
           "config_damp": "Modify the hourly dampening factors",
           "custom_hours": "Custom next X hours sensor",
-          "exclude_sites": "Site(s) to exclude from totals",
+          "exclude_sites": "Site(s) to exclude",
           "generation_entities": "PV generation entity/entities",
           "get_actuals": "Estimated actuals updated at midnight",
           "hard_limit_api": "Inverter hard limit (kW)",
@@ -499,7 +504,7 @@
           "auto_update": "If not using auto-update, create an automation that calls the action \"solcast_solar.update_forecasts\" periodically, while adhering to your Solcast advised maximum total limit (usually ten times total per day for one rooftop site, or with two sites five times per day)",
           "config_damp": "Click submit to proceed to the dampening factor editor",
           "custom_hours": "Number of hours for the custom sensor (minimum 1, maximum 144)",
-          "exclude_sites": "Site(s) to exclude from the Energy dashboard and sensor totals when adding local and remote site API keys for a single Home Assistant local/remote deployment",
+          "exclude_sites": "An excluded site is not fetched from Solcast: no forecast, no estimated actuals, no API calls and no site sensor",
           "generation_entities": "For automated dampening: energy (Wh/kWh/MWh, total increasing) or power (W/kW/MW, instantaneous)",
           "get_actuals": "Uses one API call per site per day \u2014 see the integration documentation; a reduced API limit is recommended",
           "hard_limit_api": "See the integration documentation; comma separate multiple values for each key",

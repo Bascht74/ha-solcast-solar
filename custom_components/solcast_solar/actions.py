@@ -1083,7 +1083,7 @@ def build_health_check_report(hass: HomeAssistant, coordinator: SolcastUpdateCoo
 
     forecast_health = _evaluate_forecast_health(coordinator, solcast, issues)
     actuals_health = _evaluate_actuals_health(solcast, configured_site_ids, issues)
-    excluded_sites_health = _evaluate_excluded_sites(configured_site_ids, set(opts.exclude_sites), issues)
+    excluded_sites_health = _evaluate_excluded_sites({site[RESOURCE_ID] for site in solcast.sites_all}, set(opts.exclude_sites), issues)
 
     generation_entity_checks: list[dict[str, Any]] = []
     if opts.auto_dampen and opts.generation_entities:

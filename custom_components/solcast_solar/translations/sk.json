@@ -20,7 +20,8 @@
       "instance_name_required": "Ďalší záznam potrebuje názov.",
       "instance_name_invalid": "Názov musí obsahovať písmeno alebo číslicu.",
       "instance_name_duplicate": "Tento názov sa už používa.",
-      "instance_name_reserved": "Tento názov je vyhradený pre súbory prvého záznamu. Vyberte iný názov."
+      "instance_name_reserved": "Tento názov je vyhradený pre súbory prvého záznamu. Vyberte iný názov.",
+      "all_sites_excluded": "Všetky lokality sú vylúčené. Ponechajte aspoň jednu lokalitu."
     },
     "step": {
       "reauth_confirm": {
@@ -173,6 +174,9 @@
     },
     "actuals_without_get": {
       "message": "Odhadované skutočné hodnoty nie je možné použiť bez ich získania."
+    },
+    "all_sites_excluded": {
+      "message": "Všetky lokality tohto záznamu sú vylúčené. Ponechajte aspoň jednu lokalitu."
     },
     "api_duplicate": {
       "message": "Bol zadaný duplicitný kľúč API."
@@ -411,7 +415,8 @@
       "limit_not_number": "Limit API nie je číslo",
       "limit_one_or_greater": "Limit API musí byť jeden alebo väčší",
       "limit_too_many": "Je zadaných viac limitov API ako kľúčov",
-      "limit_exceeds_maximum": "Limit API nemôže prekročiť 50 (a pravdepodobne by mal byť 10 alebo menej)."
+      "limit_exceeds_maximum": "Limit API nemôže prekročiť 50 (a pravdepodobne by mal byť 10 alebo menej).",
+      "all_sites_excluded": "Všetky lokality sú vylúčené. Ponechajte aspoň jednu lokalitu."
     },
     "step": {
       "dampen": {
@@ -478,7 +483,7 @@
           "auto_update": "Automatická aktualizácia (ak nie je automatická aktualizácia, musíte namiesto nej použiť automatizáciu)",
           "config_damp": "Upraviť hodinové faktory tlmenia",
           "custom_hours": "Vlastný senzor nasledujúcich X hodín",
-          "exclude_sites": "Lokality, ktoré sa majú vylúčiť zo súčtu energie a senzorov",
+          "exclude_sites": "Lokalita(-y) na vylúčenie",
           "generation_entities": "Entita/entity výroby FV",
           "get_actuals": "Odhadované skutočné hodnoty sa aktualizujú o polnoci",
           "hard_limit_api": "Pevný limit meniča (kW)",
@@ -497,7 +502,7 @@
           "auto_update": "Ak nepoužívate automatickú aktualizáciu, vytvorte automatizáciu, ktorá pravidelne volá akciu \"solcast_solar.update_forecasts\", pričom dodržujte Solcastom odporúčaný maximálny celkový limit (zvyčajne spolu desaťkrát denne pre jedno strešné miesto, alebo pri dvoch miestach päťkrát denne)",
           "config_damp": "Kliknite na odoslať a prejdite do editora faktorov tlmenia",
           "custom_hours": "Počet hodín pre vlastný senzor (minimum 1, maximum 144)",
-          "exclude_sites": "Stránka(-y), ktoré sa majú vylúčiť z panela Energia a celkových hodnôt senzorov pri pridávaní miestnych a vzdialených kľúčov API pre jedno miestne/vzdialené nasadenie Home Assistant",
+          "exclude_sites": "Vylúčená lokalita sa zo Solcastu nenačítava: žiadna predpoveď, žiadne odhadované skutočné hodnoty, žiadne volania API a žiadny senzor lokality",
           "generation_entities": "Pre automatické tlmenie: energia (Wh/kWh/MWh, celkovo rastúca) alebo výkon (W/kW/MW, okamžitý)",
           "get_actuals": "Používa jedno volanie API na lokalitu za deň — pozrite si dokumentáciu integrácie; odporúča sa znížený limit API",
           "hard_limit_api": "Pozrite si dokumentáciu integrácie; oddeľte viacero hodnôt pre každý kľúč čiarkami",

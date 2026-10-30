@@ -190,7 +190,8 @@ async def test_auto_dampen(
         assert entry.state is ConfigEntryState.LOADED, "Integration presumed dead after setup"
         no_exception(caplog)
 
-        assert "Auto-dampening suppressed: Excluded site for 3333-3333-3333-3333" in caplog.text
+        assert "Site 3333-3333-3333-3333 is excluded, so it is not fetched" in caplog.text
+        assert "3333-3333-3333-3333" not in solcast.data_actuals[SITE_INFO]
         assert "Interval 08:30 has peak estimated actual 0.936" in caplog.text
         assert "Interval 08:30 max generation: 0.777" in caplog.text
         assert "Auto-dampen factor for 08:30 is 0.830" in caplog.text
@@ -218,7 +219,7 @@ async def test_auto_dampen(
         await wait_for_it(hass, caplog, freezer, "Estimated actual mean APE")
         assert "Estimated actuals dictionary for site 1111-1111-1111-1111" in caplog.text
         assert "Estimated actuals dictionary for site 2222-2222-2222-2222" in caplog.text
-        assert "Estimated actuals dictionary for site 3333-3333-3333-3333" in caplog.text
+        assert "Getting estimated actuals update for site 3333-3333-3333-3333" not in caplog.text
         assert "Task dampening model_automated took" in caplog.text
         assert "Apply dampening to previous day estimated actuals" not in caplog.text
 

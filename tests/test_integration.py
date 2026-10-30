@@ -1394,7 +1394,7 @@ async def test_remaining_actions(
                 "query": {
                     EVENT_START_DATETIME: (solcast.dt_helper.day_start_utc(future=-1) + timedelta(hours=3)).isoformat(),
                     EVENT_END_DATETIME: solcast.dt_helper.day_start_utc().isoformat(),
-                    SITE: "1111-1111-1111-1111",
+                    SITE: "2222-2222-2222-2222",  # The first site was excluded above, so its history starts today.
                 },
                 "expect": 42,
             },
@@ -1822,8 +1822,9 @@ async def test_scenarios(
         opt[EXCLUDE_SITES] = ["2222-2222-2222-2222"]
         hass.config_entries.async_update_entry(entry, options=opt)
         await hass.async_block_till_done()
-        assert "Recalculate forecasts and refresh sensors" in caplog.text
-        assert hass.states.get("sensor.solcast_pv_forecast_forecast_today").state == "24.93"  # type: ignore[union-attr]
+        assert "Options updated, action: The integration will reload" in caplog.text
+        # The excluded site no longer takes a share of the 6 kW hard limit, so the first site keeps more than 24.93.
+        assert hass.states.get("sensor.solcast_pv_forecast_forecast_today").state == "26.595"  # type: ignore[union-attr]
 
         # Test simple API key change
         caplog.clear()
@@ -1861,7 +1862,7 @@ async def test_scenarios(
         assert "Reset API usage" in caplog.text
         assert "New site(s) have been added" in caplog.text
         assert "Site resource id 1111-1111-1111-1111 is no longer configured" in caplog.text
-        assert "Site resource id 2222-2222-2222-2222 is no longer configured" in caplog.text
+        assert "Site resource id 2222-2222-2222-2222" not in caplog.text  # Its data went when it was excluded
         no_error_or_exception(caplog)
         caplog.clear()
 

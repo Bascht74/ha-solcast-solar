@@ -147,7 +147,7 @@ async def test_adaptive_auto_dampen(  # noqa: C901
         await wait_for_it(hass, caplog, freezer, "Clear presumed dead flag", long_time=False)
         no_exception(caplog)
 
-        assert "Auto-dampening suppressed: Excluded site for 3333-3333-3333-3333" in caplog.text
+        assert "Site 3333-3333-3333-3333 is excluded, so it is not fetched" in caplog.text
         assert "Interval 08:30 has peak estimated actual 0.936" in caplog.text
         assert "Auto-dampen factor for 08:30 is 0.296" in caplog.text
 
@@ -175,7 +175,7 @@ async def test_adaptive_auto_dampen(  # noqa: C901
             match count:
                 case 2:
                     assert "Determining best automated dampening settings" in caplog.text
-                    assert "Dampening history actuals suppressed site 3333-3333-3333-3333" in caplog.text
+                    assert "3333-3333-3333-3333" not in solcast.data_actuals[SITE_INFO]
                     assert "Skipping model 2 and delta 0 as history of 2 days" in caplog.text
                     assert "Skipping model 2 and delta 1 as history of 1 days" in caplog.text
                     assert f"Advanced option '{ADVANCED_AUTOMATED_DAMPENING_DELTA_ADJUSTMENT_MODEL}' set to: 1" in caplog.text

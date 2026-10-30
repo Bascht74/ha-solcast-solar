@@ -20,7 +20,8 @@
       "instance_name_required": "他のエントリには名前が必要です。",
       "instance_name_invalid": "名前には文字または数字を含める必要があります。",
       "instance_name_duplicate": "その名前はすでに使用されています。",
-      "instance_name_reserved": "その名前は最初のエントリのファイル用に予約されています。別の名前を選んでください。"
+      "instance_name_reserved": "その名前は最初のエントリのファイル用に予約されています。別の名前を選んでください。",
+      "all_sites_excluded": "すべてのサイトが除外されています。少なくとも1つのサイトを残してください。"
     },
     "step": {
       "reauth_confirm": {
@@ -173,6 +174,9 @@
     },
     "actuals_without_get": {
       "message": "推定実績値の取得を有効にしないと、推定実績値は使用できません。"
+    },
+    "all_sites_excluded": {
+      "message": "このエントリのすべてのサイトが除外されています。少なくとも1つのサイトを残してください。"
     },
     "api_duplicate": {
       "message": "重複したAPIキーが指定されました。"
@@ -411,7 +415,8 @@
       "limit_exceeds_maximum": "APIリミットは50を超えることはできません（10以下にすべきです）",
       "limit_not_number": "APIリミットは数字ではありません",
       "limit_one_or_greater": "APIリミットは1以上である必要があります",
-      "limit_too_many": "入力されたAPIリミットの数がキーの数より多いです"
+      "limit_too_many": "入力されたAPIリミットの数がキーの数より多いです",
+      "all_sites_excluded": "すべてのサイトが除外されています。少なくとも1つのサイトを残してください。"
     },
     "step": {
       "dampen": {
@@ -478,7 +483,7 @@
           "auto_update": "自動更新（自動更新を使用しない場合は、代わりにオートメーションを使用する必要があります）",
           "config_damp": "時間別ダンペニングファクターを変更",
           "custom_hours": "カスタム次のX時間センサー",
-          "exclude_sites": "エネルギーダッシュボードとセンサーの合計から除外するサイト",
+          "exclude_sites": "除外するサイト",
           "generation_entities": "PV発電エンティティ",
           "get_actuals": "推定実績値を深夜に更新",
           "hard_limit_api": "インバーターのハードリミット（kW）",
@@ -497,7 +502,7 @@
           "auto_update": "自動更新を使用しない場合は、アクション \"solcast_solar.update_forecasts\" を定期的に呼び出すオートメーションを作成し、Solcast が推奨する最大合計上限を守ってください（通常は屋根上サイト 1 つで 1 日合計 10 回、2 サイトの場合は 1 日 5 回）",
           "config_damp": "送信をクリックしてダンペニングファクターエディターに進んでください",
           "custom_hours": "カスタムセンサーの時間数（最小1、最大144）",
-          "exclude_sites": "単一の Home Assistant ローカル/リモート環境にローカルおよびリモートサイトの API キーを追加する際に、エネルギーダッシュボードとセンサー合計から除外するサイト",
+          "exclude_sites": "除外したサイトは Solcast から取得されません：予報、推定実績値、API 呼び出し、サイトセンサーはありません",
           "generation_entities": "自動ダンペニング用：エネルギー（Wh/kWh/MWh、合計増加）または電力（W/kW/MW、瞬時値）",
           "get_actuals": "サイトごとに1日1回のAPI呼び出しを使用します — 統合ドキュメントを参照してください；低いAPIリミットを推奨します",
           "hard_limit_api": "統合ドキュメントを参照してください；各キーの複数の値はカンマで区切ってください",

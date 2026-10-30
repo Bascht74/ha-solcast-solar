@@ -355,12 +355,7 @@ class Dampening:
         ratio_sum = 0.0
         count = 0
 
-        exclude_sites = set(self.api.options.exclude_sites)
-
         for site in self.api.sites:
-            if site[RESOURCE_ID] in exclude_sites:
-                continue
-
             tilt = float(site[SITE_ATTRIBUTE_TILT])
             # Solcast azimuth is N=0, W=+90, E=-90; astral gives a compass bearing (E=90, W=270).
             panel_azimuth = -float(site[SITE_ATTRIBUTE_AZIMUTH]) % 360.0
@@ -400,8 +395,6 @@ class Dampening:
 
             undampened_interval_pv50: defaultdict[dt, float] = defaultdict(float)
             for site in self.api.sites:
-                if self._should_exclude_site(site[RESOURCE_ID]):
-                    continue
                 for forecast in self.api.data_undampened[SITE_INFO][site[RESOURCE_ID]][FORECASTS]:
                     period_start = forecast[PERIOD_START]
                     if period_start >= self.api.dt_helper.day_start_utc():
@@ -427,9 +420,7 @@ class Dampening:
                     else {}
                 )
                 sorted_forecasts_undampened_future = sorted(forecasts_undampened_future, key=itemgetter(PERIOD_START))
-                apply_dampening_to_site = not self._should_exclude_site(site_id) and (
-                    (site_id in applicable_sites) if applicable_sites else True
-                )
+                apply_dampening_to_site = (site_id in applicable_sites) if applicable_sites else True
 
                 await asyncio.sleep(0)  # Yield to event loop to avoid blocking
 
@@ -490,9 +481,6 @@ class Dampening:
         undampened_interval_pv50 = self._build_actuals_interval_pv50(recovered_periods)
 
         for site in self.api.sites:
-            if self._should_exclude_site(site[RESOURCE_ID]):
-                continue
-
             periods = recovered_periods_by_site.get(site[RESOURCE_ID])
             if not periods:
                 continue
@@ -565,17 +553,11 @@ class Dampening:
         start_str = start.strftime(DT_DATE_ONLY_FORMAT)
         return start_str if start == end else f"{start_str} to {end.strftime(DT_DATE_ONLY_FORMAT)}"
 
-    def _should_exclude_site(self, site_id: str) -> bool:
-        """Return True if the site should be excluded from processing."""
-        return site_id in self.api.options.exclude_sites
-
     def _build_actuals_interval_pv50(self, applicable_periods: set[dt]) -> defaultdict[dt, float]:
         """Build combined pv50 values for estimated actual timestamps."""
         undampened_interval_pv50: defaultdict[dt, float] = defaultdict(float)
 
         for site in self.api.sites:
-            if self._should_exclude_site(site[RESOURCE_ID]):
-                continue
             for forecast in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS]:
                 period_start = forecast[PERIOD_START]
                 if period_start in applicable_periods:
@@ -592,16 +574,12 @@ class Dampening:
             {
                 forecast[PERIOD_START]
                 for site in self.api.sites
-                if not self._should_exclude_site(site[RESOURCE_ID])
                 for forecast in self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS]
                 if start <= forecast[PERIOD_START] < end
             }
         )
 
         for site in self.api.sites:
-            if self._should_exclude_site(site[RESOURCE_ID]):
-                continue
-
             _LOGGER.debug(
                 "Apply dampening to previous day estimated actuals for %s from %s to %s",
                 site[RESOURCE_ID],
@@ -1112,6 +1090,8 @@ class Dampening:
                 self.factors = cast(dict[str, Any], response_json)
                 if content.replace("\n", "").replace("\r", "").strip() != "" and isinstance(response_json, dict) and self.factors:
                     first_site_len = 0
+                    # An excluded site is still known: its factors stay in the file and apply once it is included again.
+                    known_sites = {ALL, *self.api.site_transfers, *(site[RESOURCE_ID] for site in (*self.api.sites_all, *self.api.sites))}
                     for site, damp_list in self.factors.items():
                         if first_site_len == 0:
                             first_site_len = len(damp_list)
@@ -1712,9 +1692,6 @@ class Dampening:
             self.api.options.auto_dampen or self.api.advanced_options[ADVANCED_GRANULAR_DAMPENING_DELTA_ADJUSTMENT]
         ) and self.api.options.get_actuals:
             for site in self.api.sites:
-                if self._should_exclude_site(site[RESOURCE_ID]):
-                    _LOGGER.debug("Auto-dampening suppressed: Excluded site for %s", site[RESOURCE_ID])
-                    continue
                 start, end = self.api.query.get_list_slice(
                     self.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS],
                     self.api.dt_helper.day_start_utc() - timedelta(days=model_days),

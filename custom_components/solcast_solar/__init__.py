@@ -55,6 +55,7 @@ from .const import (
     DELAYED_RESTART_ON_CRASH,
     DOMAIN,
     DT_DATE_FORMAT,
+    EXCEPTION_ALL_SITES_EXCLUDED,
     EXCEPTION_INIT_CANNOT_GET_SITES,
     EXCEPTION_INIT_CANNOT_GET_SITES_CACHE_INVALID,
     EXCEPTION_INIT_KEY_INVALID,
@@ -378,7 +379,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         case LoadStatus.UNKNOWN:
             await raise_and_record(hass, entry, ConfigEntryError, EXCEPTION_INIT_UNKNOWN)
         case LoadStatus.OK:
-            pass
+            if not solcast.sites:
+                await raise_and_record(hass, entry, ConfigEntryError, EXCEPTION_ALL_SITES_EXCLUDED)
     match solcast.usage_status:
         case LoadStatus.ERROR:
             await raise_and_record(hass, entry, ConfigEntryError, EXCEPTION_INIT_USAGE_CORRUPT)
@@ -562,6 +564,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
         or changed(CUSTOM_HOURS)
         or changed(SITE_EXPORT_ENTITY)
         or changed(GET_ACTUALS)
+        or changed(EXCLUDE_SITES)
     )
 
     # Config changes, which when changed will cause a forecast recalculation only, without reload.
@@ -576,10 +579,6 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 damp_changed = True
         if recalculate_and_refresh:
             coordinator.solcast.damp = damp_factors
-
-        # Site exclusion changes.
-        if changed(EXCLUDE_SITES):
-            recalculate_and_refresh = True
 
         # Attribute changes, which will need a recalculation of splines.
         if not recalculate_and_refresh:

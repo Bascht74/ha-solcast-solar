@@ -20,7 +20,8 @@
       "instance_name_required": "Ein weiterer Eintrag braucht einen Namen.",
       "instance_name_invalid": "Der Name muss einen Buchstaben oder eine Ziffer enthalten.",
       "instance_name_duplicate": "Dieser Name ist schon vergeben.",
-      "instance_name_reserved": "Dieser Name ist für die Dateien des ersten Eintrags reserviert. Wählen Sie einen anderen Namen."
+      "instance_name_reserved": "Dieser Name ist für die Dateien des ersten Eintrags reserviert. Wählen Sie einen anderen Namen.",
+      "all_sites_excluded": "Alle Standorte sind ausgeschlossen. Behalten Sie mindestens einen Standort."
     },
     "step": {
       "reauth_confirm": {
@@ -173,6 +174,9 @@
     },
     "actuals_without_get": {
       "message": "Geschätzte Istwerte können nicht verwendet werden, ohne sie abzurufen."
+    },
+    "all_sites_excluded": {
+      "message": "Alle Standorte dieses Eintrags sind ausgeschlossen. Behalten Sie mindestens einen Standort."
     },
     "api_duplicate": {
       "message": "Doppelter API-Schlüssel angegeben."
@@ -411,7 +415,8 @@
       "limit_not_number": "Das API-Limit ist keine Zahl",
       "limit_one_or_greater": "Das API-Limit muss eins oder größer sein",
       "limit_too_many": "Es wurden mehr API-Limit-Zähler als Schlüssel eingegeben",
-      "limit_exceeds_maximum": "Das API-Limit darf 50 nicht überschreiten (und sollte wahrscheinlich 10 oder weniger betragen)."
+      "limit_exceeds_maximum": "Das API-Limit darf 50 nicht überschreiten (und sollte wahrscheinlich 10 oder weniger betragen).",
+      "all_sites_excluded": "Alle Standorte sind ausgeschlossen. Behalten Sie mindestens einen Standort."
     },
     "step": {
       "dampen": {
@@ -478,7 +483,7 @@
           "auto_update": "Automatische Aktualisierung (wenn keine automatische Aktualisierung vorhanden ist, muss stattdessen eine Automatisierung verwendet werden)",
           "config_damp": "Stündliche Dämpfungsfaktoren ändern",
           "custom_hours": "Benutzerdefinierter nächster-X-Stunden-Sensor",
-          "exclude_sites": "Vom Energie-Dashboard und den Sensorgesamtwerten auszuschließende Site(s)",
+          "exclude_sites": "Auszuschließende Standort(e)",
           "generation_entities": "PV-Erzeugungseinheit/-einheiten",
           "get_actuals": "Geschätzte Istwerte werden um Mitternacht aktualisiert",
           "hard_limit_api": "Fester Grenzwert des Wechselrichters (kW)",
@@ -497,7 +502,7 @@
           "auto_update": "Wenn Sie keine automatische Aktualisierung verwenden, erstellen Sie eine Automatisierung, die die Aktion \"solcast_solar.update_forecasts\" regelmäßig aufruft, und halten Sie dabei das von Solcast empfohlene maximale Gesamtlimit ein (in der Regel insgesamt zehnmal pro Tag für einen Dachstandort oder bei zwei Standorten fünfmal pro Tag)",
           "config_damp": "Auf „Senden“ klicken, um zum Dämpfungsfaktor-Editor zu gelangen",
           "custom_hours": "Anzahl der Stunden für den benutzerdefinierten Sensor (Minimum 1, Maximum 144)",
-          "exclude_sites": "Standort(e), die vom Energie-Dashboard und den Sensorgesamtwerten ausgeschlossen werden sollen, wenn lokale und Remote-API-Schlüssel für eine einzelne lokale/Remote-Home-Assistant-Bereitstellung hinzugefügt werden",
+          "exclude_sites": "Ein ausgeschlossener Standort wird nicht von Solcast abgerufen: keine Prognose, keine geschätzten Istwerte, keine API-Aufrufe und kein Standortsensor",
           "generation_entities": "Für automatische Dämpfung: Energie (Wh/kWh/MWh, Gesamtzunahme) oder Leistung (W/kW/MW, augenblicklich)",
           "get_actuals": "Verwendet einen API-Aufruf pro Standort und Tag — siehe Integrationsdokumentation; ein reduziertes API-Kontingent wird empfohlen",
           "hard_limit_api": "Siehe Integrationsdokumentation; mehrere Werte für jeden Schlüssel durch Kommas trennen",

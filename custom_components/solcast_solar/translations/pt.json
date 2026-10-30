@@ -20,7 +20,8 @@
       "instance_name_required": "Outra entrada precisa de um nome.",
       "instance_name_invalid": "O nome tem de conter uma letra ou um algarismo.",
       "instance_name_duplicate": "Esse nome já está a ser utilizado.",
-      "instance_name_reserved": "Esse nome está reservado para os ficheiros da primeira entrada. Escolha outro nome."
+      "instance_name_reserved": "Esse nome está reservado para os ficheiros da primeira entrada. Escolha outro nome.",
+      "all_sites_excluded": "Todos os sites estão excluídos. Mantenha pelo menos um site."
     },
     "step": {
       "reauth_confirm": {
@@ -173,6 +174,9 @@
     },
     "actuals_without_get": {
       "message": "Os valores reais estimados não podem ser usados sem os obter."
+    },
+    "all_sites_excluded": {
+      "message": "Todos os sites desta entrada estão excluídos. Mantenha pelo menos um site."
     },
     "api_duplicate": {
       "message": "Chave de API duplicada especificada."
@@ -411,7 +415,8 @@
       "limit_not_number": "O limite da API não é um número",
       "limit_one_or_greater": "O limite da API deve ser um ou maior",
       "limit_too_many": "Há mais contagens de limite de API inseridas do que chaves",
-      "limit_exceeds_maximum": "O limite da API não pode exceder 50 (e provavelmente deve ser 10 ou menos)."
+      "limit_exceeds_maximum": "O limite da API não pode exceder 50 (e provavelmente deve ser 10 ou menos).",
+      "all_sites_excluded": "Todos os sites estão excluídos. Mantenha pelo menos um site."
     },
     "step": {
       "dampen": {
@@ -478,7 +483,7 @@
           "auto_update": "Atualização automática (se não houver atualização automática, uma automação deve ser usada em vez disso)",
           "config_damp": "Modificar os fatores de amortecimento horários",
           "custom_hours": "Sensor personalizado das próximas X horas",
-          "exclude_sites": "Site(s) a serem excluídos do painel de energia e dos totais do sensor",
+          "exclude_sites": "Site(s) a excluir",
           "generation_entities": "Entidade/entidades de geração fotovoltaica",
           "get_actuals": "Estimativas reais atualizadas à meia-noite",
           "hard_limit_api": "Limite rígido do inversor (kW)",
@@ -497,7 +502,7 @@
           "auto_update": "Se não usar a atualização automática, crie uma automação que chame periodicamente a ação \"solcast_solar.update_forecasts\", respeitando o limite máximo total recomendado pela Solcast (normalmente dez vezes no total por dia para um único local em telhado, ou com dois locais cinco vezes por dia)",
           "config_damp": "Clique em enviar para avançar para o editor de fatores de amortecimento",
           "custom_hours": "Número de horas para o sensor personalizado (mínimo 1, máximo 144)",
-          "exclude_sites": "Site(s) a excluir do painel de Energia e dos totais dos sensores ao adicionar chaves API de sites locais e remotos para uma única implementação local/remota do Home Assistant",
+          "exclude_sites": "Um site excluído não é obtido do Solcast: sem previsão, sem valores reais estimados, sem chamadas de API e sem sensor do site",
           "generation_entities": "Para amortecimento automatizado: energia (Wh/kWh/MWh, total crescente) ou potência (W/kW/MW, instantânea)",
           "get_actuals": "Utiliza uma chamada de API por site por dia — consulte a documentação de integração; recomenda-se um limite de API reduzido",
           "hard_limit_api": "Consulte a documentação de integração; separe múltiplos valores para cada chave com vírgulas",

@@ -540,10 +540,6 @@ class DampeningAdaptive:
         )
         actuals: defaultdict[dt, list[float]] = defaultdict(lambda: [0.0] * INTERVALS_PER_DAY)
         for site in self.dampening.api.sites:
-            if site[RESOURCE_ID] in self.dampening.api.options.exclude_sites:
-                _LOGGER.debug("Dampening history actuals suppressed site %s", site[RESOURCE_ID])
-                continue
-
             start, end = self.dampening.api.query.get_list_slice(
                 self.dampening.api.data_actuals[SITE_INFO][site[RESOURCE_ID]][FORECASTS],
                 earliest_common,

@@ -728,7 +728,7 @@ class SolcastSolarOptionFlowHandler(OptionsFlow):
         exclude: list[SelectOptionDict] = [SelectOptionDict(label="not_loaded", value="")]
         if solcast is not None:
             exclude = [
-                SelectOptionDict(label=site[NAME] + " (" + site[RESOURCE_ID] + ")", value=site[RESOURCE_ID]) for site in solcast.sites
+                SelectOptionDict(label=site[NAME] + " (" + site[RESOURCE_ID] + ")", value=site[RESOURCE_ID]) for site in solcast.sites_all
             ]
 
         sensors, energy_sensors = self._build_sensor_options()

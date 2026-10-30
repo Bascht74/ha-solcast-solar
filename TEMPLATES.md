@@ -58,7 +58,7 @@ If the `availability` is not set then the log will likely be spammed with errors
 
 **Scenario**: You have two Solcast API keys, with two rooftop sites on one main location, plus two rooftop sites at a holiday house. You want to see all the data in a single Home Assistant deployment at the main location.
 
-It is possible to exclude sites from the sensor total from v4.3.3 of the integration, so you do so from the `CONFIGURE` dialogue for the integration. This leaves the sensor states and Energy dashboard data being for just the two rooftop sites at the main residence.
+Do not exclude the holiday house sites: an excluded site is not fetched at all, so it has no forecast and no attributes. The sensor states and Energy dashboard data then cover all four rooftop sites, and the site breakdown attributes give the share of each site.
 
 To visualise the holiday house you are going to create an Apex chart on a dashboard, as well as show some entity states like 'forecast today'.
 

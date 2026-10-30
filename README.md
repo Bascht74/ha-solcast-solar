@@ -948,7 +948,7 @@ The integration determines the units by inspecting the `unit_of_measurement` att
 
 > [!NOTE]
 >
-> Do not include generation entities for "remote" rooftop sites that have been explicitly excluded from sensor totals. Auto-dampening does not work for excluded rooftops.
+> Do not include generation entities for "remote" rooftop sites that have been excluded. Auto-dampening does not work for excluded rooftops.
 
 ##### Optional input: Site export to the grid, combined with a limit value
 
@@ -1202,11 +1202,9 @@ The hard limit may be set in the integration configuration or set by using the s
 
 ### Excluded sites configuration
 
-It is possible to exclude one or more Solcast sites from the calculation of sensor totals and the Energy dashboard forecast.
+It is possible to exclude one or more Solcast sites. An excluded site is not fetched at all: it gets no forecast, no estimated actuals and no site sensor, and it uses no API calls, so the other sites get more updates.
 
-The use case is to allow a local "main" site or sites to be the overall combined forecast values, and a "remote" site to be visualised separately with Apex charts and/or template sensors that get their value from site breakdown sensor attributes. Note that it is not possible to build a separate Energy dashboard feed from templated sensors (this data comes directly from the integration as a data dictionary).
-
-Utilising this advanced feature alongside template sensors and Apex charts is not a simple thing, however examples are provided throughout the readme for both templated sensors built from attribute data, and for an Apex chart. See [Interacting](#interacting), [Sample template sensors](#sample-template-sensors) and [Sample Apex chart for dashboard](#sample-apex-chart-for-dashboard).
+The use case is a site whose forecast is not wanted here, for example a "remote" site that another Home Assistant installation fetches.
 
 Configuration is by way of the `CONFIGURE` dialogue.
 

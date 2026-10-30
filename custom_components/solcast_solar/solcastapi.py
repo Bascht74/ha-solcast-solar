@@ -6,6 +6,7 @@ import contextlib
 import copy
 from dataclasses import dataclass
 from datetime import date, datetime as dt, timedelta, tzinfo
+from hashlib import md5
 from operator import itemgetter
 from pathlib import Path
 import sys
@@ -296,7 +297,8 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         self.site_data_forecasts: dict[str, list[dict[str, Any]]] = {}
         self.site_data_forecasts_undampened: dict[str, list[dict[str, Any]]] = {}
         self.site_transfers: dict[str, str] = {}
-        self.sites: list[dict[str, Any]] = []
+        self.sites: list[dict[str, Any]] = []  # The sites this entry fetches.
+        self.sites_all: list[dict[str, Any]] = []  # Every site of the API key(s), excluded sites too.
         self.sites_status: LoadStatus = LoadStatus.UNKNOWN
         self.status: SolcastApiStatus = SolcastApiStatus.UNKNOWN
         self.status_message: str = ""
@@ -470,29 +472,36 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
         """
         return self.data_actuals[LAST_UPDATED].astimezone(self.tz).date() == dt_util.now(self.tz).date()
 
+    def _fetched_key_counts(self, counts: dict[str, int]) -> int:
+        """The highest of per-key success counts (keyed by a hash of the API key) of the keys with a fetched site.
+
+        Returns:
+            int: The highest count, zero when there is none.
+        """
+        fetched = {md5(api_key[-6:].encode()).hexdigest() for api_key in self.api_sites_per_key}
+        return max((count for key, count in counts.items() if key in fetched), default=0)
+
     @property
     def successes_actuals_24h(self) -> int:
         """Number of successful estimated actuals fetches today.
 
-        Uses the maximum across all API keys.
+        Uses the maximum across the API keys with a fetched site.
 
         Returns:
             int: The maximum per-key count of successful estimated actuals site API calls since midnight.
         """
-        actuals = self.data[SUCCESS].get(SUCCESS_ACTUALS, {})
-        return max(actuals.values()) if actuals else 0
+        return self._fetched_key_counts(self.data[SUCCESS].get(SUCCESS_ACTUALS, {}))
 
     @property
     def successes_forced_24h(self) -> int:
         """Number of successful forced updates today.
 
-        Uses the maximum across all API keys.
+        Uses the maximum across the API keys with a fetched site.
 
         Returns:
             int: The maximum per-key count of successful forced site API calls since midnight.
         """
-        forced = self.data[SUCCESS][SUCCESS_FORCED]
-        return max(forced.values()) if forced else 0
+        return self._fetched_key_counts(self.data[SUCCESS][SUCCESS_FORCED])
 
     @property
     def failures_last_24h(self) -> int:
@@ -523,42 +532,60 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
 
     @property
     def api_used_count(self) -> int:
-        """API polling count for this UTC 24hr period (minimum of all API keys).
+        """API polling count for this UTC 24hr period (maximum of the API keys with a fetched site).
 
         A maximum is used because forecasts are polled at the same time for each configured API key. Should
         one API key fail but the other succeed then usage will be misaligned, so the highest usage of all
-        API keys will apply.
+        API keys will apply. A key whose sites are all excluded is not polled.
 
         Returns:
             int: The tracked API usage count.
         """
-        return max(list(self.api_used.values()))
+        return max(self.api_used[api_key] for api_key in self.api_sites_per_key or self.api_used)
 
     @property
     def api_limit(self) -> int:
         """API polling limit for this UTC 24hr period (minimum of all API keys).
 
         A minimum is used because forecasts are polled at the same time, so even if one API key has a
-        higher limit that limit will never be reached.
+        higher limit that limit will never be reached. A key whose sites are all excluded is not polled.
 
         Returns:
-            int: The lowest API limit of all configured API keys.
+            int: The lowest API limit of the API keys with a fetched site, or of all keys when none has one.
         """
-        return min(list(self.api_limits.values()))
+        return min(self.api_limits[api_key] for api_key in self.api_sites_per_key or self.api_limits)
+
+    @property
+    def api_sites_per_key(self) -> dict[str, int]:
+        """The number of sites this entry fetches with each API key.
+
+        Returns:
+            dict[str, int]: The fetched sites per API key; a key whose sites are all excluded is absent.
+        """
+        api_key_sites: defaultdict[str, int] = defaultdict(int)
+        for site in self.sites:
+            api_key_sites[site[CONF_API_KEY]] += 1
+        return dict(api_key_sites)
 
     @property
     def api_maximum_sites(self) -> int:
-        """API maximum sites for all API keys).
+        """API maximum sites for all API keys.
 
         Used principally when determining auto-update frequency.
 
         Returns:
             int: The highest number of sites for all configured API keys.
         """
-        api_key_sites: defaultdict[str, int] = defaultdict(int)
-        for site in self.sites:
-            api_key_sites[site[CONF_API_KEY]] += 1
-        return max(api_key_sites.values()) if api_key_sites else 1
+        return max(self.api_sites_per_key.values(), default=1)
+
+    def apply_site_exclusion(self) -> None:
+        """Keep every site in `sites_all`, and fetch, count and show only the sites that are not excluded."""
+
+        self.sites_all = self.sites
+        self.sites = [site for site in self.sites_all if site[RESOURCE_ID] not in self.options.exclude_sites]
+        for site in self.sites_all:
+            if site[RESOURCE_ID] in self.options.exclude_sites:
+                _LOGGER.debug("Site %s is excluded, so it is not fetched", site[RESOURCE_ID])
 
     @property
     def api_typical_forecast_updates_count(self) -> int:
@@ -772,19 +799,18 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                                     ),
                                 }
 
-                                # If the site is not excluded, add to the total.
-                                if resource_id not in self.options.exclude_sites:
-                                    extant: dict[str, Any] | None = actuals.get(period_start)
-                                    if extant is not None:
-                                        extant[ESTIMATE] = round(
-                                            extant[ESTIMATE] + site_actuals[period_start][ESTIMATE],
-                                            4,
-                                        )
-                                    else:
-                                        actuals[period_start] = {
-                                            PERIOD_START: period_start,
-                                            ESTIMATE: round(site_actuals[period_start][ESTIMATE], 4),
-                                        }
+                                # Add to the total.
+                                extant: dict[str, Any] | None = actuals.get(period_start)
+                                if extant is not None:
+                                    extant[ESTIMATE] = round(
+                                        extant[ESTIMATE] + site_actuals[period_start][ESTIMATE],
+                                        4,
+                                    )
+                                else:
+                                    actuals[period_start] = {
+                                        PERIOD_START: period_start,
+                                        ESTIMATE: round(site_actuals[period_start][ESTIMATE], 4),
+                                    }
 
                             # Prevent blocking
                             if actual_count % 200 == 0:
@@ -883,34 +909,33 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                                     for est in [ESTIMATE, ESTIMATE10, ESTIMATE90]
                                 }
 
-                                if resource_id not in self.options.exclude_sites:
-                                    # If the forecast is for today, and the site is not excluded, add to the total.
-                                    if dampened and period_start_local.date() == today:
-                                        if tally is None:
-                                            tally = 0.0
-                                        tally += (
-                                            min(
-                                                forecast[self.use_forecast_confidence],
-                                                sites_hard_limit[api_key][self.use_forecast_confidence]
-                                                .get(period_start, {})
-                                                .get(resource_id, 100),
-                                            )
-                                            * 0.5
+                                # If the forecast is for today, add to the total.
+                                if dampened and period_start_local.date() == today:
+                                    if tally is None:
+                                        tally = 0.0
+                                    tally += (
+                                        min(
+                                            forecast[self.use_forecast_confidence],
+                                            sites_hard_limit[api_key][self.use_forecast_confidence]
+                                            .get(period_start, {})
+                                            .get(resource_id, 100),
                                         )
+                                        * 0.5
+                                    )
 
-                                    extant: dict[str, Any] | None = forecasts.get(period_start)
-                                    if extant is not None:
-                                        for est in [ESTIMATE, ESTIMATE10, ESTIMATE90]:
-                                            extant[est] = round(
-                                                extant[est] + site_forecasts[period_start][est],
-                                                4,
-                                            )
-                                    else:
-                                        forecasts[period_start] = {
-                                            PERIOD_START: period_start,
-                                        } | {est: site_forecasts[period_start][est] for est in (ESTIMATE, ESTIMATE10, ESTIMATE90)}
-                                        if dampened and self.options.auto_dampen and period_start >= day_start:
-                                            forecasts[period_start][DAMPENING_FACTOR] = round(self.dampening.auto_factors[period_start], 4)
+                                extant: dict[str, Any] | None = forecasts.get(period_start)
+                                if extant is not None:
+                                    for est in [ESTIMATE, ESTIMATE10, ESTIMATE90]:
+                                        extant[est] = round(
+                                            extant[est] + site_forecasts[period_start][est],
+                                            4,
+                                        )
+                                else:
+                                    forecasts[period_start] = {
+                                        PERIOD_START: period_start,
+                                    } | {est: site_forecasts[period_start][est] for est in (ESTIMATE, ESTIMATE10, ESTIMATE90)}
+                                    if dampened and self.options.auto_dampen and period_start >= day_start:
+                                        forecasts[period_start][DAMPENING_FACTOR] = round(self.dampening.auto_factors[period_start], 4)
 
                             # Prevent blocking
                             if forecast_count % 50 == 0:

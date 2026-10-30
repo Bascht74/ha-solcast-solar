@@ -87,7 +87,14 @@ def _cleanup_stale_entities(
     expecting_limits: list[str],
 ) -> None:
     """Remove stale and legacy entities."""
+    excluded = {f"solcast_solcast_api_{site}" for site in coordinator.solcast.options.exclude_sites}
     for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
+        # Remove the sensor of an excluded site, which is not fetched; another entry may count the site.
+        if entity.unique_id in excluded:
+            entity_registry.async_remove(entity.entity_id)
+            _LOGGER.debug("Removing %s, its site is excluded", entity.entity_id)
+            continue
+
         # Clean up orphaned hard limit sensors.
         if HARD_LIMIT in entity.unique_id and entity.unique_id not in expecting_limits:
             entity_registry.async_remove(entity.entity_id)

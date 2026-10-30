@@ -265,8 +265,8 @@ class SitesCache:
             for site, v in self._site_latitude.items():
                 unusual = False
                 proposal = 0
-                if v[SITE_ATTRIBUTE_LATITUDE] is None:
-                    # Using cached data, so latitude is not known
+                if v[SITE_ATTRIBUTE_LATITUDE] is None or site in self.api.options.exclude_sites:
+                    # Using cached data, so latitude is not known, or the site is not used
                     continue
                 if SITE_ATTRIBUTE_LATITUDE in v and SITE_ATTRIBUTE_AZIMUTH in v:
                     azimuth = v[SITE_ATTRIBUTE_AZIMUTH]
@@ -440,6 +440,7 @@ class SitesCache:
             if self.api.repairs_allowed:
                 await test_unusual_azimuth()
             await self._sites_usage()
+        self.api.apply_site_exclusion()
 
         return status, message, api_key_in_error
 
@@ -572,7 +573,10 @@ class SitesCache:
                     remove_sites: list[str] = []
                     configured_sites = [site[RESOURCE_ID] for site in self.api.sites]
                     for site in cache_sites:
-                        if site not in configured_sites:
+                        if site in self.api.options.exclude_sites:
+                            _LOGGER.debug("Site %s is excluded, removing its saved data", site)
+                            remove_sites.append(site)
+                        elif site not in configured_sites:
                             expected_reconfigure_cleanup = api_key_set_changed and bool(new_sites)
                             (_LOGGER.debug if expected_reconfigure_cleanup else _LOGGER.warning)(
                                 "Site resource id %s is no longer configured, will remove saved data from %s, %s, %s, %s",
@@ -585,7 +589,7 @@ class SitesCache:
                             remove_sites.append(site)
 
                     for site in remove_sites:
-                        for data in [self.api.data, self.api.data_undampened, self.api.data_actuals]:
+                        for data in [self.api.data, self.api.data_undampened, self.api.data_actuals, self.api.data_actuals_dampened]:
                             with contextlib.suppress(Exception):
                                 del data[SITE_INFO][site]
                     if len(remove_sites) > 0:
