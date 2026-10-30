@@ -1058,7 +1058,13 @@ class Dampening:
 
         # Load the generation history.
         generation: dict[dt, dict[str, Any]] = {generated[PERIOD_START]: generated for generated in self.data_generation[GENERATION]}
-        days = 1 if generation else self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_GENERATION_HISTORY_LOAD_DAYS]
+        load_days: int = self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_GENERATION_HISTORY_LOAD_DAYS]
+        days = load_days
+        if generation:  # Every day missing since the last stored interval, for example after an outage, at least yesterday
+            missing = (
+                self.api.dt_helper.day_start_utc().astimezone(self.api.tz).date() - max(generation).astimezone(self.api.tz).date()
+            ).days - 1
+            days = min(load_days, max(1, missing))
 
         entity_registry = er.async_get(self.api.hass)
         recorder_instance = get_instance(self.api.hass)

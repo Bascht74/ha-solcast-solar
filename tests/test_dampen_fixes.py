@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
 
 from custom_components.solcast_solar.const import (
+    ADVANCED_AUTOMATED_DAMPENING_GENERATION_HISTORY_LOAD_DAYS,
     AUTO_DAMPEN,
     AUTO_UPDATE,
     EXPORT_LIMITING,
@@ -23,7 +24,10 @@ from custom_components.solcast_solar.const import (
     USE_ACTUALS,
     VERSION,
 )
+import custom_components.solcast_solar.dampen as dampen_module
 from custom_components.solcast_solar.dampen import Dampening, _is_number
+from custom_components.solcast_solar.dates import DateTimeHelper
+from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from homeassistant.components.recorder import Recorder
@@ -95,6 +99,48 @@ async def test_export_spread_over_meter_interval() -> None:
     burst = [(start, 0.0), (start + timedelta(minutes=5), 1.0)]  # 1 kWh in 5 minutes
     limiting = await _export_limiting(burst)
     assert [interval for interval, limited in limiting.items() if limited] == [start]
+
+
+@pytest.mark.parametrize(("load_days", "expected"), [(7, 3), (2, 2)])
+async def test_generation_loads_days_missing_since_last(
+    frozen_time: FrozenDateTimeFactory, monkeypatch: pytest.MonkeyPatch, load_days: int, expected: int
+) -> None:
+    """After an outage every day since the last stored interval is read, up to the load days, each local day 23-25 hours."""
+    frozen_time.move_to(dt(2025, 10, 28, 10, 0, tzinfo=BERLIN))  # Daylight saving time ended on 26 October
+    helper = DateTimeHelper(BERLIN)
+    last = helper.day_start_utc(future=-3) - timedelta(minutes=30)  # Last interval of 24 October, read before the outage
+    dampening = Dampening.__new__(Dampening)
+    dampening.data_generation = {LAST_UPDATED: last, GENERATION_ENTITIES: [], GENERATION: [{PERIOD_START: last, GENERATION: 1.0}]}
+    dampening.filename_generation = "unused"
+    dampening.api = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+        tz=BERLIN,
+        dt_helper=helper,
+        hass=None,
+        options=SimpleNamespace(generation_entities=[]),
+        advanced_options={ADVANCED_AUTOMATED_DAMPENING_GENERATION_HISTORY_LOAD_DAYS: load_days},
+        sites_cache=SimpleNamespace(serialise_data=AsyncMock()),
+    )
+    windows: list[tuple[dt, dt]] = []
+
+    async def collect(prev_start: dt, day_start: dt, *_: Any) -> tuple[dict[dt, float], bool]:
+        windows.append((prev_start, day_start))
+        return dampening._build_float_intervals(prev_start, 30, end=day_start), False  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.setattr(dampen_module.er, "async_get", lambda hass: None)
+    monkeypatch.setattr(dampen_module, "get_instance", lambda hass: None)
+    dampening.prepare_data = AsyncMock()  # type: ignore[method-assign]
+    dampening._collect_generation_intervals_for_day = collect  # type: ignore[method-assign,assignment]
+    dampening._apply_suppression_entity_limits = AsyncMock()  # type: ignore[method-assign]
+    dampening._apply_site_export_limits = AsyncMock()  # type: ignore[method-assign]
+
+    await dampening.get_pv_generation()
+
+    assert windows == [(helper.day_start_utc(future=-1 - day), helper.day_start_utc(future=-day)) for day in range(expected)]
+    hours = [(end - start) / timedelta(hours=1) for start, end in windows]
+    assert hours == [24, 25, 24][:expected]
+    stored = [gen[PERIOD_START] for gen in dampening.data_generation[GENERATION]]
+    assert len(stored) == len(set(stored)) == 1 + sum(int(hour * 2) for hour in hours)
+    assert all(not gen[EXPORT_LIMITING] for gen in dampening.data_generation[GENERATION][1:])
 
 
 async def test_cached_gap_days_rechecked_once(
