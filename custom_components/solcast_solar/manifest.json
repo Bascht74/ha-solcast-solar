@@ -20,6 +20,6 @@
     "aiofiles>=23.2.0",
     "asyncinotify>=4.2.0"
   ],
-  "single_config_entry": true,
+  "single_config_entry": false,
   "version": "4.6.3"
 }
