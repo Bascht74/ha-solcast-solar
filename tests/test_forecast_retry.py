@@ -1,14 +1,16 @@
 """Test forecasts update retry mechanism."""
 
 import asyncio
-from datetime import datetime as dt, timedelta
+import copy
+from datetime import UTC, datetime as dt, timedelta
 import json
 import logging
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest import mock
 from zoneinfo import ZoneInfo
 
-from aiohttp import ClientConnectorDNSError
+from aiohttp import ClientConnectorDNSError, ClientResponseError, RequestInfo
 from aiohttp.client_reqrep import ConnectionKey
 from custom_components.solcast_solar.const import (
     ADVANCED_DNS_TIMEOUT_RETRIES,
@@ -17,8 +19,10 @@ from custom_components.solcast_solar.const import (
     ADVANCED_TRIGGER_ON_API_UNAVAILABLE,
     API_KEY,
     DOMAIN,
+    FAILURE,
     FORECASTS,
     ISSUE_API_UNAVAILABLE,
+    LAST_24H,
     LAST_UPDATED,
     RESOURCE_ID,
     SERVICE_FORCE_UPDATE_FORECASTS,
@@ -26,15 +30,19 @@ from custom_components.solcast_solar.const import (
     TASK_NEW_DAY_ACTUALS,
 )
 from custom_components.solcast_solar.enums import UpdateOutcome, UpdateResult
+import custom_components.solcast_solar.fetcher as fetcher_module
 from custom_components.solcast_solar.fetcher import Fetcher
 from custom_components.solcast_solar.instance import repair_placeholders
 from freezegun.api import FrozenDateTimeFactory
+from multidict import CIMultiDict, CIMultiDictProxy
 import pytest
+from yarl import URL
 
 from homeassistant.components.recorder import Recorder
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 
 from . import (
     DEFAULT_INPUT1,
@@ -528,3 +536,86 @@ async def test_retry_recovery_then_schedule_deferred_actuals(
 
     finally:
         await async_cleanup_integration_tests(hass)
+
+
+async def test_fetch_timeout_and_client_error_are_failures(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test the time limit on all attempts fails the update like other failures, and a client error fails the fetch."""
+
+    api_key = "SECRETKEY1234567890"
+
+    class _ShortTimeout:
+        """The fetcher's asyncio, with the fifteen minute limit cut short."""
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(asyncio, name)
+
+        @staticmethod
+        def timeout(_delay: float) -> asyncio.Timeout:
+            return asyncio.timeout(0.05)
+
+    async def hang(*_args: Any, **_kwargs: Any) -> None:
+        await asyncio.sleep(60)
+
+    async def client_error(url: str, params: dict[str, Any], **_kwargs: Any) -> None:
+        request = RequestInfo(URL(url).with_query(params), "GET", CIMultiDictProxy(CIMultiDict()))
+        raise ClientResponseError(request, (), status=502, message="Bad Gateway")
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        solcast = entry.runtime_data.coordinator.solcast
+        monkeypatch.setattr(fetcher_module, "asyncio", _ShortTimeout())
+        monkeypatch.setattr(solcast, "aiohttp_session", SimpleNamespace(get=hang))
+        solcast.data[LAST_UPDATED] = dt_util.now(UTC) - timedelta(hours=1)
+        failures = solcast.data[FAILURE][LAST_24H]
+
+        result = await solcast.fetcher.get_forecast_update(force=True)
+        assert result.outcome == UpdateOutcome.FAILED
+        assert solcast.data[FAILURE][LAST_24H] == failures + 1
+
+        caplog.clear()
+        monkeypatch.setattr(solcast, "aiohttp_session", SimpleNamespace(get=client_error))
+        solcast.api_used[api_key] = 0
+        solcast.api_limits[api_key] = 10
+        assert await solcast.fetcher.fetch_data(hours=1, path=FORECASTS, site="1111-1111-1111-1111", api_key=api_key, force=True) is None
+        assert "Client error: 502" in caplog.text
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_gateway_errors_are_failures_and_cancel_is_raised(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+) -> None:
+    """A retried 502, 503 or 504 counts as a failure like a 429, and cancelling a fetch cancels its caller too."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT1))
+        solcast = entry.runtime_data.coordinator.solcast
+        site_id = solcast.sites[0][RESOURCE_ID]
+        api_key = solcast.sites[0][API_KEY]
+        failures = solcast.data[FAILURE][LAST_24H]
+
+        responses = [mock.MagicMock(status=status, url="https://api.solcast.com.au") for status in (502, 503, 504, 200)]
+        responses[-1].text = mock.AsyncMock(return_value=json.dumps({FORECASTS: []}))
+        original_session = solcast.aiohttp_session
+        solcast.aiohttp_session = SimpleNamespace(get=mock.AsyncMock(side_effect=responses))
+        try:
+            with mock.patch.object(solcast.fetcher, "_sleep", mock.AsyncMock()):
+                result = await solcast.fetcher.fetch_data(hours=48, path=FORECASTS, site=site_id, api_key=api_key, force=True)
+            assert result == {FORECASTS: []}
+            assert solcast.data[FAILURE][LAST_24H] == failures + 3
+
+            solcast.aiohttp_session = SimpleNamespace(get=mock.AsyncMock(side_effect=asyncio.CancelledError))
+            with pytest.raises(asyncio.CancelledError):
+                await solcast.fetcher.fetch_data(hours=48, path=FORECASTS, site=site_id, api_key=api_key, force=True)
+        finally:
+            solcast.aiohttp_session = original_session
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

@@ -149,10 +149,21 @@ class Fetcher:
         """Log at warning or error level based on the failure-only advanced option."""
         (_LOGGER.warning if self.api.advanced_options[ADVANCED_LOG_UPDATE_FAILURE_ONLY] else _LOGGER.error)(message, *args)
 
-    def _pop_task_result(self, task_name: str) -> Any | None:
-        """Pop a tracked task and return its result without propagating fetch exceptions."""
-        task = self.api.tasks.pop(task_name, None)
+    def _pop_task_result(self, task_name: str, task: asyncio.Task[Any] | None = None) -> Any | None:
+        """Pop a tracked task and return its result without propagating fetch exceptions.
+
+        Given the task a fetch started, only that task is popped: a newer fetch under the same name (the
+        clear data action starts one while the cancelled fetch ends) stays tracked and keeps its result.
+        """
         if task is None:
+            task = self.api.tasks.pop(task_name, None)
+        elif self.api.tasks.get(task_name) is task:
+            self.api.tasks.pop(task_name)
+        if task is None:
+            return None
+        if not task.done():
+            _LOGGER.debug("Task %s is still running, so cancelling it", task_name)
+            task.cancel()
             return None
         try:
             if task.cancelled():
@@ -231,19 +242,20 @@ class Fetcher:
             new_data: list[dict[str, Any]] = []
 
             act_response: dict[str, Any] | None
-            try:
-                self.api.tasks[TASK_ACTUALS_FETCH] = asyncio.create_task(
-                    self.fetch_data(
-                        hours=168,
-                        path=ESTIMATED_ACTUALS,
-                        site=site[RESOURCE_ID],
-                        api_key=api_key,
-                        force=True,
-                    )
+            task = asyncio.create_task(
+                self.fetch_data(
+                    hours=168,
+                    path=ESTIMATED_ACTUALS,
+                    site=site[RESOURCE_ID],
+                    api_key=api_key,
+                    force=True,
                 )
-                await self.api.tasks[TASK_ACTUALS_FETCH]
+            )
+            self.api.tasks[TASK_ACTUALS_FETCH] = task
+            try:
+                await task
             finally:
-                act_response = self._pop_task_result(TASK_ACTUALS_FETCH)
+                act_response = self._pop_task_result(TASK_ACTUALS_FETCH, task)
             if not isinstance(act_response, dict):
                 _LOGGER.error("No valid data was returned for estimated_actuals so this may cause issues")
                 _LOGGER.debug("API did not return a json object, returned `%s`", act_response)
@@ -479,19 +491,20 @@ class Fetcher:
 
             if do_past_hours > 0:
                 act_response: dict[str, Any] | None
-                try:
-                    self.api.tasks[TASK_FORECASTS_FETCH] = asyncio.create_task(
-                        self.fetch_data(
-                            hours=do_past_hours,
-                            path=ESTIMATED_ACTUALS,
-                            site=site,
-                            api_key=api_key,
-                            force=force,
-                        )
+                task = asyncio.create_task(
+                    self.fetch_data(
+                        hours=do_past_hours,
+                        path=ESTIMATED_ACTUALS,
+                        site=site,
+                        api_key=api_key,
+                        force=force,
                     )
-                    await self.api.tasks[TASK_FORECASTS_FETCH]
+                )
+                self.api.tasks[TASK_FORECASTS_FETCH] = task
+                try:
+                    await task
                 finally:
-                    act_response = self._pop_task_result(TASK_FORECASTS_FETCH)
+                    act_response = self._pop_task_result(TASK_FORECASTS_FETCH, task)
                 if not isinstance(act_response, dict):
                     failure = True
                     _LOGGER.error(
@@ -539,19 +552,20 @@ class Fetcher:
             if self.api.tasks.get(TASK_FORECASTS_FETCH) is not None:
                 _LOGGER.warning("A fetch task is already running, so aborting forecast update")
                 return _DataCallStatus.ABORT, "Fetch already running"
-            try:
-                self.api.tasks[TASK_FORECASTS_FETCH] = asyncio.create_task(
-                    self.fetch_data(
-                        hours=hours,
-                        path=FORECASTS,
-                        site=site,
-                        api_key=api_key,
-                        force=force,
-                    )
+            task = asyncio.create_task(
+                self.fetch_data(
+                    hours=hours,
+                    path=FORECASTS,
+                    site=site,
+                    api_key=api_key,
+                    force=force,
                 )
-                await self.api.tasks[TASK_FORECASTS_FETCH]
+            )
+            self.api.tasks[TASK_FORECASTS_FETCH] = task
+            try:
+                await task
             finally:
-                response = self._pop_task_result(TASK_FORECASTS_FETCH)
+                response = self._pop_task_result(TASK_FORECASTS_FETCH, task)
 
             if not isinstance(response, dict):
                 failure = True
@@ -787,6 +801,8 @@ class Fetcher:
                                         break
                                 else:
                                     received_429 += 1
+                            if status != 429:  # A retried 502, 503 or 504 is a failure too.
+                                self.increment_failure_count()
                             if counter >= tries:
                                 failure_reason = f"{self.api.http_status_translate(status)} after {tries} attempts"
                                 if not self.api.advanced_options[ADVANCED_LOG_UPDATE_FAILURE_ONLY]:
@@ -877,6 +893,11 @@ class Fetcher:
 
         except asyncio.exceptions.CancelledError:
             _LOGGER.info("Fetch cancelled")
+            raise
+        except TimeoutError:  # All attempts exceeded the fifteen minute limit
+            _LOGGER.error("Fetch timed out after all attempts")
+            self.increment_failure_count()
+            failure_reason = "Timed out"
         except json.decoder.JSONDecodeError:
             return response_text
 

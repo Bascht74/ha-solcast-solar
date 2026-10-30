@@ -251,7 +251,7 @@ async def _exec_update(
         # is not HA-tracked, so hass.async_block_till_done() won't wait for it.  Under
         # coverage the task can be slow enough to log "Completed task update" *after* the
         # next iteration's caplog.clear(), making _wait_for_update exit on stale content.
-        # Wait here until the outer task logs its completion before proceeding.
+        # Wait here until the outer task logs its completion, or the cancelled fetch ends it, before proceeding.
         if "pausing" in caplog.text:
             last_record = len(caplog.records)
             async with asyncio.timeout(30):
@@ -259,7 +259,8 @@ async def _exec_update(
                     records = caplog.records
                     for r in records[last_record:]:
                         msg = r.getMessage()
-                        if "Completed task update" in msg or "Completed task force_update" in msg:
+                        if "Completed task update" in msg or "Completed task force_update" in msg or "Fetch cancelled" in msg:
+                            await hass.async_block_till_done()
                             return
                     last_record = len(records)
                     await asyncio.sleep(_TEST_POLL_INTERVAL)
