@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict, defaultdict
+from collections.abc import Iterable
 import copy
 from datetime import UTC, date, datetime as dt, timedelta
 from itertools import pairwise
@@ -45,6 +46,7 @@ from .const import (
     ADVANCED_GRANULAR_DAMPENING_DELTA_ADJUSTMENT,
     ADVANCED_HISTORY_MAX_DAYS,
     ALL,
+    DEFAULT_DAMPENING_SIMILAR_PEAK,
     DOMAIN,
     DT_DATE_FORMAT,
     DT_DATE_FORMAT_SHORT,
@@ -299,6 +301,7 @@ class Dampening:
         self.granular_serialising = False
         self.factors: dict[str, list[float]] = {}
         self.factors_mtime: float = 0
+        self.target_peak_intervals: dict[int, float] | None = None  # Peaks the model compared with, see adjustment_peak()
 
     def allow_granular_reset(self) -> bool:
         """Allow options change to reset the granular dampening file to an empty dictionary."""
@@ -1413,6 +1416,7 @@ class Dampening:
         if not self.api.options.auto_dampen and not force:
             _LOGGER.debug("Automated dampening is not enabled, skipping dampening model_automated()")
             await self.prepare_data(only_peaks=True)
+            self.target_peak_intervals = None
             return
 
         if await self.check_deal_breaker_automated():
@@ -1513,13 +1517,22 @@ class Dampening:
         """Adjust a forecast/actual interval as standard time."""
         return self.adjusted_interval_dt(interval[PERIOD_START])
 
+    def adjustment_peak(self, interval: int) -> float:
+        """Return the peak estimated actual a forecast is compared with by delta adjustment.
+
+        With elevation adjustment it is the peak normalised to the sun of the day the factors were modelled for, as the
+        model compared generation with that peak. Otherwise, and before the model ran, it is the peak as recorded.
+        """
+        return (self.target_peak_intervals if self.target_peak_intervals is not None else self.api.peak_intervals)[interval]
+
     def apply_adjustment(self, interval_pv50, factor, interval, delta_adjustment_model) -> float:
         """Applies selected delta_adjustment_model to past dampening factor."""
+        peak = self.adjustment_peak(interval)
         match delta_adjustment_model:
             case 1:
                 # Adjust the factor based on how far the forecast falls short of the peak interval, squared.
                 # A forecast at or above the peak keeps the factor, and the factor never exceeds 1.0.
-                shortfall = max(0.0, 1.0 - (interval_pv50 / self.api.peak_intervals[interval]))
+                shortfall = max(0.0, 1.0 - (interval_pv50 / peak))
                 factor = max(factor, min(1.0, factor + ((1.0 - factor) * (shortfall**2))))
             case _:
                 # Adjust the factor based on forecast vs. peak interval delta-logarithmically.
@@ -1527,7 +1540,7 @@ class Dampening:
                     factor,
                     min(
                         1.0,
-                        factor + ((1.0 - factor) * (math.log(self.api.peak_intervals[interval]) - math.log(interval_pv50))),
+                        factor + ((1.0 - factor) * (math.log(peak) - math.log(interval_pv50))),
                     ),
                 )
 
@@ -1605,14 +1618,11 @@ class Dampening:
         # actuals across MODEL_DAYS. It is normalised here (when elevation adjustment is enabled) to target_day's sun elevation.
         peak_intervals: dict[int, float] = self.api.peak_intervals
         if apply_elevation_adjustment and target_day is not None:
-            normalised_peaks: dict[int, float] = dict.fromkeys(range(INTERVALS_PER_DAY), 0.0)
-            for period_start, actual in actuals.items():
-                ratio = self.elevation_adjustment_ratio(period_start, self._target_timestamp(period_start, target_day))
-                adjusted = actual * ratio
-                idx = self.adjusted_interval_dt(period_start)
-                if normalised_peaks[idx] < adjusted:
-                    normalised_peaks[idx] = round(adjusted, 3)
-            peak_intervals = normalised_peaks
+            normalised, peak_intervals = self._normalise_to_target_day(actuals, target_day)
+            if dampening_model not in (1, 2, 3):
+                # The default model divides by the normalised peak, so it also matches the days against it. Against the
+                # recorded peak only the oldest days match near sunrise and sunset in spring and autumn, too few for a factor.
+                matching_intervals = self._similar_to_peak(normalised, peak_intervals, matching_intervals)
 
         # Check the generation for each interval and determine if it is consistently lower than the peak.
         for interval, matching in matching_intervals.items():
@@ -1831,7 +1841,7 @@ class Dampening:
             factor = min(1.0, self.factors[ALL][interval])
             if (
                 not self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_NO_DELTA_ADJUSTMENT]
-                and self.api.peak_intervals[interval] > 0
+                and self.adjustment_peak(interval) > 0
                 and interval_pv50 > 0
                 and factor < 1.0
             ):
@@ -1855,7 +1865,7 @@ class Dampening:
                         interval_time,
                         factor,
                         factor_pre_adjustment,
-                        self.api.peak_intervals[interval],
+                        self.adjustment_peak(interval),
                         interval_pv50,
                     )
                 factor = 1.0 if factor >= self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR_ADJUSTED] else factor
@@ -1901,7 +1911,6 @@ class Dampening:
 
         ignore_intervals_cfg: list[str] = self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_IGNORE_INTERVALS]
         no_limiting: bool = self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_NO_LIMITING_CONSISTENCY]
-        similar_peak: float = self.api.advanced_options[ADVANCED_AUTOMATED_DAMPENING_SIMILAR_PEAK]
 
         ignored_intervals: list[int] = []  # Intervals to ignore in local time zone
         for time_string in ignore_intervals_cfg:
@@ -1924,10 +1933,37 @@ class Dampening:
             elif not gen[EXPORT_LIMITING]:
                 generation[gen[PERIOD_START]] = gen[GENERATION]
 
+        # Delta adjustment compares a forecast with the peak the default model divides by, with elevation adjustment the
+        # peak normalised to the target day's sun.
+        self.target_peak_intervals = (
+            self._normalise_to_target_day(actuals, self.api.dt_helper.day_start_utc())[1]
+            if self.api.advanced_options.get(ADVANCED_AUTOMATED_DAMPENING_ELEVATION_ADJUSTMENT, False)
+            else dict(self.api.peak_intervals)
+        )
+
         # Collect intervals that are close to the peak.
-        matching_intervals: dict[int, list[dt]] = {i: [] for i in range(INTERVALS_PER_DAY)}
+        matching_intervals = self._similar_to_peak(actuals, self.api.peak_intervals, range(INTERVALS_PER_DAY))
+        return actuals, ignored_intervals, generation, matching_intervals
+
+    def _similar_to_peak(self, actuals: dict[dt, float], peaks: dict[int, float], intervals: Iterable[int]) -> dict[int, list[dt]]:
+        """Return per interval the periods whose estimated actual is close to the interval's peak."""
+        similar_peak: float = self.api.advanced_options.get(ADVANCED_AUTOMATED_DAMPENING_SIMILAR_PEAK, DEFAULT_DAMPENING_SIMILAR_PEAK)
+        matching_intervals: dict[int, list[dt]] = {interval: [] for interval in intervals}
         for period_start, actual in actuals.items():
             interval = self.adjusted_interval_dt(period_start)
-            if actual > similar_peak * self.api.peak_intervals[interval]:
+            if interval in matching_intervals and actual > similar_peak * peaks[interval]:
                 matching_intervals[interval].append(period_start)
-        return actuals, ignored_intervals, generation, matching_intervals
+        return matching_intervals
+
+    def _normalise_to_target_day(self, actuals: dict[dt, float], target_day: dt) -> tuple[dict[dt, float], dict[int, float]]:
+        """Return the estimated actuals scaled to the sun of target_day, and their peak per standard-time interval."""
+        normalised: dict[dt, float] = {}
+        peaks: dict[int, float] = dict.fromkeys(range(INTERVALS_PER_DAY), 0.0)
+        for period_start, actual in actuals.items():
+            normalised[period_start] = adjusted = actual * self.elevation_adjustment_ratio(
+                period_start, self._target_timestamp(period_start, target_day)
+            )
+            interval = self.adjusted_interval_dt(period_start)
+            if peaks[interval] < adjusted:
+                peaks[interval] = round(adjusted, 3)
+        return normalised, peaks

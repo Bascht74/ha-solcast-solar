@@ -23,27 +23,36 @@ from custom_components.solcast_solar.const import (
     ADVANCED_AUTOMATED_DAMPENING_NO_DELTA_ADJUSTMENT,
     ADVANCED_AUTOMATED_DAMPENING_PRESERVE_UNMATCHED_FACTORS,
     ADVANCED_GRANULAR_DAMPENING_DELTA_ADJUSTMENT,
+    ADVANCED_OPTIONS,
     ALL,
     AUTO_DAMPEN,
     DAMPENING_FACTOR,
+    DEFAULT,
     ENTITY_DAMPEN,
     ESTIMATE,
+    EXPORT_LIMITING,
     FACTOR,
     FACTORS,
     FORECASTS,
+    GENERATION,
     GENERATION_ENTITIES,
     GET_ACTUALS,
     INTERVAL,
+    LAST_UPDATED,
     METHOD,
     PERIOD_START,
     RESOURCE_ID,
+    SITE_ATTRIBUTE_AZIMUTH,
+    SITE_ATTRIBUTE_TILT,
     SITE_DAMP,
     SITE_INFO,
     USE_ACTUALS,
+    VERSION,
 )
 from custom_components.solcast_solar.coordinator import SolcastUpdateCoordinator
 from custom_components.solcast_solar.dampen import Dampening
 from custom_components.solcast_solar.dates import DateTimeHelper
+from custom_components.solcast_solar.forecast import ForecastQuery
 from freezegun import freeze_time
 import pytest
 
@@ -191,6 +200,67 @@ async def test_gap_day_does_not_flip_an_interval() -> None:
     assert gap[32] < 1.0
     assert min(gap[31], gap[33]) <= gap[32] <= max(gap[31], gap[33])
     assert not _isolated_ones(gap)
+
+
+async def test_matching_against_normalised_peak(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With elevation adjustment the days are matched against the same normalised peak the default model divides by.
+
+    The Süd-West evening of 5 October: at 17:00 standard time the oldest day had the highest estimated actual (0.349),
+    while normalised to 5 October's lower sun the three days are alike (peak 0.241). Against the recorded peak only one
+    day matched, the interval went to 1.0 and the dampened forecast rose by 53 % while the forecast fell by 38 %.
+    """
+    tz = UTC
+    api = _api(tz, **{ADVANCED_AUTOMATED_DAMPENING_ELEVATION_ADJUSTMENT: True})
+    api.advanced_options = {k: copy.deepcopy(v[DEFAULT]) for k, v in ADVANCED_OPTIONS.items() if DEFAULT in v} | api.advanced_options
+    api.options = SimpleNamespace(auto_dampen=True, get_actuals=True, tz=tz)
+    api.sites = [{RESOURCE_ID: "site", SITE_ATTRIBUTE_TILT: 22, SITE_ATTRIBUTE_AZIMUTH: -146}]
+    api.query = ForecastQuery(api)
+    with freeze_time("2026-10-05 00:30:00"):
+        today = api.dt_helper.day_start_utc()
+        # Estimated actual, generation and elevation ratio to 5 October per day (oldest first), standard time.
+        evening = {
+            32: ([1.36, 1.30, 1.29], [1.0, 1.0, 1.0], [0.97, 0.99, 1.0]),
+            33: ([0.86, 0.83, 0.82], [0.33, 0.32, 0.30], [0.95, 0.98, 1.0]),
+            34: ([0.349, 0.245, 0.241], [0.13, 0.12, 0.13], [0.69, 0.98, 1.0]),
+            35: ([0.026, 0.024, 0.025], [0.02, 0.02, 0.02], [1.0, 1.0, 1.0]),
+        }
+        ratios: dict[dt, float] = {}
+        actuals: list[dict[str, Any]] = []
+        generation: list[dict[str, Any]] = []
+        for day in range(3):
+            for interval, (estimates, generated, ratio) in evening.items():
+                stamp = today - timedelta(days=3 - day) + timedelta(minutes=30 * interval)
+                actuals.append({PERIOD_START: stamp, ESTIMATE: estimates[day] * 2})
+                generation.append({PERIOD_START: stamp, GENERATION: generated[day], EXPORT_LIMITING: False})
+                ratios[stamp] = ratio[day]
+        api.data_actuals = {SITE_INFO: {"site": {FORECASTS: sorted(actuals, key=lambda a: a[PERIOD_START])}}}
+        dampening = Dampening(api)
+        dampening.data_generation = {LAST_UPDATED: today, GENERATION: generation, VERSION: 1}
+        monkeypatch.setattr(dampening, "elevation_adjustment_ratio", lambda past, _target: ratios.get(past, 1.0))
+
+        prepared = await dampening.prepare_data()
+        assert api.peak_intervals[34] == 0.349
+        assert len(prepared[3][34]) == 1  # Models 1-3 match against the recorded peak, as before
+        assert dampening.target_peak_intervals is not None
+        assert dampening.target_peak_intervals[34] == 0.241
+
+        factors = await dampening.calculate(prepared[3], prepared[2], prepared[0], prepared[1], 0)
+        assert factors[34] == pytest.approx(0.13 / 0.241, abs=0.001)  # Three days match the normalised peak
+        forecast = [1.841, 1.216, 0.754, 0.060]  # Undampened 17:00 to 18:30 local time on 5 October
+        dampened = [value * factor for value, factor in zip(forecast, factors[32:36], strict=True)]
+        assert dampened == sorted(dampened, reverse=True)  # Falls with the forecast, no reversal
+
+        # Delta adjustment compares a forecast with the same normalised peak: a clear evening keeps its factor.
+        when = today + timedelta(minutes=30 * 34)
+        dampening.factors = {ALL: factors}
+        assert dampening.get_factor("site", when, 0.241) == factors[34]
+        assert dampening.apply_adjustment(0.241, 0.6, 34, 0) == 0.6  # 0.748 against the recorded peak
+
+        # Without automated dampening the recorded peaks are used again.
+        api.options.auto_dampen = False
+        await dampening.model_automated()
+        assert dampening.target_peak_intervals is None
+        assert dampening.adjustment_peak(34) == 0.349
 
 
 class _NegativeDst(tzinfo):

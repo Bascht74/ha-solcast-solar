@@ -69,7 +69,7 @@ Past data used to model dampening for today was recorded on days when the sun tr
 
 When this option is enabled the integration computes a geometry-normalised ratio between past and present timestamps for every past half-hour sample used in modelling. This normalises historical PV generation samples from a prior day to the expected solar contribution on the present day, compensating for solar-geometry drift. Said another way, your given panel tilt and azimuth will subtly change generation over time based on where the sun would be, so this mechanism compensates for that in automated dampening computations to improve peak interval comparison.
 
-The peak estimated actual used by the default model is likewise normalised to today's sun geometry. Dampening models 1/2/3 compare each generation sample with the estimated actual of the same half-hour, which already shares its sun geometry, so they use no ratio.
+The peak estimated actual used by the default model is likewise normalised to today's sun geometry, and the default model also finds its "matching" days against that normalised peak. Delta adjustment compares the forecast with the normalised peak too. Dampening models 1/2/3 compare each generation sample with the estimated actual of the same half-hour, which already shares its sun geometry, so they use no ratio.
 
 **Key: "automated_dampening_generation_fetch_delay"**
 

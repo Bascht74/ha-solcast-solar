@@ -1240,8 +1240,9 @@ async def test_calculate_elevation_adjustment_applied(monkeypatch: pytest.Monkey
         ADVANCED_AUTOMATED_DAMPENING_INSIGNIFICANT_FACTOR: 0.95,
         ADVANCED_AUTOMATED_DAMPENING_ELEVATION_ADJUSTMENT: True,
     }
-    api.filename_generation = tempfile.NamedTemporaryFile(delete=False).name
-    api.filename_dampening = tempfile.NamedTemporaryFile(delete=False).name
+    for attribute in ("filename_generation", "filename_dampening"):
+        with tempfile.NamedTemporaryFile() as handle:  # Only the name is used; the file goes when it closes
+            setattr(api, attribute, handle.name)
 
     dampening = Dampening(api)
 
@@ -1281,6 +1282,7 @@ def _dampening_with_elevation_ratio(monkeypatch: pytest.MonkeyPatch, ratio: Call
     api = MagicMock()
     api.tz = datetime.UTC
     api.dt_helper = DateTimeHelper(datetime.UTC)
+    api.peak_intervals = dict.fromkeys(range(48), 1.0)
     api.advanced_options = {
         ADVANCED_AUTOMATED_DAMPENING_PRESERVE_UNMATCHED_FACTORS: False,
         ADVANCED_AUTOMATED_DAMPENING_MINIMUM_MATCHING_INTERVALS: 2,
