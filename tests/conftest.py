@@ -1,7 +1,6 @@
 """Test configuration for Solcast Solar integration."""
 
 from collections.abc import Generator
-from datetime import datetime as dt
 import logging
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +13,7 @@ import pytest
 
 from homeassistant import loader
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from homeassistant.util.yaml import load_yaml_dict  # pyright: ignore[reportUnknownVariableType]
 
 from . import aioresponses_reset
@@ -65,7 +65,7 @@ def reset_aioresponses() -> Generator[None]:
 def frozen_time() -> Generator[FrozenDateTimeFactory]:
     """Freeze test time."""
 
-    with freezegun.freeze_time(f"{dt.now().date()} 12:27:27", tz_offset=-10) as freeze:
+    with freezegun.freeze_time(f"{dt_util.naive_now().date()} 12:27:27", tz_offset=-10) as freeze:
         yield freeze  # type: ignore[misc]
 
 

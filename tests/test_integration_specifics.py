@@ -1,9 +1,9 @@
 """Post-scenarios integration tests for Solcast Solar."""
 
 import asyncio
+import contextlib
 import copy
-import datetime
-from datetime import datetime as dt, timedelta
+from datetime import timedelta
 import json
 import logging
 from pathlib import Path
@@ -63,6 +63,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util import dt as dt_util
 
 from . import (
     DEFAULT_INPUT1,
@@ -161,7 +162,7 @@ async def test_site_transfer_migrates_history_and_backs_up(
         assert "Applying cached history transfer for moved site IDs: 2222-2222-2222-2222->7777-7777-7777-7777" in caplog.text
         assert "New site(s) have been added" not in caplog.text
 
-        backup_day = dt.now(datetime.UTC).strftime("%y%m%d")
+        backup_day = dt_util.utcnow().strftime("%y%m%d")
         for cache_file in cache_files:
             payload = json.loads(cache_file.read_text(encoding="utf-8"))
             assert old_site_id not in payload[SITE_INFO]
@@ -384,11 +385,11 @@ async def test_updater_scheduler_catch_up_and_duplicate_guards(
         coordinator: SolcastUpdateCoordinator = entry.runtime_data.coordinator
         solcast: SolcastApi = patch_solcast_api(coordinator.solcast)
 
-        solcast.data_actuals[LAST_UPDATED] = dt.now(datetime.UTC) - timedelta(days=1)
+        solcast.data_actuals[LAST_UPDATED] = dt_util.utcnow() - timedelta(days=1)
         solcast.advanced_options[ADVANCED_ESTIMATED_ACTUALS_FETCH_DELAY] = 0
         solcast.advanced_options[ADVANCED_AUTOMATED_DAMPENING_GENERATION_FETCH_DELAY] = 0
 
-        now_local = dt.now(solcast.options.tz).replace(minute=1, second=0, microsecond=0)
+        now_local = dt_util.now(solcast.options.tz).replace(minute=1, second=0, microsecond=0)
         with (
             unittest.mock.patch("custom_components.solcast_solar.updater.dt") as dt_mock,
             unittest.mock.patch("custom_components.solcast_solar.updater.randint", return_value=5),
@@ -433,8 +434,8 @@ async def test_updater_estimated_actuals_skip_paths_and_undampened_accuracy(
         solcast: SolcastApi = patch_solcast_api(coordinator.solcast)
 
         solcast.advanced_options[ADVANCED_ESTIMATED_ACTUALS_FETCH_DELAY] = 0
-        solcast.data_actuals[LAST_UPDATED] = dt.now(datetime.UTC)
-        now_local = dt.now(solcast.options.tz).replace(minute=0, second=0, microsecond=0)
+        solcast.data_actuals[LAST_UPDATED] = dt_util.utcnow()
+        now_local = dt_util.now(solcast.options.tz).replace(minute=0, second=0, microsecond=0)
 
         with unittest.mock.patch("custom_components.solcast_solar.updater.dt") as dt_mock:
             dt_mock.now.return_value = now_local
@@ -443,7 +444,7 @@ async def test_updater_estimated_actuals_skip_paths_and_undampened_accuracy(
         assert not scheduled
         assert TASK_NEW_DAY_ACTUALS not in coordinator.tasks
 
-        solcast.data_actuals[LAST_UPDATED] = dt.now(datetime.UTC) - timedelta(days=1)
+        solcast.data_actuals[LAST_UPDATED] = dt_util.utcnow() - timedelta(days=1)
         caplog.clear()
         with (
             unittest.mock.patch("custom_components.solcast_solar.updater.dt") as dt_mock,
@@ -510,11 +511,16 @@ async def test_advanced_solcast_port_applied_runtime(
 
         advanced_file = get_advanced_options_file(hass.config.config_dir, create=True)
         caplog.clear()
-        advanced_file.write_text(json.dumps({ADVANCED_SOLCAST_PORT: 8443}), encoding="utf-8")
-        async with asyncio.timeout(10):
+        # The file watcher starts a moment after set-up and may miss a file created before, so create it again until it is read.
+        async with asyncio.timeout(20):
             while solcast.advanced_options[ADVANCED_SOLCAST_PORT] != 8443:
-                await hass.async_block_till_done()
-                await asyncio.sleep(0.01)
+                advanced_file.unlink(missing_ok=True)
+                advanced_file.write_text(json.dumps({ADVANCED_SOLCAST_PORT: 8443}), encoding="utf-8")
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(2):
+                        while solcast.advanced_options[ADVANCED_SOLCAST_PORT] != 8443:
+                            await hass.async_block_till_done()
+                            await asyncio.sleep(0.01)
 
         assert solcast.advanced_options[ADVANCED_SOLCAST_PORT] == 8443
 
@@ -672,7 +678,7 @@ async def test_config_folder_migration(
 
     try:
         Path(f"{hass.config.config_dir}/solcast-test.json").write_text(
-            json.dumps({LAST_UPDATED: dt.now(datetime.UTC).isoformat(), SITE_INFO: {}}), encoding="utf-8"
+            json.dumps({LAST_UPDATED: dt_util.utcnow().isoformat(), SITE_INFO: {}}), encoding="utf-8"
         )
         options = copy.deepcopy(DEFAULT_INPUT1)
         entry = await async_init_integration(hass, options)

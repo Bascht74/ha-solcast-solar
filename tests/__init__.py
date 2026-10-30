@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 from re import Pattern
 import sys
+import time
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
@@ -51,7 +52,7 @@ from custom_components.solcast_solar.const import (
 from custom_components.solcast_solar.coordinator import SolcastUpdateCoordinator
 from custom_components.solcast_solar.dates import DateTimeEncoder, JSONDecoder
 from custom_components.solcast_solar.solcastapi import SolcastApi
-from freezegun import freeze_time
+from freezegun import api as freezegun_api, freeze_time
 from freezegun.api import FrozenDateTimeFactory
 import pytest
 from sqlalchemy import insert
@@ -631,7 +632,7 @@ async def async_setup_extra_sensors(  # noqa: C901
             continue
         power = {}
         if site != "site_export_sensor":
-            now = (dt_util.now(UTC) - timedelta(days=entity_history["days_generation"])).replace(hour=14, minute=0, second=0)
+            now = (dt_util.utcnow() - timedelta(days=entity_history["days_generation"])).replace(hour=14, minute=0, second=0)
             for interval in range(48):
                 power[interval] = (
                     0.5 * generation * GENERATION_FACTOR[interval]
@@ -644,7 +645,7 @@ async def async_setup_extra_sensors(  # noqa: C901
                 )
             entity = "solar_export_sensor_" + site.replace("-", "_")
         else:
-            now = (dt_util.now(UTC) - timedelta(days=entity_history["days_export"])).replace(hour=14, minute=0, second=0)
+            now = (dt_util.utcnow() - timedelta(days=entity_history["days_export"])).replace(hour=14, minute=0, second=0)
             if extra_sensors == ExtraSensors.DODGY:
                 for interval in range(48):
                     power[interval] = 0.0 if (interval < 24 or interval > 34) else (5.0 if interval != 34 else 2.0)
@@ -672,7 +673,7 @@ async def async_setup_extra_sensors(  # noqa: C901
         # returns False (insufficient numeric readings), covering the insufficient-readings branch.
         # Use distinct non-numeric values so each is a genuine state change for the recorder.
         if extra_sensors == ExtraSensors.YES_POWER and site == "1111-1111-1111-1111":
-            base = (dt_util.now(UTC) - timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+            base = (dt_util.utcnow() - timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
             non_numeric = ["unavailable", "unknown", "error", "none", "n/a"]
             for k, state_val in enumerate(non_numeric):
                 if _use_batched_history:
@@ -824,7 +825,7 @@ async def async_setup_extra_sensors(  # noqa: C901
             {"hours": 13, "minutes": 46, "seconds": 5, "value": "on"},
             {"hours": 14, "minutes": 14, "seconds": 5, "value": "off"},
         ]
-        now = (dt_util.now(UTC) - timedelta(days=entity_history["days_suppression"])).replace(hour=14, minute=0, second=0)
+        now = (dt_util.utcnow() - timedelta(days=entity_history["days_suppression"])).replace(hour=14, minute=0, second=0)
         with freeze_time(
             now,
             tz_offset=0,
@@ -991,6 +992,45 @@ async def exec_update_actuals(
     await hass.async_block_till_done()
 
 
+_WAIT_REAL_SECONDS = 120.0  # Wall-clock budget of a wait, so a busy host takes longer instead of running out of steps
+_WAIT_REAL_PAUSE = 0.01  # Wall-clock pause in each step, so executor jobs end before the frozen clock moves on
+
+
+async def _advance_until(
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+    freezer: FrozenDateTimeFactory,
+    needles: tuple[str, ...],
+    tick_seconds: float = 1.0,
+    real_seconds: float = _WAIT_REAL_SECONDS,
+) -> None:
+    """Advance the frozen clock step by step until a log record holds one of the needles.
+
+    Each step lets Home Assistant finish its work and gives executor jobs a moment of real time before the clock
+    moves on, and the budget is wall-clock time, not a number of steps.
+    """
+
+    last_record = 0
+
+    def seen() -> bool:
+        nonlocal last_record
+        records = caplog.records
+        found = any(needle in record.getMessage() for record in records[last_record:] for needle in needles)
+        last_record = len(records)
+        return found
+
+    # Looked up on freezegun's module each time: freezegun replaces the clock functions that other modules hold.
+    deadline = freezegun_api.real_monotonic() + real_seconds
+    while not seen():
+        if freezegun_api.real_monotonic() > deadline:
+            raise TimeoutError(f"None of {needles} logged within {real_seconds} seconds")
+        await hass.async_block_till_done()
+        await asyncio.get_running_loop().run_in_executor(None, time.sleep, _WAIT_REAL_PAUSE)
+        if seen():
+            return
+        freezer.tick(tick_seconds)
+
+
 async def wait_for_update(hass: HomeAssistant, caplog: pytest.LogCaptureFixture, freezer: FrozenDateTimeFactory) -> None:
     """Wait for forecast update completion."""
 
@@ -1005,16 +1045,7 @@ async def wait_for_update(hass: HomeAssistant, caplog: pytest.LogCaptureFixture,
         "Completed task force_update",
         "ConfigEntryAuthFailed",
     )
-    last_record = 0
-    async with asyncio.timeout(300):
-        while True:
-            records = caplog.records
-            for r in records[last_record:]:
-                if any(n in r.getMessage() for n in needles):
-                    return
-            last_record = len(records)
-            freezer.tick(1.0)
-            await hass.async_block_till_done()
+    await _advance_until(hass, caplog, freezer, needles)
 
 
 async def wait_for_it(
@@ -1022,16 +1053,7 @@ async def wait_for_it(
 ) -> None:
     """Wait for a specific log message to appear."""
 
-    last_record = 0
-    tick_seconds = 5.0 if long_time else 1.0
-    async with asyncio.timeout(300 if not long_time else 3000):
-        while True:
-            records = caplog.records
-            if any(wait_for in r.getMessage() for r in records[last_record:]):
-                return
-            last_record = len(records)
-            freezer.tick(tick_seconds)
-            await hass.async_block_till_done()
+    await _advance_until(hass, caplog, freezer, (wait_for,), tick_seconds=5.0 if long_time else 1.0)
 
 
 async def async_cleanup_integration_caches(hass: HomeAssistant, **kwargs: Any) -> bool:

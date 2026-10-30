@@ -566,3 +566,21 @@ async def test_awatch_change_then_delete_reports_only_the_delete(tmp_path: Path,
         frozen_time.tick(2)
         assert await pending == {(Change.deleted, str(file))}
         await changes.aclose()
+
+
+@pytest.mark.timeout(10)
+@pytest.mark.asyncio
+async def test_awatch_reports_a_change_read_with_the_end_of_the_watch(tmp_path: Path) -> None:
+    """A change in the same read as the end of the watch is still reported."""
+
+    class Burst(FakeInotify):
+        events = (_event(Mask.CLOSE_WRITE, "f.json"), _event(Mask.IGNORED))
+
+        async def get(self) -> Any:
+            """Return queued events at once, like one kernel read."""
+            return self.queue.pop(0)
+
+    file = tmp_path / "f.json"
+    with unittest.mock.patch("custom_components.solcast_solar.watch.Inotify", Burst):
+        changes = [c async for c in awatch(str(file))]
+    assert changes == [{(Change.modified, str(file))}]

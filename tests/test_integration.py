@@ -177,7 +177,7 @@ ACTIONS = [
 ]
 
 ZONE = ZoneInfo(ZONE_RAW)
-NOW = dt.now(ZONE)
+NOW = dt_util.now(ZONE)
 
 
 @pytest.fixture(autouse=True)
@@ -237,7 +237,7 @@ async def _exec_update(
     if last_update_delta == 0:
         last_updated = dt(year=2020, month=1, day=1, hour=1, minute=1, second=1, tzinfo=datetime.UTC)
     else:
-        last_updated = dt.now(datetime.UTC) - timedelta(seconds=last_update_delta)
+        last_updated = dt_util.utcnow() - timedelta(seconds=last_update_delta)
         _LOGGER.info("Mock last updated: %s", last_updated)
     solcast.data[LAST_UPDATED] = last_updated
     await hass.services.async_call(DOMAIN, action, {}, blocking=True)
@@ -282,7 +282,7 @@ async def _exec_update_actuals(
     if last_update_delta == 0:
         last_updated = dt(year=2020, month=1, day=1, hour=1, minute=1, second=1, tzinfo=datetime.UTC)
     else:
-        last_updated = dt.now(datetime.UTC) - timedelta(seconds=last_update_delta)
+        last_updated = dt_util.utcnow() - timedelta(seconds=last_update_delta)
         _LOGGER.info("Mock last updated: %s", last_updated)
     solcast.data_actuals[LAST_UPDATED] = last_updated
     await hass.services.async_call(DOMAIN, action, {}, blocking=True)
@@ -1019,7 +1019,7 @@ async def test_remaining_actions(
         _LOGGER.debug("Switch to using two API keys, three sites")
         usage_file = Path(f"{config_dir}/solcast-usage.json")
         data = json.loads(usage_file.read_text(encoding="utf-8"))
-        data["reset"] = (dt.now(datetime.UTC) - timedelta(days=5)).isoformat()
+        data["reset"] = (dt_util.utcnow() - timedelta(days=5)).isoformat()
         usage_file.write_text(json.dumps(data), encoding="utf-8")
         config = copy.deepcopy(DEFAULT_INPUT2)
         config[API_LIMIT] = "8,8"
@@ -1265,6 +1265,7 @@ async def test_remaining_actions(
         assert entry.options[USE_ACTUALS] == 1
 
         _LOGGER.debug("Test set_options generation entities and exclude sites")
+        hass.states.async_set("sensor.grid_export", "1", {"device_class": "energy"})
         await hass.services.async_call(
             DOMAIN,
             SERVICE_SET_OPTIONS,
@@ -1569,7 +1570,7 @@ async def test_usage_typical_forecast_updates_default(
                     DAILY_FORCED_CONSUMED: forced_seed,
                     DAILY_ACTUALS_CONSUMED: 0,
                     DAILY_TYPICAL: typical_seed,
-                    "reset": dt.now(datetime.UTC).isoformat(),
+                    "reset": dt_util.utcnow().isoformat(),
                 }
             ),
             encoding="utf-8",
@@ -1603,7 +1604,7 @@ async def test_scenarios(
         config_dir = str(get_config_dir(hass.config.config_dir, create=True))
         write_advanced_options(config_dir, {ADVANCED_ENTITY_LOGGING: True})
 
-        freezer.move_to(dt.now(tz=ZoneInfo(ZONE_RAW)).replace(hour=12, minute=0, second=0, microsecond=0))
+        freezer.move_to(dt_util.now(ZoneInfo(ZONE_RAW)).replace(hour=12, minute=0, second=0, microsecond=0))
 
         options = copy.deepcopy(DEFAULT_INPUT1)
         options[HARD_LIMIT_API] = "6.0"
@@ -1658,23 +1659,23 @@ async def test_scenarios(
 
         def alter_in_memory_as_stale():
             extant_data = copy.deepcopy(solcast.data_forecasts)  # pyright: ignore[reportOptionalMemberAccess]
-            solcast.data_forecasts = [f for f in extant_data if f[PERIOD_START] >= dt.now(datetime.UTC).replace(second=0, microsecond=0)]  # pyright: ignore[reportOptionalMemberAccess]
+            solcast.data_forecasts = [f for f in extant_data if f[PERIOD_START] >= dt_util.utcnow().replace(second=0, microsecond=0)]  # pyright: ignore[reportOptionalMemberAccess]
 
         def alter_last_updated_as_stale():
             data = json.loads(data_file.read_text(encoding="utf-8"))
-            data[LAST_UPDATED] = (dt.now(datetime.UTC) - timedelta(days=5)).isoformat()
+            data[LAST_UPDATED] = (dt_util.utcnow() - timedelta(days=5)).isoformat()
             data[LAST_ATTEMPT] = data[LAST_UPDATED]
             data[AUTO_UPDATED] = 10
             # Remove forecasts today up to "now"
             for site in data[SITE_INFO].values():
-                site[FORECASTS] = [f for f in site[FORECASTS] if f[PERIOD_START] > dt.now(datetime.UTC).isoformat()]
+                site[FORECASTS] = [f for f in site[FORECASTS] if f[PERIOD_START] > dt_util.utcnow().isoformat()]
             data_file.write_text(json.dumps(data), encoding="utf-8")
             session_reset_usage()
 
         def alter_last_updated_as_very_stale():
             for d_file in [data_file, data_file_undampened]:
                 data = json.loads(d_file.read_text(encoding="utf-8"))
-                data[LAST_UPDATED] = (dt.now(datetime.UTC) - timedelta(days=DEFAULT_FORECAST_DAYS + 1)).isoformat()
+                data[LAST_UPDATED] = (dt_util.utcnow() - timedelta(days=DEFAULT_FORECAST_DAYS + 1)).isoformat()
                 data[LAST_ATTEMPT] = data[LAST_UPDATED]
                 data[AUTO_UPDATED] = 10
                 # Shift all forecast intervals back nine days
@@ -1723,7 +1724,7 @@ async def test_scenarios(
         assert_state_assertions("post-update")
 
         # Diagnostic should report a missed auto-update interval in this scenario
-        interval_just_passed = dt.now(datetime.UTC).replace(second=0, microsecond=0) - timedelta(minutes=10)
+        interval_just_passed = dt_util.utcnow().replace(second=0, microsecond=0) - timedelta(minutes=10)
         coordinator._updater.interval_just_passed = interval_just_passed
         solcast.data[LAST_UPDATED] = interval_just_passed + timedelta(minutes=1)
         solcast.data[LAST_ATTEMPT] = interval_just_passed - timedelta(minutes=1)
@@ -1742,7 +1743,7 @@ async def test_scenarios(
             pytest.fail("Reload failed")
         await _wait_for_update(hass, caplog, freezer)
         assert "is older than expected, should be" in caplog.text
-        assert solcast.data[LAST_UPDATED] > dt.now(datetime.UTC) - timedelta(minutes=10)
+        assert solcast.data[LAST_UPDATED] > dt_util.utcnow() - timedelta(minutes=10)
         assert "ERROR" not in caplog.text
         no_error_or_exception(caplog)
 
@@ -1761,7 +1762,7 @@ async def test_scenarios(
             pytest.fail("Reload failed")
         await _wait_for_update(hass, caplog, freezer)
         assert "is older than expected, should be" in caplog.text
-        assert solcast.data[LAST_UPDATED] > dt.now(datetime.UTC) - timedelta(minutes=10)
+        assert solcast.data[LAST_UPDATED] > dt_util.utcnow() - timedelta(minutes=10)
         assert "hours of past data" in caplog.text
         assert "ERROR" not in caplog.text
         no_error_or_exception(caplog)
@@ -1794,7 +1795,7 @@ async def test_scenarios(
             pytest.fail("Reload failed")
         await _wait_for_update(hass, caplog, freezer)
         assert "The update automation has not been running" in caplog.text
-        assert solcast.data[LAST_UPDATED] > dt.now(datetime.UTC) - timedelta(minutes=10)
+        assert solcast.data[LAST_UPDATED] > dt_util.utcnow() - timedelta(minutes=10)
         assert "hours of past data" in caplog.text
         assert "ERROR" not in caplog.text
         no_error_or_exception(caplog)

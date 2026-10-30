@@ -1,6 +1,7 @@
 """Tests for Solcast Solar runtime retries and dampening flow."""
 
-import datetime
+import asyncio
+import contextlib
 from datetime import datetime as dt, timedelta
 import json
 import logging
@@ -67,6 +68,18 @@ _LOGGER = logging.getLogger(__name__)
 @pytest.fixture(autouse=True)
 def frozen_time() -> None:
     """Disable the global freezer fixture for runtime timing tests."""
+
+
+async def _write_until_seen(caplog: pytest.LogCaptureFixture, path: Path, text: str, needle: str) -> None:
+    """Write a watched file until its watcher logs the needle: a watcher that has just started may miss the first write."""
+
+    async with asyncio.timeout(20):
+        while True:
+            path.write_text(text, encoding="utf-8")
+            with contextlib.suppress(TimeoutError):
+                async with asyncio.timeout(0.5):
+                    await _wait_for(caplog, needle)
+                return
 
 
 @pytest.mark.parametrize(
@@ -167,7 +180,7 @@ async def test_integration_runtime_and_dampening_flow(
         # Test update beyond ten seconds of prior update, also with stale usage cache and dodgy dampening file
         session_reset_usage()
         for api_key in options[API_KEY].split(","):
-            solcast.sites_cache._api_used_reset[api_key] = dt_util.now(datetime.UTC) - timedelta(days=5)
+            solcast.sites_cache._api_used_reset[api_key] = dt_util.utcnow() - timedelta(days=5)
         solcast.options.auto_update = AutoUpdate.NONE
         await _exec_update(hass, solcast, caplog, "update_forecasts", last_update_delta=20)
         assert "Not requesting a solar forecast because time is within ten seconds of last update" not in caplog.text
@@ -226,9 +239,8 @@ async def test_integration_runtime_and_dampening_flow(
                     await _wait_for(caplog, "Running task watch_advanced")
                     caplog.clear()
                     await solcast.dampening.model_automated()
-                granular_dampening_file.write_text(json.dumps(test["factors"]), encoding="utf-8")
+                await _write_until_seen(caplog, granular_dampening_file, json.dumps(test["factors"]), "Granular dampening mtime changed")
                 await _wait_for(caplog, "Updating sensor Forecast Tomorrow")
-                assert "Granular dampening mtime changed" in caplog.text
                 assert "Granular dampening loaded" in caplog.text
                 sensor = hass.states.get("sensor.solcast_pv_forecast_forecast_tomorrow")
                 if sensor is not None:
@@ -245,8 +257,13 @@ async def test_integration_runtime_and_dampening_flow(
             write_advanced_options(config_dir, default_advanced_options)
             await _wait_for(caplog, "Advanced option set entity_logging: True")
 
+            caplog.clear()
             granular_dampening_file.unlink()
             await _wait_for(caplog, "Granular dampening file deleted, no longer monitoring")
+            # The deletion turns granular dampening off in the options, and that update removes the file again,
+            # so wait until it is done before the file is written anew.
+            await _wait_for(caplog, "Options updated, action")
+            await hass.async_block_till_done()
 
         solcast.options.auto_update = AutoUpdate.NONE
 
@@ -262,7 +279,7 @@ async def test_integration_runtime_and_dampening_flow(
             os.utime(file_path, (dt_epoch, dt_epoch))
 
         granular_dampening_file.write_text("really dodgy", encoding="utf-8")
-        set_file_last_modified(str(granular_dampening_file), dt_util.now(datetime.UTC) - timedelta(minutes=5))
+        set_file_last_modified(str(granular_dampening_file), dt_util.utcnow() - timedelta(minutes=5))
         await _exec_update(hass, solcast, caplog, "update_forecasts", last_update_delta=20)
         assert "JSONDecodeError, dampening ignored" in caplog.text
         granular_dampening_file.unlink()

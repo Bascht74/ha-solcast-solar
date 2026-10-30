@@ -7,9 +7,9 @@ rules:
   config-flow-test-coverage: done
   config-flow: done
   dependency-transparency:
-    status: exempt
+    status: done
     comment: |
-      This integration does not utilise an externally hosted dependency.
+      The requirements aiofiles and asyncinotify are open source, published on PyPI and built in public CI.
   docs-actions: done
   docs-high-level-description: done
   docs-installation-instructions: done
@@ -48,7 +48,12 @@ rules:
       It is not desirable to log once when the Solcast REST API is unavailable and then once more when re-connected. Each interaction is atomic, and a connection is not held open.
   parallel-updates: done
   reauthentication-flow: done
-  test-coverage: done
+  test-coverage:
+    status: done
+    comment: |
+      The whole suite covers every statement, the bodies of `try:` blocks included. tests/.coveragerc excludes
+      only `pragma: no cover`, type-checking imports and fall-backs for older Core versions; CI requires 100 %
+      on three Core versions.
   # Gold
   devices: done
   diagnostics: done
