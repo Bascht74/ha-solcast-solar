@@ -139,6 +139,50 @@ async def test_actuals_and_generation_files_missing(recorder_mock: Recorder, has
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
 
 
+async def test_restart_before_the_first_estimated_actuals(
+    recorder_mock: Recorder, hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A new entry whose first fetch Solcast refused restarts after its first forecast and before its first estimated actuals.
+
+    While nothing is fetched yet its power sensors are unavailable and log no error, and the restart loads.
+    """
+
+    try:
+        await async_init_integration(hass, _options(**{EXCLUDE_SITES: [SITE2]}), extra_sensors=ExtraSensors.YES)
+        west_options = _options(**{INSTANCE_NAME: "West", EXCLUDE_SITES: [SITE1], GENERATION_ENTITIES: [GENERATION2]})
+        west = MockConfigEntry(domain=DOMAIN, title="Solcast West", data=west_options, options=west_options, version=CONFIG_VERSION)
+        west.add_to_hass(hass)
+
+        session_set(MOCK_OVER_LIMIT)
+        caplog.clear()
+        assert await hass.config_entries.async_setup(west.entry_id)
+        await hass.async_block_till_done()
+        solcast = west.runtime_data.coordinator.solcast
+        assert "There is no solcast.json to load" in caplog.text
+        assert not Path(solcast.filename).exists()
+        await west.runtime_data.coordinator.update_integration_listeners()
+        power_now = hass.states.get("sensor.solcast_west_power_now")
+        assert power_now is not None
+        assert power_now.state == "unavailable"
+        _no_setup_error(caplog, west)
+
+        # After UTC midnight the fetch succeeds. Its first forecast is saved by a scheduled update, which does not
+        # fetch estimated actuals, so the files are as if that update ran and the estimated actuals are still to come.
+        session_clear(MOCK_OVER_LIMIT)
+        await solcast.sites_cache.reset_usage_cache()
+        await reload_integration(hass, west)
+        await _unlink(west, "actuals", "actuals_dampened", "generation")
+        assert Path(west.runtime_data.coordinator.solcast.filename).exists()
+
+        # Restarted before its first estimated actuals, it loads, and reads its generation for automated dampening.
+        caplog.clear()
+        await reload_integration(hass, west)
+        _loads_with_generation(caplog, west)
+    finally:
+        session_clear(MOCK_OVER_LIMIT)
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
 async def test_gap_check_while_a_site_has_no_estimated_actuals(
     recorder_mock: Recorder, hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:

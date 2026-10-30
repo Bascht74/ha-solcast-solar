@@ -32,6 +32,7 @@ from custom_components.solcast_solar.const import (
     RESET,
     RESOURCE_ID,
     SERVICE_FORCE_UPDATE_FORECASTS,
+    TASK_FORECASTS_FETCH,
     TASK_FORECASTS_FETCH_IMMEDIATE,
     TASK_NEW_DAY_ACTUALS,
 )
@@ -350,6 +351,30 @@ async def test_forecast_abort_does_not_build_actuals(
             await coordinator._updater.forecast_update(completion="Completed task update")
 
         build_actual_data.assert_not_awaited()
+
+    finally:
+        await async_cleanup_integration_tests(hass)
+
+
+@pytest.mark.asyncio
+async def test_forecast_update_aborts_while_a_fetch_runs(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A forecast update aborts while another fetch of this entry is still running."""
+
+    try:
+        entry = await async_init_integration(hass, DEFAULT_INPUT1)
+        solcast = entry.runtime_data.coordinator.solcast
+        solcast.data[LAST_UPDATED] -= timedelta(minutes=20)
+
+        solcast.tasks[TASK_FORECASTS_FETCH] = mock.Mock()  # A fetch that is still running.
+        result = await solcast.fetcher.get_forecast_update()
+        solcast.tasks.pop(TASK_FORECASTS_FETCH)
+
+        assert result.outcome is UpdateOutcome.ABORTED
+        assert "A fetch task is already running, so aborting forecast update" in caplog.text
 
     finally:
         await async_cleanup_integration_tests(hass)

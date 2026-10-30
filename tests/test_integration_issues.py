@@ -534,3 +534,50 @@ async def test_actuals_api_limit_issue_single_limit_multiple_keys(
         assert issue.translation_placeholders[SUGGESTED_VALUE] == "8"
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_pop_task_result_keeps_a_newer_task() -> None:
+    """Ensure an ending fetch does not pop or read a newer fetch under the same name."""
+
+    api = SimpleNamespace(tasks={})
+    fetcher = Fetcher(api=api)  # pyright: ignore[reportArgumentType]
+
+    # The clear data action cancels a fetch and starts a new one before the cancelled fetch ends.
+    old = asyncio.create_task(asyncio.sleep(5))
+    api.tasks[TASK_ACTUALS_FETCH] = old
+    old.cancel()
+    with suppress(asyncio.CancelledError):
+        await old
+    gate = asyncio.Event()
+
+    async def _new_fetch() -> dict[str, str]:
+        await gate.wait()
+        return {"new": "data"}
+
+    new = asyncio.create_task(_new_fetch())
+    api.tasks[TASK_ACTUALS_FETCH] = new
+
+    assert fetcher._pop_task_result(TASK_ACTUALS_FETCH, old) is None
+    assert api.tasks[TASK_ACTUALS_FETCH] is new
+    assert not new.done()
+
+    gate.set()
+    await new
+    assert fetcher._pop_task_result(TASK_ACTUALS_FETCH, new) == {"new": "data"}
+    assert TASK_ACTUALS_FETCH not in api.tasks
+
+
+async def test_pop_task_result_cancels_a_running_task() -> None:
+    """Ensure a fetch still running when its caller ends is cancelled instead of read."""
+
+    api = SimpleNamespace(tasks={})
+    fetcher = Fetcher(api=api)  # pyright: ignore[reportArgumentType]
+
+    task = asyncio.create_task(asyncio.sleep(5))
+    api.tasks[TASK_ACTUALS_FETCH] = task
+
+    assert fetcher._pop_task_result(TASK_ACTUALS_FETCH, task) is None
+    assert TASK_ACTUALS_FETCH not in api.tasks
+    with suppress(asyncio.CancelledError):
+        await task
+    assert task.cancelled()
