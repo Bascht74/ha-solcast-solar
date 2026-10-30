@@ -606,7 +606,7 @@ class SitesCache:
                             self.api.filename: self.api.data,
                             self.api.filename_undampened: self.api.data_undampened,
                             self.api.filename_actuals: self.api.data_actuals,
-                            self.api.filename_actuals_dampened: self.api.data_actuals,
+                            self.api.filename_actuals_dampened: self.api.data_actuals_dampened,
                         }.items():
                             await self.serialise_data(data, filename)
 

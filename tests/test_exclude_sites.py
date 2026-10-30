@@ -71,6 +71,12 @@ async def test_excluded_site_is_not_fetched(
         assert coordinator.divisions == 10  # 20 / 2 sites
         assert _rooftop_sensor(entity_registry, SITE1) is not None
 
+        # Dampened estimated actuals that differ from the undampened ones must survive a site change.
+        dampened = copy.deepcopy(solcast.data_actuals)
+        for actual in dampened[SITE_INFO][SITE2][FORECASTS]:
+            actual[ESTIMATE] = round(actual[ESTIMATE] / 2, 4)
+        assert await solcast.sites_cache.serialise_data(dampened, solcast.filename_actuals_dampened)
+
         caplog.clear()
         hass.config_entries.async_update_entry(entry, options={**entry.options, EXCLUDE_SITES: [SITE1]})
         await hass.async_block_till_done()
@@ -92,6 +98,8 @@ async def test_excluded_site_is_not_fetched(
             assert set(data[SITE_INFO]) == {SITE2}
         for path in (solcast.filename, solcast.filename_undampened, solcast.filename_actuals, solcast.filename_actuals_dampened):
             assert _cached_sites(path) == {SITE2}
+        kept = json.loads(Path(solcast.filename_actuals_dampened).read_text(encoding="utf-8"))[SITE_INFO][SITE2][FORECASTS]
+        assert kept[0][ESTIMATE] == round(solcast.data_actuals[SITE_INFO][SITE2][FORECASTS][0][ESTIMATE] / 2, 4)
         assert _rooftop_sensor(entity_registry, SITE1) is None
         assert _rooftop_sensor(entity_registry, SITE2) is not None
         assert solcast.query.get_total_energy_forecast_day(0) == pytest.approx(solcast.query.get_rooftop_site_total_today(SITE2), abs=0.01)

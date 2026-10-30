@@ -691,7 +691,7 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                 _api_key = redact_api_key(api_key) if multi_key else ALL
                 siteinfo = {site: {forecast[PERIOD_START]: forecast for forecast in data[SITE_INFO][site][FORECASTS]} for site in sites}
                 earliest: dt = dt_util.now(self.tz)
-                latest: dt = earliest
+                latest: dt = max(limits[LAST_PERIOD] for limits in sites.values())
                 for limits in sites.values():
                     if len(sites_hard_limit[api_key]) == 0:
                         msg = f"Build hard limit period values from scratch for {data_set} {_api_key}"
@@ -701,7 +701,6 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                         earliest = min(earliest, limits[EARLIEST_PERIOD])
                     else:
                         earliest = self.dt_helper.day_start_utc()  # Past hard limits done, so re-calculate from today onwards
-                    latest = limits[LAST_PERIOD]
                 if _api_key not in logged_hard_limit:
                     logged_hard_limit.append(_api_key)
                     _LOGGER.debug(
@@ -719,7 +718,8 @@ class SolcastApi:  # pylint: disable=too-many-public-methods
                     earliest + timedelta(minutes=HALF_HOUR_MINUTES * x)
                     for x in range(int((latest - earliest).total_seconds() / HALF_HOUR_SECONDS))
                 ]
-                sites_hard_limit[api_key] = {est: {} for est in estimates}
+                past = sites_hard_limit[api_key]  # Keep the past hard limits when re-calculating from today onwards
+                sites_hard_limit[api_key] = {est: {p: v for p, v in past.get(est, {}).items() if p < earliest} for est in estimates}
                 for count, period in enumerate(periods):
                     for pv_estimate in estimates:
                         estimate = {site: siteinfo[site].get(period, {}).get(pv_estimate) for site in sites}

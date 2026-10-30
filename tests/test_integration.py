@@ -81,6 +81,7 @@ from custom_components.solcast_solar.const import (
     LAST_UPDATED,
     MODEL_PERIOD_DAYS,
     PERIOD_START,
+    RESOURCE_ID,
     SERVICE_CLEAR_DATA,
     SERVICE_DIAGNOSTIC,
     SERVICE_FORCE_UPDATE_ESTIMATES,
@@ -2167,3 +2168,40 @@ def test_get_rooftop_site_extra_data_unknown_site() -> None:
     api.sites = []
     query = ForecastQuery(api)
     assert query.get_rooftop_site_extra_data("unknown-site-id") is None
+
+
+async def test_hard_limit_rebuild_keeps_past_and_reaches_latest_site(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+) -> None:
+    """Test a rebuild keeps the hard limit on past periods, and the limit reaches the latest period of any site."""
+
+    limit = 1.0
+    try:
+        options = copy.deepcopy(DEFAULT_INPUT1)
+        options[HARD_LIMIT_API] = f"{limit}"
+        entry = await async_init_integration(hass, options)
+        solcast = entry.runtime_data.coordinator.solcast
+        today = solcast.dt_helper.day_start_utc()
+
+        def peak(start: dt, end: dt) -> float:
+            values = [forecast[ESTIMATE] for forecast in solcast.data_forecasts if start <= forecast[PERIOD_START] < end]
+            assert values
+            return max(values)
+
+        await solcast.build_forecast_data()
+        await solcast.build_forecast_data()  # A rebuild only re-calculates the limit from today onwards
+        assert peak(today - timedelta(days=3), today) <= limit
+        assert peak(today, today + timedelta(days=3)) <= limit
+
+        # The site built last ends two days earlier than the others, which must stay limited to their end.
+        sites = [site[RESOURCE_ID] for site in solcast.sites if solcast.data[SITE_INFO].get(site[RESOURCE_ID])]
+        assert len(sites) > 1
+        solcast.data[SITE_INFO][sites[-1]][FORECASTS] = solcast.data[SITE_INFO][sites[-1]][FORECASTS][:-96]
+        solcast._sites_hard_limit.clear()
+        await solcast.build_forecast_data()
+        shortened_end = solcast.data[SITE_INFO][sites[-1]][FORECASTS][-1][PERIOD_START]
+        assert peak(shortened_end, shortened_end + timedelta(days=2)) <= limit
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
