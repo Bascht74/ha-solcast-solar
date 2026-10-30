@@ -203,6 +203,9 @@
     "damp_auto_enabled": {
       "message": "Włączono automatyczne tłumienie, nie ma konieczności ręcznego ustawiania współczynników tłumienia."
     },
+    "damp_count_mixed": {
+      "message": "Liczba współczynników tłumienia musi odpowiadać współczynnikom już ustawionym dla pozostałych lokalizacji."
+    },
     "damp_count_not_correct": {
       "message": "Między 0,0 a 1,0 nie ma 24 ani 48 liczb oddzielonych przecinkami."
     },

@@ -45,6 +45,8 @@ from custom_components.solcast_solar.const import (
     DOMAIN,
     ENTITY_ACCURACY,
     ESTIMATE,
+    EXCEPTION_DAMP_COUNT_MIXED,
+    EXCEPTION_DAMP_OUTSIDE_RANGE,
     EXCEPTION_GENERATION_MIXED_TYPES,
     EXCLUDE_SITES,
     EXPORT_LIMITING,
@@ -57,8 +59,10 @@ from custom_components.solcast_solar.const import (
     RESOURCE_ID,
     SERVICE_FORCE_UPDATE_ESTIMATES,
     SERVICE_SET_DAMPENING,
+    SITE,
     SITE_ATTRIBUTE_AZIMUTH,
     SITE_ATTRIBUTE_TILT,
+    SITE_DAMP,
     SITE_EXPORT_ENTITY,
     SITE_EXPORT_LIMIT,
     SITE_INFO,
@@ -1562,6 +1566,79 @@ async def test_accuracy_percentiles_exclude_gap_and_zero_days(
         assert len(attributes["undampened_ape_breakdown"]) == 2
         assert math.isfinite(attributes["undampened_p50_ape"])
         assert math.isfinite(attributes["undampened_p90_ape"])
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+@pytest.mark.parametrize(
+    ("content", "valid"),
+    [
+        (json.dumps({ALL: [0.5] * 48}), True),
+        (json.dumps({"1111-1111-1111-1111": [0.5] * 24}), True),
+        (json.dumps({ALL: 5}), False),
+        ("[1, 2]", False),
+        ("null", False),
+        (json.dumps({ALL: [1.5] * 48}), False),
+        (json.dumps({ALL: [-0.1] * 48}), False),
+        (json.dumps({ALL: ["0.5"] * 48}), False),
+        (json.dumps({ALL: [math.nan] * 48}), False),
+        (json.dumps({"9999-9999-9999-9999": [0.5] * 24}), False),
+    ],
+)
+async def test_granular_dampening_file_validated(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+    content: str,
+    valid: bool,
+) -> None:
+    """Test a granular dampening file is only used with known sites and factors between 0.0 and 1.0, and is otherwise ignored."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT2))
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+        Path(solcast.dampening.get_filename()).write_text(content, encoding="utf-8")
+
+        assert await solcast.dampening.granular_data() is valid
+        await hass.async_block_till_done()
+        assert entry.options[SITE_DAMP] is valid
+        assert solcast.dampening.factors == (json.loads(content) if valid else {})
+
+    finally:
+        assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"
+
+
+async def test_set_dampening_rejects_non_finite_and_mixed_counts(
+    recorder_mock: Recorder,
+    hass: HomeAssistant,
+) -> None:
+    """Test the set dampening action refuses factors that are not finite, and a factor count other sites do not use."""
+
+    try:
+        entry = await async_init_integration(hass, copy.deepcopy(DEFAULT_INPUT2))
+        solcast: SolcastApi = entry.runtime_data.coordinator.solcast
+
+        for factor in ("nan", "inf", "-inf"):
+            with pytest.raises(ServiceValidationError) as exc_info:
+                await hass.services.async_call(DOMAIN, SERVICE_SET_DAMPENING, {DAMP_FACTOR: ",".join([factor] * 24)}, blocking=True)
+            assert exc_info.value.translation_key == EXCEPTION_DAMP_OUTSIDE_RANGE
+
+        site_1 = {SITE: "1111-1111-1111-1111", DAMP_FACTOR: ",".join(["0.5"] * 24)}
+        await hass.services.async_call(DOMAIN, SERVICE_SET_DAMPENING, site_1, blocking=True)
+        await hass.async_block_till_done()
+        with pytest.raises(ServiceValidationError) as exc_info:
+            await hass.services.async_call(
+                DOMAIN, SERVICE_SET_DAMPENING, {SITE: "2222-2222-2222-2222", DAMP_FACTOR: ",".join(["0.5"] * 48)}, blocking=True
+            )
+        assert exc_info.value.translation_key == EXCEPTION_DAMP_COUNT_MIXED
+        assert json.loads(Path(solcast.dampening.get_filename()).read_text(encoding="utf-8")) == {"1111-1111-1111-1111": [0.5] * 24}
+
+        # Replacing the factors of the only site with another count is fine.
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SET_DAMPENING, {SITE: "1111-1111-1111-1111", DAMP_FACTOR: ",".join(["0.6"] * 48)}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert solcast.dampening.factors == {"1111-1111-1111-1111": [0.6] * 48}
 
     finally:
         assert await async_cleanup_integration_tests(hass), "Integration test cleanup failed"

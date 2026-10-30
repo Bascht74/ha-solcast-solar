@@ -203,6 +203,9 @@
     "damp_auto_enabled": {
       "message": "Automatisierte Dämpfung ist aktiviert, es werden keine manuellen Dämpfungsfaktoren festgelegt."
     },
+    "damp_count_mixed": {
+      "message": "Die Anzahl der Dämpfungsfaktoren muss zu den bereits für die anderen Standorte gesetzten Faktoren passen."
+    },
     "damp_count_not_correct": {
       "message": "Es gibt keine 24 oder 48 durch Kommas getrennten Zahlen zwischen 0,0 und 1,0."
     },

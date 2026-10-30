@@ -203,6 +203,9 @@
     "damp_auto_enabled": {
       "message": "Automated dampening is enabled, not setting manual dampening factors."
     },
+    "damp_count_mixed": {
+      "message": "The number of dampening factors must match the factors already set for the other sites."
+    },
     "damp_count_not_correct": {
       "message": "There are not 24 or 48 comma separated numbers between 0.0 and 1.0."
     },

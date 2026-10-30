@@ -203,6 +203,9 @@
     "damp_auto_enabled": {
       "message": "È abilitato lo smorzamento automatico, senza impostare manualmente i fattori di smorzamento."
     },
+    "damp_count_mixed": {
+      "message": "Il numero di fattori di smorzamento deve corrispondere ai fattori già impostati per gli altri siti."
+    },
     "damp_count_not_correct": {
       "message": "Non ci sono 24 o 48 numeri separati da virgola tra 0.0 e 1.0."
     },

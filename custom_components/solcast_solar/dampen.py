@@ -281,6 +281,13 @@ def _is_number(state: str) -> bool:
         return False
 
 
+def _valid_factors(factors: Any) -> bool:
+    """Return whether granular dampening factors are a list of finite numbers between 0.0 and 1.0."""
+    return isinstance(factors, list) and all(
+        isinstance(factor, (int, float)) and not isinstance(factor, bool) and 0.0 <= factor <= 1.0 for factor in factors
+    )
+
+
 class Dampening:
     """Manages all dampening-related operations for Solcast forecasts."""
 
@@ -1221,11 +1228,24 @@ class Dampening:
                     error = True
                     return option(GRANULAR_DAMPENING_OFF, SET_ALLOW_RESET)
                 self.factors = cast(dict[str, Any], response_json)
-                if content.replace("\n", "").replace("\r", "").strip() != "" and isinstance(response_json, dict) and self.factors:
+                if not isinstance(response_json, dict):
+                    _LOGGER.error("Dampening must be a dictionary of sites in %s, dampening ignored", filename)
+                    error = True
+                    return option(GRANULAR_DAMPENING_OFF, SET_ALLOW_RESET)
+                if content.replace("\n", "").replace("\r", "").strip() != "" and self.factors:
                     first_site_len = 0
                     # An excluded site is still known: its factors stay in the file and apply once it is included again.
                     known_sites = {ALL, *self.api.site_transfers, *(site[RESOURCE_ID] for site in (*self.api.sites_all, *self.api.sites))}
                     for site, damp_list in self.factors.items():
+                        if site not in known_sites or not _valid_factors(damp_list):
+                            _LOGGER.error(
+                                "Dampening factors for %s must be for a known site and between 0.0 and 1.0 in %s, dampening ignored",
+                                site,
+                                filename,
+                            )
+                            self.factors = {}
+                            error = True
+                            break
                         if first_site_len == 0:
                             first_site_len = len(damp_list)
                         elif len(damp_list) != first_site_len:

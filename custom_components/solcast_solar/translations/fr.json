@@ -203,6 +203,9 @@
     "damp_auto_enabled": {
       "message": "L'amortissement automatique est activé, pas de définition de facteurs d'amortissement manuels."
     },
+    "damp_count_mixed": {
+      "message": "Le nombre de facteurs d'atténuation doit correspondre aux facteurs déjà définis pour les autres sites."
+    },
     "damp_count_not_correct": {
       "message": "Il n’y a pas 24 ou 48 nombres séparés par des virgules entre 0,0 et 1,0."
     },

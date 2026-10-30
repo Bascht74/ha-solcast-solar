@@ -203,6 +203,9 @@
     "damp_auto_enabled": {
       "message": "La amortiguación automática está habilitada, no se establecen factores de amortiguación manuales."
     },
+    "damp_count_mixed": {
+      "message": "El número de factores de amortiguación debe coincidir con los factores ya establecidos para los demás sitios."
+    },
     "damp_count_not_correct": {
       "message": "No hay 24 o 48 números separados por comas entre 0.0 y 1.0."
     },

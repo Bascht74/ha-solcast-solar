@@ -62,6 +62,7 @@ from .const import (
     EXCEPTION_AUTO_USE_FORCE,
     EXCEPTION_AUTO_USE_NORMAL,
     EXCEPTION_DAMP_AUTO_ENABLED,
+    EXCEPTION_DAMP_COUNT_MIXED,
     EXCEPTION_DAMP_COUNT_NOT_CORRECT,
     EXCEPTION_DAMP_ERROR_PARSING,
     EXCEPTION_DAMP_NO_ALL_24,
@@ -521,7 +522,7 @@ class ServiceActions:
         out_of_range = False
         try:
             for factor in factors:
-                if float(factor) < 0 or float(factor) > 1:
+                if not 0 <= float(factor) <= 1:  # Also not a number or infinite
                     out_of_range = True
         except:  # noqa: E722
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_DAMP_ERROR_PARSING) from None
@@ -543,6 +544,8 @@ class ServiceActions:
                 self._solcast.dampening.set_allow_granular_reset(True)
         else:
             await self._solcast.dampening.refresh_granular_data()  # Ensure latest file content gets updated
+            if any(len(other) != len(factors) for other_site, other in self._solcast.dampening.factors.items() if other_site != site):
+                raise ServiceValidationError(translation_domain=DOMAIN, translation_key=EXCEPTION_DAMP_COUNT_MIXED)
             self._solcast.dampening.factors[site] = [float(f) for f in factors]
             await self._solcast.dampening.serialise_granular()
             old_damp = opt.get(SITE_DAMP, False)

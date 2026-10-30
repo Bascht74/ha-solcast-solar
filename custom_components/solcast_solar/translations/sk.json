@@ -203,6 +203,9 @@
     "damp_auto_enabled": {
       "message": "Automatizované tlmenie je povolené, nenastavujú sa manuálne tlmiace faktory."
     },
+    "damp_count_mixed": {
+      "message": "Počet tlmiacich faktorov sa musí zhodovať s faktormi už nastavenými pre ostatné lokality."
+    },
     "damp_count_not_correct": {
       "message": "Medzi 0,0 a 1,0 nie je 24 alebo 48 čiarkami oddelených čísel."
     },

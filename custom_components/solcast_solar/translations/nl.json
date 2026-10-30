@@ -203,6 +203,9 @@
     "damp_auto_enabled": {
       "message": "Automatische demping is ingeschakeld, handmatige dempingsfactoren zijn niet ingesteld."
     },
+    "damp_count_mixed": {
+      "message": "Het aantal dempingsfactoren moet overeenkomen met de factoren die al voor de andere locaties zijn ingesteld."
+    },
     "damp_count_not_correct": {
       "message": "Er zijn geen 24 of 48 door komma's gescheiden getallen tussen 0.0 en 1.0."
     },
